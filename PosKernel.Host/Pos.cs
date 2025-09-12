@@ -20,16 +20,34 @@ public static class Pos
     }
 
     /// <summary>
+    /// Check if a currency code is a standard ISO currency.
+    /// </summary>
+    /// <param name="currencyCode">3-letter currency code</param>
+    /// <returns>True if this is a standard ISO 4217 currency</returns>
+    public static bool IsStandardCurrency(string currencyCode)
+    {
+        var currencyBytes = Encoding.UTF8.GetBytes(currencyCode);
+        return RustNative.pk_is_standard_currency(currencyBytes, (UIntPtr)currencyBytes.Length);
+    }
+
+    /// <summary>
     /// Begins a new POS transaction.
     /// </summary>
     /// <param name="store">Store identifier</param>
-    /// <param name="currency">Currency code (e.g., "USD")</param>
+    /// <param name="currency">3-letter currency code (e.g., "USD", "EUR")</param>
     /// <returns>A transaction handle for use in subsequent operations</returns>
     /// <exception cref="PosException">Thrown when the operation fails</exception>
+    /// <exception cref="ArgumentException">Thrown when currency code is invalid</exception>
     public static ulong BeginTransaction(string store, string currency)
     {
+        // Validate currency format before sending to Rust
+        if (string.IsNullOrEmpty(currency) || currency.Length != 3)
+        {
+            throw new ArgumentException("Currency code must be exactly 3 characters", nameof(currency));
+        }
+
         var storeBytes = Encoding.UTF8.GetBytes(store);
-        var currencyBytes = Encoding.UTF8.GetBytes(currency);
+        var currencyBytes = Encoding.UTF8.GetBytes(currency.ToUpperInvariant());
         
         var result = RustNative.pk_begin_transaction(
             storeBytes, (UIntPtr)storeBytes.Length,
@@ -55,7 +73,7 @@ public static class Pos
     /// Creates a new transaction object for easier management.
     /// </summary>
     /// <param name="store">Store identifier</param>
-    /// <param name="currency">Currency code (e.g., "USD")</param>
+    /// <param name="currency">3-letter currency code (e.g., "USD", "EUR")</param>
     /// <returns>A Transaction object</returns>
     public static Transaction CreateTransaction(string store, string currency)
     {
@@ -74,7 +92,11 @@ public static class Pos
     public static void AddLine(ulong handle, string sku, int quantity, decimal unitPrice)
     {
         var skuBytes = Encoding.UTF8.GetBytes(sku);
-        var unitMinor = (long)(unitPrice * 100); // Convert to minor units (cents)
+        
+        // Get currency decimal places for proper conversion
+        var decimalPlaces = GetCurrencyDecimalPlaces(handle);
+        var multiplier = (long)Math.Pow(10, decimalPlaces);
+        var unitMinor = (long)(unitPrice * multiplier);
         
         var result = RustNative.pk_add_line(handle, skuBytes, (UIntPtr)skuBytes.Length, quantity, unitMinor);
         EnsureSuccess(result, nameof(AddLine));
@@ -88,7 +110,10 @@ public static class Pos
     /// <exception cref="PosException">Thrown when the operation fails</exception>
     public static void AddCashTender(ulong handle, decimal amount)
     {
-        var amountMinor = (long)(amount * 100); // Convert to minor units (cents)
+        // Get currency decimal places for proper conversion
+        var decimalPlaces = GetCurrencyDecimalPlaces(handle);
+        var multiplier = (long)Math.Pow(10, decimalPlaces);
+        var amountMinor = (long)(amount * multiplier);
         
         var result = RustNative.pk_add_cash_tender(handle, amountMinor);
         EnsureSuccess(result, nameof(AddCashTender));
@@ -105,13 +130,30 @@ public static class Pos
         var result = RustNative.pk_get_totals(handle, out var totalMinor, out var tenderedMinor, out var changeMinor, out var state);
         EnsureSuccess(result, nameof(GetTotals));
 
+        // Get currency decimal places for proper conversion
+        var decimalPlaces = GetCurrencyDecimalPlaces(handle);
+        var divisor = (decimal)Math.Pow(10, decimalPlaces);
+
         return new TransactionTotals
         {
-            Total = (decimal)totalMinor / 100m,
-            Tendered = (decimal)tenderedMinor / 100m,
-            Change = (decimal)changeMinor / 100m,
+            Total = totalMinor / divisor,
+            Tendered = tenderedMinor / divisor,
+            Change = changeMinor / divisor,
             State = (TransactionState)state
         };
+    }
+
+    /// <summary>
+    /// Gets the number of decimal places for the transaction's currency.
+    /// </summary>
+    /// <param name="handle">Transaction handle</param>
+    /// <returns>Number of decimal places (0 for JPY, 2 for most others)</returns>
+    /// <exception cref="PosException">Thrown when the operation fails</exception>
+    public static byte GetCurrencyDecimalPlaces(ulong handle)
+    {
+        var result = RustNative.pk_get_currency_decimal_places(handle, out var decimalPlaces);
+        EnsureSuccess(result, nameof(GetCurrencyDecimalPlaces));
+        return decimalPlaces;
     }
 
     /// <summary>

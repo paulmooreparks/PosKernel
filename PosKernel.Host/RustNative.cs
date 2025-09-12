@@ -59,6 +59,18 @@ internal static class RustNative
         UIntPtr bufferSize,
         out UIntPtr requiredSize);
 
+    // === CURRENCY UTILITY FUNCTIONS ===
+
+    [DllImport(LIB, EntryPoint = "pk_is_standard_currency", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern bool pk_is_standard_currency(
+        byte[] currency, 
+        UIntPtr currencyLen);
+
+    [DllImport(LIB, EntryPoint = "pk_get_currency_decimal_places", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern PkResult pk_get_currency_decimal_places(
+        ulong handle, 
+        out byte decimalPlaces);
+
     // === UTILITY FUNCTIONS ===
 
     [DllImport(LIB, EntryPoint = "pk_get_version", CallingConvention = CallingConvention.Cdecl)]
