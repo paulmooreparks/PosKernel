@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Rust library build and copy targets -->
+  <PropertyGroup>
+    <RustProjectPath>$(MSBuildProjectDirectory)\..\pos-kernel-rs</RustProjectPath>
+    <RustLibName>pos_kernel</RustLibName>
+    <RustTargetDir>$(RustProjectPath)\target\debug</RustTargetDir>
+  </PropertyGroup>
+
+  <Target Name="BuildRustLibrary" BeforeTargets="Build">
+    <Message Text="Building Rust library at $(RustProjectPath)" Importance="high" />
+    <Exec Command="cargo build --manifest-path &quot;$(RustProjectPath)\Cargo.toml&quot;" 
+          WorkingDirectory="$(RustProjectPath)" 
+          Condition="Exists('$(RustProjectPath)\Cargo.toml')" />
+  </Target>
+
+  <Target Name="CopyRustLibrary" AfterTargets="Build">
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+      <RustLibraryFiles Include="$(RustTargetDir)\$(RustLibName).dll" />
+      <RustLibraryFiles Include="$(RustTargetDir)\$(RustLibName).pdb" />
+    </ItemGroup>
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
+      <RustLibraryFiles Include="$(RustTargetDir)\lib$(RustLibName).so" />
+    </ItemGroup>
+    <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+      <RustLibraryFiles Include="$(RustTargetDir)\lib$(RustLibName).dylib" />
+    </ItemGroup>
+    
+    <Copy SourceFiles="@(RustLibraryFiles)" 
+          DestinationFolder="$(OutputPath)" 
+          SkipUnchangedFiles="true" 
+          Condition="Exists('%(RustLibraryFiles.Identity)')" />
+    
+    <Message Text="Copied Rust library files: @(RustLibraryFiles)" Importance="high" />
+  </Target>
+
+</Project>

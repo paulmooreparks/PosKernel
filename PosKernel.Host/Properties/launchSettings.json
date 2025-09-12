@@ -1,0 +1,19 @@
+{
+  "profiles": {
+    "PosKernel.Host": {
+      "commandName": "Project",
+      "nativeDebugging": true,
+      "environmentVariables": {
+        "RUST_BACKTRACE": "1"
+      }
+    },
+    "PosKernel.Host (Mixed Mode)": {
+      "commandName": "Project",
+      "nativeDebugging": true,
+      "environmentVariables": {
+        "RUST_BACKTRACE": "full",
+        "RUST_LOG": "debug"
+      }
+    }
+  }
+}

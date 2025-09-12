@@ -1,0 +1,49 @@
+# .NET / Visual Studio
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.userprefs
+*.pidb
+*.booproj
+*.csproj.user
+*.vbproj.user
+.vscode/
+*.tmp
+*.temp
+.nuget/
+packages/
+*.nupkg
+TestResults/
+
+# Rust
+/pos-kernel-rs/target/
+Cargo.lock
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Runtime files
+*.dll
+*.pdb
+*.so
+*.dylib
+
+# But keep the pos_kernel library files that get copied to output
+!PosKernel.Host/bin/Debug/net9.0/pos_kernel.dll
+!PosKernel.Host/bin/Debug/net9.0/pos_kernel.pdb

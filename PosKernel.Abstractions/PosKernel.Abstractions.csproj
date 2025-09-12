@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Description>POS Kernel Abstractions (contracts, value objects, syscall interfaces)</Description>
+    <PackageId>PosKernel.Abstractions</PackageId>
+    <Authors>POS Kernel Team</Authors>
+    <RepositoryUrl>https://example.org/repo</RepositoryUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+[package]
+name = "pos-kernel-rs"
+version = "0.0.1"
+edition = "2021"
+authors = ["POS Kernel Team"]
+license = "Apache-2.0"
+
+[lib]
+name = "pos_kernel"
+crate-type = ["cdylib", "rlib", "staticlib"]
+
+[dependencies]
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+strip = true
+panic = "abort"
+
+[profile.dev]
+panic = "unwind"
