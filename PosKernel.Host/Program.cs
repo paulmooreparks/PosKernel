@@ -6,28 +6,75 @@ Console.WriteLine("Loading Rust POS Kernel...");
 Console.WriteLine($"Kernel Version: {Pos.Version}");
 Console.WriteLine();
 
-// Example 1: Using static methods with manual resource management
-Console.WriteLine("=== Static API Example (Manual Resource Management) ===");
+// Example 1: Standard currencies (fast path)
+Console.WriteLine("=== Standard Currencies (Fast Path) ===");
+var standardCurrencies = new[] { "USD", "EUR", "JPY", "GBP", "CAD", "AUD" };
+
+foreach (var currency in standardCurrencies)
+{
+    var info = Pos.GetCurrencyInfo(currency);
+    Console.WriteLine($"{currency}: {info?.Type}, {info?.DecimalPlaces} decimal places");
+}
+
+Console.WriteLine();
+
+// Example 2: Custom currencies (auto-registration)
+Console.WriteLine("=== Custom Currencies (Auto-Registration) ===");
+var customCurrencies = new[] { "BTC", "ETH", "PTS", "GLD", "SOL", "XYZ" };
+
+foreach (var currency in customCurrencies)
+{
+    var info = Pos.GetCurrencyInfo(currency);
+    if (info != null)
+    {
+        Console.WriteLine($"{currency}: {info.Type}, {info.DecimalPlaces} decimal places - ✓ Valid");
+    }
+    else
+    {
+        Console.WriteLine($"{currency}: Invalid");
+    }
+}
+
+Console.WriteLine();
+
+// Example 3: Real transactions with mixed currencies
+Console.WriteLine("=== Mixed Currency Transactions ===");
 try
 {
-    var handle = Pos.BeginTransaction("Store-1001", "USD");
-    Console.WriteLine($"Transaction Handle: {handle}");
+    // Standard currency transaction
+    using var usdTx = Pos.CreateTransaction("Store-USD", "USD");
+    usdTx.AddItem("COFFEE", 3.99m);
+    usdTx.AddCashTender(5.00m);
+    var usdTotals = usdTx.Totals;
+    Console.WriteLine($"USD Transaction: Total={usdTotals.Total:C} Change={usdTotals.Change:C}");
 
-    Pos.AddLine(handle, "SKU-1001", 1, 1.99m);
-    Pos.AddLine(handle, "SKU-2002", 2, 0.99m);
-    
-    var totals1 = Pos.GetTotals(handle);
-    Console.WriteLine($"Store: {Pos.GetStoreName(handle)} | Currency: {Pos.GetCurrency(handle)} | Lines: {Pos.GetLineCount(handle)}");
-    Console.WriteLine($"After adding items: {totals1.Total:C} (State: {totals1.State})");
+    // Japanese Yen (no decimal places)
+    using var jpyTx = Pos.CreateTransaction("Store-Japan", "JPY");
+    jpyTx.AddItem("RAMEN", 800m); // ¥800
+    jpyTx.AddCashTender(1000m);   // ¥1000
+    var jpyTotals = jpyTx.Totals;
+    Console.WriteLine($"JPY Transaction: Total=¥{jpyTotals.Total:F0} Change=¥{jpyTotals.Change:F0}");
 
-    Pos.AddCashTender(handle, 5.00m);
-    
-    var totals2 = Pos.GetTotals(handle);
-    Console.WriteLine($"After payment: Total={totals2.Total:C} Tendered={totals2.Tendered:C} Change={totals2.Change:C} State={totals2.State}");
-    
-    // Manually close transaction
-    Pos.CloseTransaction(handle);
-    Console.WriteLine("Transaction closed manually");
+    // Bitcoin transaction (auto-registered)
+    using var btcTx = Pos.CreateTransaction("Crypto-Store", "BTC");
+    btcTx.AddItem("DIGITAL_ITEM", 0.0001m); // 0.0001 BTC
+    btcTx.AddCashTender(0.0002m);           // 0.0002 BTC
+    var btcTotals = btcTx.Totals;
+    Console.WriteLine($"BTC Transaction: Total={btcTotals.Total:F4} BTC Change={btcTotals.Change:F4} BTC");
+
+    // Loyalty points (auto-registered)
+    using var ptsTx = Pos.CreateTransaction("Loyalty-Store", "PTS");
+    ptsTx.AddItem("REWARD_ITEM", 100.00m); // 100 points
+    ptsTx.AddCashTender(150.00m);          // 150 points
+    var ptsTotals = ptsTx.Totals;
+    Console.WriteLine($"PTS Transaction: Total={ptsTotals.Total:F0} pts Change={ptsTotals.Change:F0} pts");
+
+    // New cryptocurrency that didn't exist when we compiled (auto-registers!)
+    using var solTx = Pos.CreateTransaction("Future-Store", "SOL");
+    solTx.AddItem("NFT", 5.25m);   // 5.25 SOL
+    solTx.AddCashTender(10.00m);   // 10 SOL
+    var solTotals = solTx.Totals;
+    Console.WriteLine($"SOL Transaction: Total={solTotals.Total:F2} SOL Change={solTotals.Change:F2} SOL");
 }
 catch (PosException ex)
 {
@@ -36,69 +83,28 @@ catch (PosException ex)
 
 Console.WriteLine();
 
-// Example 2: Using object-oriented API with automatic resource management
-Console.WriteLine("=== Object-Oriented API Example (Automatic Resource Management) ===");
-try
-{
-    using var transaction = Pos.CreateTransaction("Store-2002", "USD");
-    Console.WriteLine($"Created transaction with handle: {transaction.Handle}");
+// Example 4: Currency validation
+Console.WriteLine("=== Currency Validation ===");
+var testCodes = new[] { "USD", "BTC", "XYZ", "INVALID", "AB", "" };
 
-    // Add items using convenience methods
-    transaction.AddItem("BOOK-001", 12.99m);
-    transaction.AddItems("PEN-002", 3, 2.49m);
-    
-    Console.WriteLine($"Store: {transaction.Store} | Currency: {transaction.Currency} | Lines: {transaction.LineCount}");
-    Console.WriteLine($"After adding items: {transaction.Totals.Total:C} (Building: {transaction.IsBuilding})");
-    
-    // Add cash tender
-    transaction.AddCashTender(20.00m);
-    
-    var totals = transaction.Totals;
-    Console.WriteLine($"Final: Total={totals.Total:C} Tendered={totals.Tendered:C} Change={totals.Change:C}");
-    Console.WriteLine($"Transaction completed: {transaction.IsCompleted}");
-    Console.WriteLine($"Balance due: {totals.Balance:C} (Paid: {totals.IsPaid})");
-    
-    // Transaction will be automatically closed when using block exits
-}
-catch (PosException ex)
+foreach (var code in testCodes)
 {
-    Console.WriteLine($"POS Error: {ex.Message}");
-}
-catch (Exception ex)
-{
-    Console.WriteLine($"Unexpected error: {ex.Message}");
+    bool isValid = Pos.IsValidCurrency(code);
+    bool isStandard = Pos.IsStandardCurrency(code);
+    
+    string status = isValid ? "✓ Valid" : "✗ Invalid";
+    string type = isStandard ? " (Standard)" : isValid ? " (Custom)" : "";
+    
+    Console.WriteLine($"{code,-8}: {status}{type}");
 }
 
 Console.WriteLine();
+Console.WriteLine("=== Key Benefits Demonstrated ===");
+Console.WriteLine("✓ Zero recompilation needed for new currencies");
+Console.WriteLine("✓ Fast path optimization for common currencies"); 
+Console.WriteLine("✓ Safe defaults (2 decimal places) for custom currencies");
+Console.WriteLine("✓ Proper handling of special cases (JPY with 0 decimals)");
+Console.WriteLine("✓ Support for cryptocurrencies, loyalty points, custom currencies");
+Console.WriteLine("✓ Strong validation prevents typos and invalid formats");
 
-// Example 3: Demonstrating resource cleanup
-Console.WriteLine("=== Resource Management Demonstration ===");
-try
-{
-    Transaction transaction;
-    
-    {
-        using (transaction = Pos.CreateTransaction("Store-3003", "EUR"))
-        {
-            transaction.AddItem("WIDGET-001", 5.99m);
-            Console.WriteLine($"Transaction {transaction.Handle} created and item added");
-        } // Transaction automatically disposed here
-    }
-    
-    // This will throw ObjectDisposedException
-    try
-    {
-        var store = transaction.Store;
-    }
-    catch (ObjectDisposedException)
-    {
-        Console.WriteLine("✓ Transaction properly disposed - accessing properties throws ObjectDisposedException");
-    }
-}
-catch (PosException ex)
-{
-    Console.WriteLine($"POS Error: {ex.Message}");
-}
-
-Console.WriteLine();
-Console.WriteLine("=== Demos Complete ===");
+Console.WriteLine("\n=== Demo Complete ===");

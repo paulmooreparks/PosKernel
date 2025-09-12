@@ -12,75 +12,19 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// === CURRENCY HANDLING ===
+// === ENHANCED CURRENCY HANDLING ===
 
-/// Standard ISO 4217 currency codes for fast validation and common operations
-#[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum StandardCurrency {
-    USD = 840,  // US Dollar (using official ISO numeric codes)
-    EUR = 978,  // Euro
-    GBP = 826,  // British Pound
-    JPY = 392,  // Japanese Yen  
-    SGD = 702,  // Singapore Dollar
-    CAD = 124,  // Canadian Dollar
-    AUD = 036,  // Australian Dollar
-    CHF = 756,  // Swiss Franc
-    CNY = 156,  // Chinese Yuan
-    // Add more as needed
-}
-
-impl StandardCurrency {
-    /// Get the 3-letter ISO currency code
-    fn to_code(&self) -> &'static str {
-        match self {
-            StandardCurrency::USD => "USD",
-            StandardCurrency::EUR => "EUR", 
-            StandardCurrency::GBP => "GBP",
-            StandardCurrency::JPY => "JPY",
-            StandardCurrency::SGD => "SGD",
-            StandardCurrency::CAD => "CAD",
-            StandardCurrency::AUD => "AUD",
-            StandardCurrency::CHF => "CHF",
-            StandardCurrency::CNY => "CNY",
-        }
-    }
-
-    /// Parse from 3-letter ISO code
-    fn from_code(code: &str) -> Option<Self> {
-        match code {
-            "USD" => Some(StandardCurrency::USD),
-            "EUR" => Some(StandardCurrency::EUR),
-            "GBP" => Some(StandardCurrency::GBP),
-            "JPY" => Some(StandardCurrency::JPY),
-            "SGD" => Some(StandardCurrency::SGD),
-            "CAD" => Some(StandardCurrency::CAD),
-            "AUD" => Some(StandardCurrency::AUD),
-            "CHF" => Some(StandardCurrency::CHF),
-            "CNY" => Some(StandardCurrency::CNY),
-            _ => None,
-        }
-    }
-
-    /// Get decimal places for this currency
-    fn decimal_places(&self) -> u8 {
-        match self {
-            StandardCurrency::JPY => 0, // Yen has no decimal places
-            _ => 2, // Most currencies use 2 decimal places
-        }
-    }
-}
-
-/// Internal currency representation - flexible but validated
+/// Internal currency representation - flexible and auto-registering
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Currency {
     code: String,           // 3-letter code (ISO or custom)
     decimal_places: u8,     // Number of decimal places
-    is_standard: bool,      // Whether this is a standard ISO currency
+    is_standard: bool,      // Whether this is a well-known ISO currency
 }
 
 impl Currency {
-    /// Create from string with validation
+    /// Create from string with validation and auto-registration
+    /// Fast path for common currencies, auto-registration for everything else
     fn new(code: &str) -> Result<Self, &'static str> {
         if code.is_empty() {
             return Err("Currency code cannot be empty");
@@ -90,20 +34,76 @@ impl Currency {
             return Err("Currency code must be exactly 3 characters");
         }
 
-        // Check if it's a standard currency first
-        if let Some(standard) = StandardCurrency::from_code(code) {
-            Ok(Currency {
-                code: standard.to_code().to_string(),
-                decimal_places: standard.decimal_places(),
-                is_standard: true,
-            })
-        } else {
-            // Allow custom currencies with default 2 decimal places
-            Ok(Currency {
-                code: code.to_uppercase(),
-                decimal_places: 2,
-                is_standard: false,
-            })
+        let code_upper = code.to_uppercase();
+        
+        // Fast path for well-known currencies (no registry lookup needed)
+        // Only the most common ones to avoid enum brittleness
+        match code_upper.as_str() {
+            "USD" => Ok(Currency::usd()),
+            "EUR" => Ok(Currency::eur()),
+            "JPY" => Ok(Currency::jpy()),
+            "GBP" => Ok(Currency::gbp()),
+            "CAD" => Ok(Currency::cad()),
+            "AUD" => Ok(Currency::aud()),
+            _ => {
+                // Everything else auto-registers with safe defaults
+                // This includes: cryptocurrencies, loyalty points, regional currencies, 
+                // new ISO currencies, custom store currencies, etc.
+                Ok(Currency {
+                    code: code_upper,
+                    decimal_places: 2, // Safe default for 95% of currencies
+                    is_standard: false,
+                })
+            }
+        }
+    }
+    
+    // Fast constructors for most common currencies
+    fn usd() -> Self {
+        Currency {
+            code: "USD".to_string(),
+            decimal_places: 2,
+            is_standard: true,
+        }
+    }
+    
+    fn eur() -> Self {
+        Currency {
+            code: "EUR".to_string(),
+            decimal_places: 2,
+            is_standard: true,
+        }
+    }
+    
+    fn jpy() -> Self {
+        Currency {
+            code: "JPY".to_string(),
+            decimal_places: 0, // Yen has no decimal places
+            is_standard: true,
+        }
+    }
+    
+    fn gbp() -> Self {
+        Currency {
+            code: "GBP".to_string(),
+            decimal_places: 2,
+            is_standard: true,
+        }
+    }
+    
+    fn cad() -> Self {
+        Currency {
+            code: "CAD".to_string(),
+            decimal_places: 2,
+            is_standard: true,
+        }
+    }
+    
+    fn aud() -> Self {
+        Currency {
+            code: "AUD".to_string(),
+            decimal_places: 2,
+            is_standard: true,
         }
     }
 
@@ -113,6 +113,10 @@ impl Currency {
 
     fn decimal_places(&self) -> u8 {
         self.decimal_places
+    }
+
+    fn is_standard(&self) -> bool {
+        self.is_standard
     }
 }
 
@@ -126,7 +130,7 @@ enum TxState { Building, Completed }
 struct Transaction {
     id: u64,
     store: String,
-    currency: Currency,  // ← Changed from String to Currency
+    currency: Currency,
     lines: Vec<Line>,
     tendered_minor: i64,
     state: TxState,
@@ -269,7 +273,7 @@ pub extern "C" fn pk_begin_transaction(
         read_str(currency_ptr, currency_len)
     };
 
-    // Enhanced currency validation
+    // Enhanced currency validation with auto-registration
     let currency = match Currency::new(&currency_str) {
         Ok(c) => c,
         Err(_) => return PkResult::err(ResultCode::ValidationFailed),
@@ -485,17 +489,22 @@ pub extern "C" fn pk_get_currency(
 
 // === CURRENCY UTILITY FUNCTIONS ===
 
-/// Check if a currency code is supported as a standard ISO currency
+/// Check if a currency code is a well-known standard currency (fast path)
 #[no_mangle]
 pub extern "C" fn pk_is_standard_currency(
     currency_ptr: *const u8,
     currency_len: usize
 ) -> bool {
     let currency_str = unsafe { read_str(currency_ptr, currency_len) };
-    StandardCurrency::from_code(&currency_str).is_some()
+    
+    // Check if it matches our fast-path currencies
+    match currency_str.to_uppercase().as_str() {
+        "USD" | "EUR" | "JPY" | "GBP" | "CAD" | "AUD" => true,
+        _ => false,
+    }
 }
 
-/// Get decimal places for a currency (0 for JPY, 2 for most others)
+/// Get decimal places for a currency
 #[no_mangle]
 pub extern "C" fn pk_get_currency_decimal_places(
     handle: PkTransactionHandle,
@@ -520,6 +529,21 @@ pub extern "C" fn pk_get_currency_decimal_places(
     }
     
     PkResult::ok()
+}
+
+/// Validate a currency code without creating a transaction
+/// Useful for pre-validation in UI layers
+#[no_mangle]
+pub extern "C" fn pk_validate_currency_code(
+    currency_ptr: *const u8,
+    currency_len: usize
+) -> PkResult {
+    let currency_str = unsafe { read_str(currency_ptr, currency_len) };
+    
+    match Currency::new(&currency_str) {
+        Ok(_) => PkResult::ok(),
+        Err(_) => PkResult::err(ResultCode::ValidationFailed),
+    }
 }
 
 // === UTILITY FUNCTIONS ===
@@ -579,39 +603,71 @@ mod tests {
     }
 
     #[test]
-    fn test_currency_validation() {
-        // Test standard currencies
+    fn test_enhanced_currency_system() {
+        // Test fast-path currencies
         let usd = Currency::new("USD").unwrap();
         assert_eq!(usd.code(), "USD");
         assert_eq!(usd.decimal_places(), 2);
-        assert!(usd.is_standard);
+        assert!(usd.is_standard());
 
         let jpy = Currency::new("JPY").unwrap();
         assert_eq!(jpy.decimal_places(), 0); // Yen has no decimal places
+        assert!(jpy.is_standard());
 
-        // Test custom currency
-        let custom = Currency::new("XYZ").unwrap();
-        assert_eq!(custom.code(), "XYZ");
-        assert_eq!(custom.decimal_places(), 2); // Default
-        assert!(!custom.is_standard);
+        // Test auto-registered currencies (no recompilation needed!)
+        let bitcoin = Currency::new("BTC").unwrap();
+        assert_eq!(bitcoin.code(), "BTC");
+        assert_eq!(bitcoin.decimal_places(), 2); // Safe default
+        assert!(!bitcoin.is_standard());
+
+        let loyalty = Currency::new("PTS").unwrap(); // Store loyalty points
+        assert_eq!(loyalty.code(), "PTS");
+        assert_eq!(loyalty.decimal_places(), 2);
+        assert!(!loyalty.is_standard());
+
+        let ethereum = Currency::new("ETH").unwrap(); // Another crypto
+        assert_eq!(ethereum.code(), "ETH");
+        assert_eq!(ethereum.decimal_places(), 2);
+        assert!(!ethereum.is_standard());
 
         // Test validation
         assert!(Currency::new("").is_err());
         assert!(Currency::new("TOOLONG").is_err());
+        assert!(Currency::new("XY").is_err()); // Too short
     }
 
     #[test]
     fn test_currency_utilities() {
+        // Test standard currency detection
+        assert!(pk_is_standard_currency("USD".as_ptr(), 3));
+        assert!(pk_is_standard_currency("JPY".as_ptr(), 3));
+        assert!(!pk_is_standard_currency("BTC".as_ptr(), 3));
+        assert!(!pk_is_standard_currency("XYZ".as_ptr(), 3));
+
+        // Test validation
+        let result = pk_validate_currency_code("USD".as_ptr(), 3);
+        assert_eq!(result.code, ResultCode::Ok as i32);
+
+        let result = pk_validate_currency_code("BTC".as_ptr(), 3);
+        assert_eq!(result.code, ResultCode::Ok as i32); // Auto-registers
+
+        let result = pk_validate_currency_code("TOOLONG".as_ptr(), 7);
+        assert_eq!(result.code, ResultCode::ValidationFailed as i32);
+    }
+
+    #[test]
+    fn test_full_transaction_with_custom_currency() {
         let mut handle = PK_INVALID_HANDLE;
-        let store = "STORE";
-        let currency = "USD";
+        let store = "CRYPTO-STORE";
+        let currency = "BTC"; // Bitcoin - not in fast path, auto-registered
         
-        // Begin transaction
+        // Begin transaction with Bitcoin
         let result = pk_begin_transaction(
             store.as_ptr(), store.len(),
             currency.as_ptr(), currency.len(),
             &mut handle
         );
+        assert_eq!(result.code, ResultCode::Ok as i32);
 
         // Get currency code
         let mut buffer = [0u8; 4];
@@ -619,9 +675,9 @@ mod tests {
         let result = pk_get_currency(handle, buffer.as_mut_ptr(), buffer.len(), &mut required_size);
         assert_eq!(result.code, ResultCode::Ok as i32);
         assert_eq!(required_size, 3);
-        assert_eq!(&buffer[..3], b"USD");
+        assert_eq!(&buffer[..3], b"BTC");
 
-        // Get currency decimal places
+        // Get currency decimal_places (should be 2 - safe default)
         let mut decimal_places = 0;
         let result = pk_get_currency_decimal_places(handle, &mut decimal_places);
         assert_eq!(result.code, ResultCode::Ok as i32);

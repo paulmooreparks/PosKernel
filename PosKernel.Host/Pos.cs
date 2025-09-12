@@ -20,30 +20,83 @@ public static class Pos
     }
 
     /// <summary>
-    /// Check if a currency code is a standard ISO currency.
+    /// Validates a currency code without creating a transaction.
+    /// Useful for UI validation before transaction creation.
+    /// </summary>
+    /// <param name="currencyCode">3-letter currency code to validate</param>
+    /// <returns>True if the currency code is valid</returns>
+    public static bool IsValidCurrency(string currencyCode)
+    {
+        if (string.IsNullOrEmpty(currencyCode) || currencyCode.Length != 3)
+        {
+            return false;
+        }
+
+        var currencyBytes = Encoding.UTF8.GetBytes(currencyCode.ToUpperInvariant());
+        var result = RustNative.pk_validate_currency_code(currencyBytes, (UIntPtr)currencyBytes.Length);
+        return RustNative.pk_result_is_ok(result);
+    }
+
+    /// <summary>
+    /// Check if a currency code is a well-known standard currency (gets fast-path optimization).
     /// </summary>
     /// <param name="currencyCode">3-letter currency code</param>
-    /// <returns>True if this is a standard ISO 4217 currency</returns>
+    /// <returns>True if this is a well-known standard currency (USD, EUR, JPY, GBP, CAD, AUD)</returns>
     public static bool IsStandardCurrency(string currencyCode)
     {
-        var currencyBytes = Encoding.UTF8.GetBytes(currencyCode);
+        if (string.IsNullOrEmpty(currencyCode) || currencyCode.Length != 3)
+        {
+            return false;
+        }
+
+        var currencyBytes = Encoding.UTF8.GetBytes(currencyCode.ToUpperInvariant());
         return RustNative.pk_is_standard_currency(currencyBytes, (UIntPtr)currencyBytes.Length);
+    }
+
+    /// <summary>
+    /// Gets information about a currency code.
+    /// </summary>
+    /// <param name="currencyCode">3-letter currency code</param>
+    /// <returns>Currency information or null if invalid</returns>
+    public static CurrencyInfo? GetCurrencyInfo(string currencyCode)
+    {
+        if (!IsValidCurrency(currencyCode))
+        {
+            return null;
+        }
+
+        bool isStandard = IsStandardCurrency(currencyCode);
+        
+        // For standard currencies, we know the decimal places
+        byte decimalPlaces = currencyCode.ToUpperInvariant() switch
+        {
+            "JPY" => 0, // Yen has no decimal places
+            "USD" or "EUR" or "GBP" or "CAD" or "AUD" => 2,
+            _ => 2 // Default for custom currencies
+        };
+
+        return new CurrencyInfo
+        {
+            Code = currencyCode.ToUpperInvariant(),
+            IsStandard = isStandard,
+            DecimalPlaces = decimalPlaces
+        };
     }
 
     /// <summary>
     /// Begins a new POS transaction.
     /// </summary>
     /// <param name="store">Store identifier</param>
-    /// <param name="currency">3-letter currency code (e.g., "USD", "EUR")</param>
+    /// <param name="currency">3-letter currency code (e.g., "USD", "EUR", "BTC", "PTS")</param>
     /// <returns>A transaction handle for use in subsequent operations</returns>
     /// <exception cref="PosException">Thrown when the operation fails</exception>
     /// <exception cref="ArgumentException">Thrown when currency code is invalid</exception>
     public static ulong BeginTransaction(string store, string currency)
     {
-        // Validate currency format before sending to Rust
-        if (string.IsNullOrEmpty(currency) || currency.Length != 3)
+        // Pre-validate currency to give better error messages
+        if (!IsValidCurrency(currency))
         {
-            throw new ArgumentException("Currency code must be exactly 3 characters", nameof(currency));
+            throw new ArgumentException("Currency code must be exactly 3 characters and contain only letters", nameof(currency));
         }
 
         var storeBytes = Encoding.UTF8.GetBytes(store);
@@ -73,7 +126,7 @@ public static class Pos
     /// Creates a new transaction object for easier management.
     /// </summary>
     /// <param name="store">Store identifier</param>
-    /// <param name="currency">3-letter currency code (e.g., "USD", "EUR")</param>
+    /// <param name="currency">3-letter currency code (e.g., "USD", "EUR", "BTC", "PTS")</param>
     /// <returns>A Transaction object</returns>
     public static Transaction CreateTransaction(string store, string currency)
     {
@@ -402,4 +455,30 @@ public class PosException : Exception
     public PosException(string message, Exception innerException) : base(message, innerException)
     {
     }
+}
+
+/// <summary>
+/// Information about a currency.
+/// </summary>
+public class CurrencyInfo
+{
+    /// <summary>
+    /// 3-letter currency code.
+    /// </summary>
+    public required string Code { get; init; }
+
+    /// <summary>
+    /// Whether this is a well-known standard currency with fast-path optimization.
+    /// </summary>
+    public required bool IsStandard { get; init; }
+
+    /// <summary>
+    /// Number of decimal places for this currency.
+    /// </summary>
+    public required byte DecimalPlaces { get; init; }
+
+    /// <summary>
+    /// Gets a human-readable description of the currency type.
+    /// </summary>
+    public string Type => IsStandard ? "Standard" : "Custom";
 }

@@ -71,6 +71,11 @@ internal static class RustNative
         ulong handle, 
         out byte decimalPlaces);
 
+    [DllImport(LIB, EntryPoint = "pk_validate_currency_code", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern PkResult pk_validate_currency_code(
+        byte[] currency,
+        UIntPtr currencyLen);
+
     // === UTILITY FUNCTIONS ===
 
     [DllImport(LIB, EntryPoint = "pk_get_version", CallingConvention = CallingConvention.Cdecl)]
