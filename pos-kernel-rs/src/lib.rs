@@ -1,5 +1,12 @@
 //! POS Kernel Rust Prototype FFI Implementation (Iteration 2)
 //! Win32-style C ABI that's OOP-ready: opaque handles, consistent patterns, resource management.
+//!
+//! DEVELOPMENT NOTES:
+//! - Git repo moved from pos-kernel-rs/ to solution root
+//! - Unnecessary .NET assemblies (Services, Runtime, AppHost) removed
+//! - Mixed-mode debugging configured for Rust ↔ .NET
+//! - Comprehensive documentation structure in docs/
+//! - GitHub repo: https://github.com/paulmooreparks/PosKernel
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
