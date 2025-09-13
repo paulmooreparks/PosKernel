@@ -1,0 +1,10 @@
+1,1757729215992207700,1,TransactionBegin { store: "Store-USD", currency: "USD" },store:Store-USD;currency:USD,2634
+2,1757729215993110700,1,LineAdd { sku: "COFFEE", qty: 1, unit_minor: 399 },sku:COFFEE;qty:1;unit_minor:399,2681
+3,1757729215993327800,1,TenderAdd { amount_minor: 500 },amount_minor:500,1511
+4,1757729215993356700,1,TransactionCommit { final_state: "total:399,tendered:500,change:101,lines:1" },committed_at:SystemTime { intervals: 134022028159933553 },4723
+5,1757729216003676400,2,TransactionBegin { store: "Store-Japan", currency: "JPY" },store:Store-Japan;currency:JPY,2895
+6,1757729216003723800,2,LineAdd { sku: "RAMEN", qty: 1, unit_minor: 800 },sku:RAMEN;qty:1;unit_minor:800,2615
+7,1757729216003841900,2,TenderAdd { amount_minor: 1000 },amount_minor:1000,1555
+8,1757729216003857300,2,TransactionCommit { final_state: "total:800,tendered:1000,change:200,lines:1" },committed_at:SystemTime { intervals: 134022028160038551 },4709
+9,1757729216003937800,3,TransactionBegin { store: "Crypto-Store", currency: "BTC" },store:Crypto-Store;currency:BTC,3020
+10,1757729216003958900,3,LineAdd { sku: "DIGITAL_ITEM", qty: 1, unit_minor: 0 },sku:DIGITAL_ITEM;qty:1;unit_minor:0,3048
