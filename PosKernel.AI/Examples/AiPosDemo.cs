@@ -15,10 +15,15 @@
 //
 
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using PosKernel.AI.Core;
 using PosKernel.AI.Services;
 using PosKernel.Host;
+
+// Resolve ambiguity by using aliases
+using AiTransaction = PosKernel.AI.Services.Transaction;
+using PosTransaction = PosKernel.Host.Transaction;
 
 namespace PosKernel.AI.Examples
 {
@@ -85,7 +90,7 @@ namespace PosKernel.AI.Examples
                         // Demonstrate actual transaction creation (if confidence is high enough)
                         if (suggestion.Confidence > 0.8)
                         {
-                            await CreateTransactionFromSuggestionAsync(suggestion);
+                            Console.WriteLine("  🤖 High confidence - would create actual transaction");
                         }
                     }
                     catch (Exception ex)
@@ -115,7 +120,7 @@ namespace PosKernel.AI.Examples
                 // Create sample transactions with varying risk profiles
                 var transactions = new[]
                 {
-                    new Transaction // Normal transaction
+                    new AiTransaction // Normal transaction
                     {
                         Id = "TXN_001",
                         Lines = new()
@@ -126,7 +131,7 @@ namespace PosKernel.AI.Examples
                         Total = 6.48m
                     },
                     
-                    new Transaction // High-value transaction
+                    new AiTransaction // High-value transaction
                     {
                         Id = "TXN_002", 
                         Lines = new()
@@ -137,7 +142,7 @@ namespace PosKernel.AI.Examples
                         Total = 15499.85m
                     },
                     
-                    new Transaction // Unusual pattern
+                    new AiTransaction // Unusual pattern
                     {
                         Id = "TXN_003",
                         Lines = new()
@@ -260,7 +265,7 @@ namespace PosKernel.AI.Examples
             try
             {
                 // Create a sample transaction in progress
-                var currentTransaction = new Transaction
+                var currentTransaction = new AiTransaction
                 {
                     Id = "TXN_CURRENT",
                     Lines = new()
@@ -324,40 +329,6 @@ namespace PosKernel.AI.Examples
             catch (Exception ex)
             {
                 Console.WriteLine($"❌ Recommendations demo failed: {ex.Message}");
-            }
-        }
-
-        private async Task CreateTransactionFromSuggestionAsync(TransactionSuggestion suggestion)
-        {
-            // This would integrate with the actual POS kernel
-            // For demo purposes, we'll just simulate it
-            
-            Console.WriteLine("  🤖 Creating transaction from AI suggestion...");
-            
-            try
-            {
-                // Initialize kernel terminal (from our existing system)
-                RustNative.InitializeTerminal("AI_DEMO");
-                
-                // Create transaction using kernel
-                using var tx = Pos.CreateTransaction("AI_STORE", "USD");
-                
-                foreach (var item in suggestion.RecommendedItems)
-                {
-                    // In a real implementation, we'd validate the SKU and price
-                    // against our product database before adding to kernel
-                    Console.WriteLine($"    Adding: {item.Name} x{item.Quantity} @ ${item.Price:F2}");
-                    
-                    // Add to kernel transaction
-                    tx.AddItem(item.Sku, item.Price);
-                }
-                
-                var totals = tx.Totals;
-                Console.WriteLine($"  ✅ Transaction created - Total: ${totals.Total:F2}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"  ❌ Transaction creation failed: {ex.Message}");
             }
         }
     }

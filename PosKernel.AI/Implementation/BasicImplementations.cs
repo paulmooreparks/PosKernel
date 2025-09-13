@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using PosKernel.AI.Core;
 using PosKernel.AI.Services;
 
@@ -45,7 +46,7 @@ namespace PosKernel.AI.Implementation
                 new Regex(@"\b\d{3}-\d{2}-\d{4}\b"), // SSN
                 
                 // Remove excessive special characters
-                new Regex(@"[<>\"']{3,}"),
+                new Regex(@"[<>""']{3,}")
             };
         }
 
@@ -260,60 +261,56 @@ namespace PosKernel.AI.Implementation
     {
         public async Task<string> CreateTransactionPromptAsync(string userInput, TransactionContext context)
         {
-            return $"""
-                You are a POS system assistant. Parse this customer request into structured transaction items.
-                
-                Customer request: "{userInput}"
-                
-                Store context:
-                - Store ID: {context.StoreId}
-                - Currency: {context.Currency}
-                - Available categories: {string.Join(", ", context.ProductCategories)}
-                - Current time: {context.Timestamp:yyyy-MM-dd HH:mm}
-                
-                Please respond with a structured JSON format containing:
-                {{
-                  "items": [
-                    {{
-                      "sku": "product_sku",
-                      "name": "product_name", 
-                      "quantity": 1,
-                      "estimated_price": 0.00,
-                      "confidence": 0.85
-                    }}
-                  ],
-                  "total_confidence": 0.85,
-                  "warnings": ["any warnings or clarifications needed"]
-                }}
-                
-                Rules:
-                - Only suggest items that make sense for a retail/cafe environment
-                - Be conservative with quantities unless explicitly specified
-                - Include confidence scores (0-1) for each item
-                - Add warnings if the request is ambiguous
-                """;
+            return $@"You are a POS system assistant. Parse this customer request into structured transaction items.
+
+Customer request: ""{userInput}""
+
+Store context:
+- Store ID: {context.StoreId}
+- Currency: {context.Currency}
+- Available categories: {string.Join(", ", context.ProductCategories)}
+- Current time: {context.Timestamp:yyyy-MM-dd HH:mm}
+
+Please respond with a structured JSON format containing:
+{{
+  ""items"": [
+    {{
+      ""sku"": ""product_sku"",
+      ""name"": ""product_name"", 
+      ""quantity"": 1,
+      ""estimated_price"": 0.00,
+      ""confidence"": 0.85
+    }}
+  ],
+  ""total_confidence"": 0.85,
+  ""warnings"": [""any warnings or clarifications needed""]
+}}
+
+Rules:
+- Only suggest items that make sense for a retail/cafe environment
+- Be conservative with quantities unless explicitly specified
+- Include confidence scores (0-1) for each item
+- Add warnings if the request is ambiguous";
         }
 
         public async Task<string> CreateQueryPromptAsync(string query, BusinessContext businessContext)
         {
-            return $"""
-                You are a business intelligence assistant for a POS system. Answer this business query with insights and recommendations.
-                
-                Query: "{query}"
-                
-                Business context:
-                - Store ID: {businessContext.StoreId}
-                - Query period: {businessContext.QueryPeriod.Start:yyyy-MM-dd} to {businessContext.QueryPeriod.End:yyyy-MM-dd}
-                - Available metrics: {string.Join(", ", businessContext.AvailableMetrics)}
-                
-                Please provide:
-                1. A clear, actionable answer
-                2. Supporting data or reasoning
-                3. Confidence level (0-1)
-                4. Recommendations for next steps
-                
-                Keep responses concise but informative, suitable for busy retail managers.
-                """;
+            return $@"You are a business intelligence assistant for a POS system. Answer this business query with insights and recommendations.
+
+Query: ""{query}""
+
+Business context:
+- Store ID: {businessContext.StoreId}
+- Query period: {businessContext.QueryPeriod.Start:yyyy-MM-dd} to {businessContext.QueryPeriod.End:yyyy-MM-dd}
+- Available metrics: {string.Join(", ", businessContext.AvailableMetrics)}
+
+Please provide:
+1. A clear, actionable answer
+2. Supporting data or reasoning
+3. Confidence level (0-1)
+4. Recommendations for next steps
+
+Keep responses concise but informative, suitable for busy retail managers.";
         }
     }
 }
