@@ -1,0 +1,17 @@
+POS Kernel
+Copyright 2025 Paul Moore Parks and contributors
+
+This product includes software developed by:
+- Paul Moore Parks (original author and primary developer)
+
+This software contains components from or inspired by:
+- The Rust Foundation (Rust programming language and standard library)
+- Microsoft Corporation (.NET runtime and libraries)
+- The Unicode Consortium (Unicode Standard)
+- ISO (International Organization for Standardization) - Currency codes (ISO 4217)
+
+Third-party dependencies are listed in the respective package configuration files:
+- Rust dependencies: pos-kernel-rs/Cargo.toml
+- .NET dependencies: */packages.config and *.csproj files
+
+For licensing information of third-party components, see their respective LICENSE files.

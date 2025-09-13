@@ -1,9 +1,20 @@
+# Cargo.toml
+# Copyright 2025 Paul Moore Parks and contributors
+# Licensed under the Apache License, Version 2.0
+
 [package]
 name = "pos-kernel-rs"
-version = "0.0.1"
+version = "0.4.0"
+authors = ["Paul Moore Parks <paul@paulmooreparks.com>"]
 edition = "2021"
-authors = ["POS Kernel Team"]
+description = "High-performance, legally-compliant POS transaction kernel"
 license = "Apache-2.0"
+repository = "https://github.com/paulmooreparks/PosKernel"
+homepage = "https://github.com/paulmooreparks/PosKernel"
+documentation = "https://github.com/paulmooreparks/PosKernel/tree/master/docs"
+readme = "../README.md"
+keywords = ["pos", "retail", "transaction", "kernel", "ffi"]
+categories = ["api-bindings", "finance", "embedded"]
 
 [lib]
 name = "pos_kernel"
