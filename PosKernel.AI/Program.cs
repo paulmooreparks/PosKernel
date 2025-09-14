@@ -376,6 +376,10 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA:";
                         ShowOrderSummary(transaction);
                         
                         await ProcessPaymentAsync(transaction);
+                        
+                        // Print receipt after successful payment
+                        PrintReceipt(transaction);
+                        
                         Console.WriteLine("🎉 Thank you! Your payment is complete and your order is ready!");
                         Console.WriteLine("Have a wonderful day! ☕");
                         break;
@@ -398,6 +402,10 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA:";
                         if (completePurchase is "yes" or "y")
                         {
                             await ProcessPaymentAsync(transaction);
+                            
+                            // Print receipt after successful payment
+                            PrintReceipt(transaction);
+                            
                             Console.WriteLine("🎉 Perfect! Thank you and have a great day!");
                         }
                         else
@@ -657,6 +665,9 @@ Response:";
                 // Simulate payment processing
                 await ProcessPaymentAsync(transaction);
                 
+                // Print receipt after payment
+                PrintReceipt(transaction);
+                
                 Console.WriteLine("✅ **TRANSACTION COMPLETED SUCCESSFULLY!**");
                 Console.WriteLine($"🎉 AI successfully helped complete sale: ${transaction.Total.ToDecimal():F2}");
             }
@@ -860,6 +871,100 @@ Suggest ONE final item briefly and enthusiastically:";
             Console.WriteLine();
         }
 
+        private static async Task PrintServiceReceiptAsync(string sessionId, string transactionId, ISimpleServiceClient serviceClient)
+        {
+            Console.WriteLine();
+            Console.WriteLine("🖨️ **PRINTING RECEIPT VIA SERVICE**");
+            Console.WriteLine("-----------------------------------");
+            
+            try
+            {
+                Console.WriteLine("Generating receipt through POS Kernel Service...");
+                
+                var result = await serviceClient.PrintReceiptAsync(sessionId, transactionId);
+                
+                if (result.Success && result.ReceiptContent != null)
+                {
+                    Console.WriteLine("✅ Receipt printed successfully!");
+                    Console.WriteLine();
+                    Console.WriteLine("📄 **RECEIPT:**");
+                    Console.WriteLine(result.ReceiptContent);
+                    Console.WriteLine($"🕐 Printed at: {result.PrintedAt:yyyy-MM-dd HH:mm:ss}");
+                    Console.WriteLine($"🖨️ Printer Status: {result.PrinterStatus}");
+                }
+                else
+                {
+                    Console.WriteLine($"❌ Receipt printing failed: {result.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Receipt printing error: {ex.Message}");
+            }
+            
+            Console.WriteLine();
+        }
+
+        private static void PrintReceipt(Transaction transaction)
+        {
+            Console.WriteLine();
+            Console.WriteLine("🖨️ **PRINTING RECEIPT**");
+            Console.WriteLine("-----------------------");
+            
+            var now = DateTime.Now;
+            
+            var receipt = new StringBuilder();
+            
+            // Header
+            receipt.AppendLine("════════════════════════════════");
+            receipt.AppendLine("        IN-PROCESS COFFEE");
+            receipt.AppendLine("   Powered by POS Kernel Core");
+            receipt.AppendLine("════════════════════════════════");
+            receipt.AppendLine();
+            receipt.AppendLine($"Date: {now:yyyy-MM-dd}");
+            receipt.AppendLine($"Time: {now:HH:mm:ss}");
+            receipt.AppendLine($"Transaction: {transaction.Id}");
+            receipt.AppendLine($"State: {transaction.State}");
+            receipt.AppendLine();
+            receipt.AppendLine("────────────────────────────────");
+            
+            // Line items
+            foreach (var line in transaction.Lines)
+            {
+                receipt.AppendLine($"{line.ProductId}");
+                receipt.AppendLine($"  {line.Quantity} x ${line.UnitPrice.ToDecimal():F2} = ${line.Extended.ToDecimal():F2}");
+            }
+            
+            receipt.AppendLine("────────────────────────────────");
+            receipt.AppendLine($"SUBTOTAL:        ${transaction.Total.ToDecimal():F2}");
+            receipt.AppendLine($"TAX:             ${0:F2}");
+            receipt.AppendLine($"TOTAL:           ${transaction.Total.ToDecimal():F2}");
+            receipt.AppendLine();
+            receipt.AppendLine($"PAYMENT (CASH):  ${transaction.Tendered.ToDecimal():F2}");
+            
+            var change = transaction.Tendered.ToDecimal() - transaction.Total.ToDecimal();
+            if (change > 0)
+            {
+                receipt.AppendLine($"CHANGE:          ${change:F2}");
+            }
+            
+            receipt.AppendLine();
+            receipt.AppendLine("════════════════════════════════");
+            receipt.AppendLine("       THANK YOU!");
+            receipt.AppendLine("   🏗️ In-Process Architecture");
+            receipt.AppendLine("   🧠 AI-Powered Experience");
+            receipt.AppendLine("   ☕ Direct Kernel Access");
+            receipt.AppendLine("════════════════════════════════");
+            receipt.AppendLine($"Printed: {now:yyyy-MM-dd HH:mm:ss}");
+            
+            Console.WriteLine("✅ Receipt printed successfully!");
+            Console.WriteLine();
+            Console.WriteLine("📄 **RECEIPT:**");
+            Console.WriteLine(receipt.ToString());
+            Console.WriteLine($"🕐 Printed at: {now:yyyy-MM-dd HH:mm:ss}");
+            Console.WriteLine();
+        }
+
         private static async Task RunServiceBasedAiChatAsync()
         {
             Console.WriteLine("🏪 SERVICE-BASED AI BARISTA CHAT");
@@ -985,7 +1090,7 @@ Suggest ONE final item briefly and enthusiastically:";
                     conversationHistory.Add($"Customer: {userInput}");
                     
                     // Build conversation context for AI
-                    var conversationContext = string.Join("\n", conversationHistory.TakeLast(8));
+                    var conversationContext = string.Join("\n", conversationHistory.TakeLast(8)); // Last 8 exchanges including system
                     var currentTotal = currentTransaction.Success ? currentTransaction.Total : 0m;
 
                     // Enhanced prompt with service architecture context
@@ -1052,6 +1157,10 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH SERVICE ARCHITECTURE:";
                                 await ShowServiceOrderSummaryAsync(sessionId, transactionId, serviceClient);
                                 
                                 await ProcessServicePaymentAsync(sessionId, transactionId, finalTransaction.Total, serviceClient);
+                                
+                                // Print receipt after successful payment
+                                await PrintServiceReceiptAsync(sessionId, transactionId, serviceClient);
+                                
                                 Console.WriteLine("🎉 Thank you! Your payment is complete and your order is ready!");
                                 Console.WriteLine("✨ Powered by POS Kernel Service Architecture!");
                                 Console.WriteLine("Have a wonderful day! ☕");
@@ -1077,6 +1186,10 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH SERVICE ARCHITECTURE:";
                                 if (completePurchase is "yes" or "y")
                                 {
                                     await ProcessServicePaymentAsync(sessionId, transactionId, finalTransaction.Total, serviceClient);
+                                    
+                                    // Print receipt after successful payment
+                                    await PrintServiceReceiptAsync(sessionId, transactionId, serviceClient);
+                                    
                                     Console.WriteLine("🎉 Perfect! Thank you and have a great day!");
                                 }
                                 else

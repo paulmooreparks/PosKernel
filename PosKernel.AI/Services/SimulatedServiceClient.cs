@@ -15,6 +15,7 @@
 //
 
 using Microsoft.Extensions.Logging;
+using System.Text;
 using System.Text.Json;
 
 namespace PosKernel.AI.Services
@@ -34,6 +35,7 @@ namespace PosKernel.AI.Services
         Task<ServiceTransactionResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default);
         Task<ServiceTransactionResult> ProcessPaymentAsync(string sessionId, string transactionId, decimal amount, string paymentType = "cash", CancellationToken cancellationToken = default);
         Task<ServiceTransactionResult> GetTransactionAsync(string sessionId, string transactionId, CancellationToken cancellationToken = default);
+        Task<ReceiptResult> PrintReceiptAsync(string sessionId, string transactionId, CancellationToken cancellationToken = default);
         Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default);
     }
 
@@ -49,6 +51,18 @@ namespace PosKernel.AI.Services
         public decimal Total { get; set; }
         public string State { get; set; } = "";
         public object? Data { get; set; }
+    }
+
+    /// <summary>
+    /// Result of a receipt printing operation.
+    /// </summary>
+    public class ReceiptResult
+    {
+        public bool Success { get; set; }
+        public string? Error { get; set; }
+        public string? ReceiptContent { get; set; }
+        public string? PrinterStatus { get; set; }
+        public DateTime PrintedAt { get; set; }
     }
 
     /// <summary>
@@ -305,6 +319,45 @@ namespace PosKernel.AI.Services
             };
         }
 
+        public async Task<ReceiptResult> PrintReceiptAsync(string sessionId, string transactionId, CancellationToken cancellationToken = default)
+        {
+            ThrowIfNotConnected();
+            
+            if (!_sessions.ContainsKey(sessionId))
+            {
+                return new ReceiptResult 
+                { 
+                    Success = false, 
+                    Error = $"Invalid session: {sessionId}" 
+                };
+            }
+
+            if (!_transactions.TryGetValue(transactionId, out var transaction))
+            {
+                return new ReceiptResult 
+                { 
+                    Success = false, 
+                    Error = $"Transaction not found: {transactionId}" 
+                };
+            }
+
+            // Generate receipt content
+            var receiptContent = GenerateReceipt(transaction, sessionId, transactionId);
+            
+            _logger.LogInformation("🖨️ Receipt printed for transaction {TransactionId} in session {SessionId}", 
+                transactionId, sessionId);
+            
+            await Task.Delay(100, cancellationToken); // Simulate printing delay
+
+            return new ReceiptResult
+            {
+                Success = true,
+                ReceiptContent = receiptContent,
+                PrinterStatus = "Ready",
+                PrintedAt = DateTime.Now
+            };
+        }
+
         public async Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {
             ThrowIfNotConnected();
@@ -325,6 +378,74 @@ namespace PosKernel.AI.Services
             _logger.LogInformation("✅ Session closed: {SessionId}", sessionId);
             
             await Task.Delay(10, cancellationToken); // Simulate service delay
+        }
+
+        private string GenerateReceipt(ServiceTransactionState transaction, string sessionId, string transactionId)
+        {
+            var receipt = new StringBuilder();
+            var now = DateTime.Now;
+            
+            // Header
+            receipt.AppendLine("════════════════════════════════");
+            receipt.AppendLine("       SERVICE-BASED COFFEE");
+            receipt.AppendLine("    Powered by POS Kernel Service");
+            receipt.AppendLine("════════════════════════════════");
+            receipt.AppendLine();
+            receipt.AppendLine($"Date: {now:yyyy-MM-dd}");
+            receipt.AppendLine($"Time: {now:HH:mm:ss}");
+            receipt.AppendLine($"Transaction: {transactionId}");
+            receipt.AppendLine($"Session: {sessionId}");
+            receipt.AppendLine();
+            receipt.AppendLine("────────────────────────────────");
+            
+            // Line items
+            var total = 0m;
+            foreach (var item in transaction.Items)
+            {
+                var itemName = GetProductDisplayName(item.ProductId);
+                receipt.AppendLine($"{itemName}");
+                receipt.AppendLine($"  {item.Quantity} x ${item.UnitPrice:F2} = ${item.Extended:F2}");
+                total += item.Extended;
+            }
+            
+            receipt.AppendLine("────────────────────────────────");
+            receipt.AppendLine($"SUBTOTAL:        ${total:F2}");
+            receipt.AppendLine($"TAX:             ${0:F2}");
+            receipt.AppendLine($"TOTAL:           ${total:F2}");
+            receipt.AppendLine();
+            receipt.AppendLine($"PAYMENT ({transaction.PaymentType.ToUpper()}): ${transaction.PaymentAmount:F2}");
+            
+            var change = transaction.PaymentAmount - total;
+            if (change > 0)
+            {
+                receipt.AppendLine($"CHANGE:          ${change:F2}");
+            }
+            
+            receipt.AppendLine();
+            receipt.AppendLine("════════════════════════════════");
+            receipt.AppendLine("       THANK YOU!");
+            receipt.AppendLine("   🏗️ Enterprise Architecture");
+            receipt.AppendLine("   🔗 Session-Based Management");
+            receipt.AppendLine("   ☕ AI-Powered Service");
+            receipt.AppendLine("════════════════════════════════");
+            receipt.AppendLine($"Printed: {now:yyyy-MM-dd HH:mm:ss}");
+            
+            return receipt.ToString();
+        }
+
+        private string GetProductDisplayName(string productId)
+        {
+            return productId switch
+            {
+                "COFFEE_SM" => "Small Coffee",
+                "COFFEE_MD" => "Medium Coffee", 
+                "COFFEE_LG" => "Large Coffee",
+                "LATTE" => "Caffe Latte",
+                "CAPPUCCINO" => "Cappuccino",
+                "MUFFIN_BLUEBERRY" => "Blueberry Muffin",
+                "BREAKFAST_SANDWICH" => "Breakfast Sandwich",
+                _ => productId
+            };
         }
 
         private void ThrowIfNotConnected()
