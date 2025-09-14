@@ -353,7 +353,7 @@ namespace PosKernel.Extensions.Restaurant
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                var sku = reader.GetString("sku");
+                var sku = reader.GetString(0); // "sku" column
                 var result = _extension.ValidateProduct(sku, context);
                 if (result.IsValid)
                 {
@@ -394,7 +394,7 @@ namespace PosKernel.Extensions.Restaurant
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                var sku = reader.GetString("sku");
+                var sku = reader.GetString(0); // "sku" column
                 var result = _extension.ValidateProduct(sku, context);
                 if (result.IsValid)
                 {
@@ -447,7 +447,7 @@ namespace PosKernel.Extensions.Restaurant
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                var sku = reader.GetString("sku");
+                var sku = reader.GetString(0); // "sku" column
                 var result = _extension.ValidateProduct(sku, context);
                 if (result.IsValid)
                 {
@@ -483,13 +483,19 @@ namespace PosKernel.Extensions.Restaurant
             if (parameters == null) return context;
 
             if (parameters.TryGetValue("store_id", out var storeIdElement))
+            {
                 context.StoreId = storeIdElement.GetString() ?? context.StoreId;
+            }
 
             if (parameters.TryGetValue("terminal_id", out var terminalIdElement))
+            {
                 context.TerminalId = terminalIdElement.GetString() ?? context.TerminalId;
+            }
 
             if (parameters.TryGetValue("operator_id", out var operatorIdElement))
+            {
                 context.OperatorId = operatorIdElement.GetString() ?? context.OperatorId;
+            }
 
             return context;
         }

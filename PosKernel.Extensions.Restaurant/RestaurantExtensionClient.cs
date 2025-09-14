@@ -54,7 +54,9 @@ namespace PosKernel.Extensions.Restaurant.Client
             lock (_lock)
             {
                 if (_client?.IsConnected == true)
+                {
                     return;
+                }
 
                 // Dispose existing connection if any
                 _reader?.Dispose();
@@ -261,7 +263,9 @@ namespace PosKernel.Extensions.Restaurant.Client
         private async Task<ExtensionResponse> SendRequestAsync(ExtensionRequest request, CancellationToken cancellationToken)
         {
             if (_writer == null || _reader == null)
+            {
                 throw new InvalidOperationException("Not connected to restaurant extension service");
+            }
 
             try
             {
@@ -272,7 +276,9 @@ namespace PosKernel.Extensions.Restaurant.Client
 
                 var responseJson = await _reader.ReadLineAsync(cancellationToken);
                 if (responseJson == null)
+                {
                     throw new InvalidOperationException("Connection closed by restaurant extension service");
+                }
 
                 _logger.LogDebug("Received response: {Response}", responseJson);
 
@@ -303,6 +309,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             {
                 if (_client?.IsConnected == true)
                 {
+                    // Create a simple disconnect message
                     var disconnectMessage = new
                     {
                         id = Guid.NewGuid().ToString(),
@@ -311,24 +318,21 @@ namespace PosKernel.Extensions.Restaurant.Client
                         @params = new { }
                     };
 
-                    await SendMessageAsync(JsonSerializer.Serialize(disconnectMessage));
+                    // Send disconnect message using the writer if available
+                    if (_writer != null)
+                    {
+                        await _writer.WriteLineAsync(JsonSerializer.Serialize(disconnectMessage));
+                    }
                 }
 
-                if (_stream != null)
-                {
-                    await _stream.DisposeAsync();
-                    _stream = null;
-                }
-
-                if (_client != null)
-                {
-                    _client.Close();
-                    _client = null;
-                }
-
+                // Clean up resources
+                _writer?.Dispose();
+                _reader?.Dispose();
+                _client?.Close();
+                
                 _writer = null;
                 _reader = null;
-                IsConnected = false;
+                _client = null;
                 
                 _logger?.LogInformation("Disconnected from restaurant extension service");
             }
