@@ -37,6 +37,10 @@ namespace PosKernel.AI.Services
         private readonly string _databasePath;
         private bool _disposed = false;
 
+        /// <summary>
+        /// Initializes a new instance of the RestaurantProductCatalogService.
+        /// </summary>
+        /// <param name="logger">Logger instance for diagnostics and debugging.</param>
         public RestaurantProductCatalogService(ILogger<RestaurantProductCatalogService> logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -76,6 +80,13 @@ namespace PosKernel.AI.Services
             _logger.LogInformation("Restaurant product catalog service initialized with database: {DatabasePath}", _databasePath);
         }
 
+        /// <summary>
+        /// Validates that a product exists in the catalog and is available for sale.
+        /// </summary>
+        /// <param name="productId">The product identifier to validate.</param>
+        /// <param name="context">Context information for the product lookup operation.</param>
+        /// <param name="cancellationToken">Token to cancel the operation if needed.</param>
+        /// <returns>A validation result containing product information if valid.</returns>
         public async Task<ProductValidationResult> ValidateProductAsync(
             string productId, 
             ProductLookupContext context,
@@ -148,6 +159,13 @@ namespace PosKernel.AI.Services
             }
         }
 
+        /// <summary>
+        /// Searches for products matching the specified search term.
+        /// </summary>
+        /// <param name="searchTerm">The term to search for in product names, descriptions, and SKUs.</param>
+        /// <param name="maxResults">Maximum number of results to return.</param>
+        /// <param name="cancellationToken">Token to cancel the operation if needed.</param>
+        /// <returns>A list of products matching the search criteria.</returns>
         public async Task<IReadOnlyList<IProductInfo>> SearchProductsAsync(
             string searchTerm, 
             int maxResults = 50,
@@ -209,6 +227,11 @@ namespace PosKernel.AI.Services
             }
         }
 
+        /// <summary>
+        /// Gets the most popular items from the restaurant catalog.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation if needed.</param>
+        /// <returns>A list of popular products ordered by popularity rank.</returns>
         public async Task<IReadOnlyList<IProductInfo>> GetPopularItemsAsync(CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
@@ -264,6 +287,12 @@ namespace PosKernel.AI.Services
             }
         }
 
+        /// <summary>
+        /// Gets all products in a specific category.
+        /// </summary>
+        /// <param name="category">The category name or ID to filter by.</param>
+        /// <param name="cancellationToken">Token to cancel the operation if needed.</param>
+        /// <returns>A list of products in the specified category.</returns>
         public async Task<IReadOnlyList<IProductInfo>> GetProductsByCategoryAsync(
             string category, 
             CancellationToken cancellationToken = default)
@@ -321,6 +350,11 @@ namespace PosKernel.AI.Services
             }
         }
 
+        /// <summary>
+        /// Gets all available product categories from the restaurant catalog.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation if needed.</param>
+        /// <returns>A list of active category names.</returns>
         public async Task<IReadOnlyList<string>> GetCategoriesAsync(CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();
@@ -423,6 +457,9 @@ namespace PosKernel.AI.Services
             }
         }
 
+        /// <summary>
+        /// Disposes the database connection and releases all resources.
+        /// </summary>
         public void Dispose()
         {
             if (!_disposed)
@@ -438,12 +475,39 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class RestaurantProductInfo : IProductInfo
     {
+        /// <summary>
+        /// Gets or sets the product SKU (stock keeping unit).
+        /// </summary>
         public string Sku { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the product display name.
+        /// </summary>
         public string Name { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the product description.
+        /// </summary>
         public string Description { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the product category name.
+        /// </summary>
         public string Category { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the base price in cents.
+        /// </summary>
         public long BasePriceCents { get; set; }
+        
+        /// <summary>
+        /// Gets or sets whether the product is currently active and available for sale.
+        /// </summary>
         public bool IsActive { get; set; }
+        
+        /// <summary>
+        /// Gets or sets additional product attributes specific to the restaurant domain.
+        /// </summary>
         public Dictionary<string, object> Attributes { get; set; } = new();
         
         IReadOnlyDictionary<string, object> IProductInfo.Attributes => Attributes;

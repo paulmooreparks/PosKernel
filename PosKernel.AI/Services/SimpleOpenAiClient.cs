@@ -32,6 +32,13 @@ namespace PosKernel.AI.Services
         private readonly string _model;
         private readonly double _temperature;
 
+        /// <summary>
+        /// Initializes a new instance of the SimpleOpenAiClient.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="apiKey">OpenAI API key for authentication.</param>
+        /// <param name="model">The AI model to use (e.g., "gpt-4o", "gpt-3.5-turbo").</param>
+        /// <param name="temperature">Controls randomness in responses (0.0 = deterministic, 2.0 = very random).</param>
         public SimpleOpenAiClient(ILogger<SimpleOpenAiClient> logger, string apiKey, string model = "gpt-4o", double temperature = 0.2)
         {
             _httpClient = new HttpClient();
@@ -46,6 +53,12 @@ namespace PosKernel.AI.Services
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "PosKernel/0.4.0");
         }
 
+        /// <summary>
+        /// Sends a completion request to the OpenAI API and returns the response.
+        /// </summary>
+        /// <param name="prompt">The prompt to send to the AI model.</param>
+        /// <param name="cancellationToken">Token to cancel the operation if needed.</param>
+        /// <returns>The AI-generated response text.</returns>
         public async Task<string> CompleteAsync(string prompt, CancellationToken cancellationToken = default)
         {
             try
@@ -89,6 +102,9 @@ namespace PosKernel.AI.Services
             }
         }
 
+        /// <summary>
+        /// Disposes the HTTP client and releases all resources.
+        /// </summary>
         public void Dispose()
         {
             _httpClient?.Dispose();
