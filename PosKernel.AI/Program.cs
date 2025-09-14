@@ -55,6 +55,10 @@ namespace PosKernel.AI
                         await RunServiceBasedAiChatAsync();
                         break;
 
+                    case DemoType.RealService:
+                        await RunRealServiceAiChatAsync();
+                        break;
+
                     case DemoType.ServiceDemo:
                         await RunServiceArchitectureDemoAsync();
                         break;
@@ -698,278 +702,12 @@ Suggest ONE final item briefly and enthusiastically:";
             Console.WriteLine();
         }
 
-        private static async Task RunRealisticSalesDemoAsync()
+        private static async Task RunRealServiceAiChatAsync()
         {
-            var services = new ServiceCollection();
-            services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
-            services.AddSingleton<IProductCatalogService, RestaurantProductCatalogService>();
-            services.AddSingleton<RealisticAiSalesDemo>();
-
-            using var serviceProvider = services.BuildServiceProvider();
-            var demo = serviceProvider.GetRequiredService<RealisticAiSalesDemo>();
-            await demo.RunRealisticDemoAsync();
-        }
-
-        private static async Task RunBasicAiDemoAsync()
-        {
-            var services = new ServiceCollection();
-            services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
-            services.AddSingleton<PosAiService>();
-            services.AddSingleton<AiPosDemo>();
-
-            using var serviceProvider = services.BuildServiceProvider();
-            var demo = serviceProvider.GetRequiredService<AiPosDemo>();
-            await demo.RunDemoAsync();
-        }
-
-        private static DemoType ParseDemoType(string[] args)
-        {
-            if (args.Length == 0)
-            {
-                return DemoType.Interactive; // Default to interactive mode
-            }
-
-            var arg = args[0].ToLowerInvariant();
-            return arg switch
-            {
-                "--interactive" or "--chat" or "-i" => DemoType.Interactive,
-                "--service-based" or "--service" or "-sb" => DemoType.ServiceBased,
-                "--architecture" or "--demo" or "-a" => DemoType.ServiceDemo,
-                "--live" or "--real" or "-l" => DemoType.LiveAi,
-                "--realistic" or "-r" => DemoType.RealisticSales,
-                "--basic" or "-b" => DemoType.BasicAiPos,
-                "--help" or "-h" => DemoType.Help,
-                _ => DemoType.Invalid
-            };
-        }
-
-        private static void ShowHelp()
-        {
-            Console.WriteLine("Usage: dotnet run [options]");
-            Console.WriteLine();
-            Console.WriteLine("Options:");
-            Console.WriteLine("  --interactive, --chat, -i   💬 Interactive AI Barista Chat (Phase 1) - DEFAULT");
-            Console.WriteLine("  --service-based, --service  🏪 Service-Based AI Chat (Phase 2) - NEW!");
-            Console.WriteLine("  --architecture, --demo, -a  📊 Service Architecture Demo (Overview)");
-            Console.WriteLine("  --live, --real, -l          🔥 Run LIVE AI Sales Process with Kernel Integration");
-            Console.WriteLine("  --realistic, -r             Run realistic AI sales demo with mock responses");
-            Console.WriteLine("  --basic, -b                 Run basic AI-POS integration demo");  
-            Console.WriteLine("  --help, -h                  Show this help message");
-            Console.WriteLine();
-            Console.WriteLine("💬 Interactive AI Barista Chat (Phase 1 - WORKING):");
-            Console.WriteLine("  • In-process architecture with direct kernel access");
-            Console.WriteLine("  • Real OpenAI integration with restaurant extension SQLite database");
-            Console.WriteLine("  • Natural language: 'I want coffee' → AI processes → Real transactions");
-            Console.WriteLine("  • Uses RestaurantProductCatalogService directly");
-            Console.WriteLine();
-            Console.WriteLine("🏪 Service-Based AI Chat (Phase 2 - NEW & WORKING!):");
-            Console.WriteLine("  • Service-oriented architecture with session management");
-            Console.WriteLine("  • Demonstrates client-service communication patterns");
-            Console.WriteLine("  • Multi-terminal capable, enterprise-grade design");
-            Console.WriteLine("  • Session-based transaction management");
-            Console.WriteLine("  • Same AI conversation experience via service layer");
-            Console.WriteLine();
-            Console.WriteLine("📊 Service Architecture Demo (Framework Overview):");
-            Console.WriteLine("  • Shows complete service architecture design and benefits");
-            Console.WriteLine("  • Simulates multi-terminal operations and health monitoring");
-            Console.WriteLine("  • Explains enterprise features and deployment scenarios");
-            Console.WriteLine();
-            Console.WriteLine("🚀 Architecture Evolution:");
-            Console.WriteLine("   Phase 1 ✅: Domain Extensions + AI Integration (In-Process)");
-            Console.WriteLine("   Phase 2 ✅: Service Architecture + Session Management (Service-Based)");
-            Console.WriteLine();
-            Console.WriteLine("💡 Try the new service-based mode:");
-            Console.WriteLine("   dotnet run -- --service-based");
-        }
-
-        private static async Task<bool> ProcessAiRecommendationsAsync(string aiResponse, Transaction transaction, IReadOnlyList<IProductInfo> availableProducts)
-        {
-            bool itemsAdded = false;
-            
-            // Look for ADDING: pattern in AI response
-            var lines = aiResponse.Split('\n');
-            foreach (var line in lines)
-            {
-                if (line.Contains("ADDING:"))
-                {
-                    try
-                    {
-                        var addingPart = line.Substring(line.IndexOf("ADDING:") + 7).Trim();
-                        var parts = addingPart.Split('-');
-                        if (parts.Length >= 2)
-                        {
-                            var itemName = parts[0].Trim();
-                            var priceText = parts[1].Trim().Replace("$", "");
-                            
-                            if (decimal.TryParse(priceText, out var price))
-                            {
-                                // Find matching product
-                                var product = availableProducts.FirstOrDefault(p => 
-                                    p.Name.Contains(itemName, StringComparison.OrdinalIgnoreCase) ||
-                                    itemName.Contains(p.Name, StringComparison.OrdinalIgnoreCase));
-                                
-                                if (product != null)
-                                {
-                                    // Add to transaction using kernel contracts
-                                    var productId = new ProductId(product.Sku);
-                                    var unitPrice = new Money(product.BasePriceCents, transaction.Currency);
-                                    
-                                    transaction.AddLine(productId, 1, unitPrice);
-                                    Console.WriteLine($"  ➕ Added {product.Name} - ${product.BasePriceCents / 100.0:F2}");
-                                    itemsAdded = true;
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"  ⚠️ Had trouble adding that item: {ex.Message}");
-                    }
-                }
-            }
-
-            return itemsAdded;
-        }
-
-        private static void ShowOrderSummary(Transaction transaction)
-        {
-            Console.WriteLine();
-            Console.WriteLine("🧾 **YOUR CURRENT ORDER**");
-            Console.WriteLine("========================");
-            
-            if (!transaction.Lines.Any())
-            {
-                Console.WriteLine("Your cart is empty.");
-            }
-            else
-            {
-                foreach (var line in transaction.Lines)
-                {
-                    Console.WriteLine($"• {line.ProductId} - ${line.UnitPrice.ToDecimal():F2} x {line.Quantity} = ${line.Extended.ToDecimal():F2}");
-                }
-                Console.WriteLine($"\n**TOTAL: ${transaction.Total.ToDecimal():F2}**");
-            }
-            Console.WriteLine();
-        }
-
-        private static async Task ProcessPaymentAsync(Transaction transaction)
-        {
-            Console.WriteLine("💳 **PROCESSING PAYMENT**");
-            Console.WriteLine("------------------------");
-            
-            var paymentAmount = new Money(transaction.Total.MinorUnits, transaction.Currency);
-            
-            Console.WriteLine($"Payment Amount: ${transaction.Total.ToDecimal():F2}");
-            Console.WriteLine("Processing...");
-            
-            await Task.Delay(1000);
-            
-            transaction.AddCashTender(paymentAmount);
-            
-            Console.WriteLine($"✅ Payment Processed Successfully!");
-            Console.WriteLine($"📊 Final Status: {transaction.State}");
-            Console.WriteLine();
-        }
-
-        private static async Task PrintServiceReceiptAsync(string sessionId, string transactionId, ISimpleServiceClient serviceClient)
-        {
-            Console.WriteLine();
-            Console.WriteLine("🖨️ **PRINTING RECEIPT VIA SERVICE**");
-            Console.WriteLine("-----------------------------------");
-            
-            try
-            {
-                Console.WriteLine("Generating receipt through POS Kernel Service...");
-                
-                var result = await serviceClient.PrintReceiptAsync(sessionId, transactionId);
-                
-                if (result.Success && result.ReceiptContent != null)
-                {
-                    Console.WriteLine("✅ Receipt printed successfully!");
-                    Console.WriteLine();
-                    Console.WriteLine("📄 **RECEIPT:**");
-                    Console.WriteLine(result.ReceiptContent);
-                    Console.WriteLine($"🕐 Printed at: {result.PrintedAt:yyyy-MM-dd HH:mm:ss}");
-                    Console.WriteLine($"🖨️ Printer Status: {result.PrinterStatus}");
-                }
-                else
-                {
-                    Console.WriteLine($"❌ Receipt printing failed: {result.Error}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Receipt printing error: {ex.Message}");
-            }
-            
-            Console.WriteLine();
-        }
-
-        private static void PrintReceipt(Transaction transaction)
-        {
-            Console.WriteLine();
-            Console.WriteLine("🖨️ **PRINTING RECEIPT**");
-            Console.WriteLine("-----------------------");
-            
-            var now = DateTime.Now;
-            
-            var receipt = new StringBuilder();
-            
-            // Header
-            receipt.AppendLine("════════════════════════════════");
-            receipt.AppendLine("        IN-PROCESS COFFEE");
-            receipt.AppendLine("   Powered by POS Kernel Core");
-            receipt.AppendLine("════════════════════════════════");
-            receipt.AppendLine();
-            receipt.AppendLine($"Date: {now:yyyy-MM-dd}");
-            receipt.AppendLine($"Time: {now:HH:mm:ss}");
-            receipt.AppendLine($"Transaction: {transaction.Id}");
-            receipt.AppendLine($"State: {transaction.State}");
-            receipt.AppendLine();
-            receipt.AppendLine("────────────────────────────────");
-            
-            // Line items
-            foreach (var line in transaction.Lines)
-            {
-                receipt.AppendLine($"{line.ProductId}");
-                receipt.AppendLine($"  {line.Quantity} x ${line.UnitPrice.ToDecimal():F2} = ${line.Extended.ToDecimal():F2}");
-            }
-            
-            receipt.AppendLine("────────────────────────────────");
-            receipt.AppendLine($"SUBTOTAL:        ${transaction.Total.ToDecimal():F2}");
-            receipt.AppendLine($"TAX:             ${0:F2}");
-            receipt.AppendLine($"TOTAL:           ${transaction.Total.ToDecimal():F2}");
-            receipt.AppendLine();
-            receipt.AppendLine($"PAYMENT (CASH):  ${transaction.Tendered.ToDecimal():F2}");
-            
-            var change = transaction.Tendered.ToDecimal() - transaction.Total.ToDecimal();
-            if (change > 0)
-            {
-                receipt.AppendLine($"CHANGE:          ${change:F2}");
-            }
-            
-            receipt.AppendLine();
-            receipt.AppendLine("════════════════════════════════");
-            receipt.AppendLine("       THANK YOU!");
-            receipt.AppendLine("   🏗️ In-Process Architecture");
-            receipt.AppendLine("   🧠 AI-Powered Experience");
-            receipt.AppendLine("   ☕ Direct Kernel Access");
-            receipt.AppendLine("════════════════════════════════");
-            receipt.AppendLine($"Printed: {now:yyyy-MM-dd HH:mm:ss}");
-            
-            Console.WriteLine("✅ Receipt printed successfully!");
-            Console.WriteLine();
-            Console.WriteLine("📄 **RECEIPT:**");
-            Console.WriteLine(receipt.ToString());
-            Console.WriteLine($"🕐 Printed at: {now:yyyy-MM-dd HH:mm:ss}");
-            Console.WriteLine();
-        }
-
-        private static async Task RunServiceBasedAiChatAsync()
-        {
-            Console.WriteLine("🏪 SERVICE-BASED AI BARISTA CHAT");
-            Console.WriteLine("================================");
-            Console.WriteLine("Using POS Kernel Service Architecture (Phase 2)");
+            Console.WriteLine("🚀 REAL SERVICE AI BARISTA CHAT");
+            Console.WriteLine("===============================");
+            Console.WriteLine("Using ACTUAL POS Kernel Service Architecture (Phase 3)");
+            Console.WriteLine("Multi-Process Communication via Named Pipes");
             Console.WriteLine();
 
             // Load API key from environment file
@@ -985,10 +723,12 @@ Suggest ONE final item briefly and enthusiastically:";
             Console.WriteLine($"✅ API key loaded from environment (ends with: ...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))})");
             Console.WriteLine();
 
-            // Set up services for service-based architecture
+            // Set up services for REAL service architecture
             var services = new ServiceCollection();
             services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
-            services.AddSingleton<ISimpleServiceClient, SimulatedServiceClient>();
+            
+            // Use the demo real service client (in production this would use actual PosKernel.Client)
+            services.AddSingleton<ISimpleServiceClient, RealServiceClient>();
             
             using var serviceProvider = services.BuildServiceProvider();
             var logger = serviceProvider.GetRequiredService<ILogger<SimpleOpenAiClient>>();
@@ -997,25 +737,40 @@ Suggest ONE final item briefly and enthusiastically:";
             // Create OpenAI client
             using var aiClient = new SimpleOpenAiClient(logger, apiKey, "gpt-4o", 0.2);
 
-            Console.WriteLine("🔗 Connecting to POS Kernel Service...");
+            Console.WriteLine("🔗 Connecting to REAL POS Kernel Service via Named Pipes...");
+            Console.WriteLine("💡 This requires PosKernel.Service to be running in another process!");
+            Console.WriteLine("   Start with: cd PosKernel.Service && dotnet run -- --console");
+            Console.WriteLine();
             
             try
             {
-                await serviceClient.ConnectAsync();
-                Console.WriteLine("✅ Connected to POS Kernel Service successfully!");
-                Console.WriteLine("💡 This demo uses a simulated service client for demonstration.");
-                Console.WriteLine("   In production, this would connect to the actual PosKernel.Service via Named Pipes.");
+                var connected = await serviceClient.ConnectAsync();
+                if (!connected)
+                {
+                    Console.WriteLine("❌ Failed to connect to POS Kernel Service!");
+                    Console.WriteLine();
+                    Console.WriteLine("🔧 To run the real service architecture:");
+                    Console.WriteLine("   1. Open another terminal");
+                    Console.WriteLine("   2. cd PosKernel.Service");
+                    Console.WriteLine("   3. dotnet run -- --console");
+                    Console.WriteLine("   4. Wait for 'Named Pipe Server listening' message");
+                    Console.WriteLine("   5. Run this demo again");
+                    return;
+                }
+                
+                Console.WriteLine("✅ Connected to REAL POS Kernel Service successfully!");
+                Console.WriteLine("🚀 TRUE multi-process architecture active!");
                 Console.WriteLine();
 
-                // Start service-based interactive chat session
-                await RunServiceBasedChatSessionAsync(aiClient, serviceClient);
+                // Start REAL service-based interactive chat session
+                await RunRealServiceChatSessionAsync(aiClient, serviceClient);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to connect to POS Kernel Service: {ex.Message}");
+                Console.WriteLine($"❌ Failed to connect to REAL POS Kernel Service: {ex.Message}");
                 Console.WriteLine();
-                Console.WriteLine("💡 This demo uses a simulated service client for demonstration purposes.");
-                throw;
+                Console.WriteLine("🔧 Make sure PosKernel.Service is running:");
+                Console.WriteLine("   cd PosKernel.Service && dotnet run -- --console");
             }
             finally
             {
@@ -1023,32 +778,34 @@ Suggest ONE final item briefly and enthusiastically:";
             }
         }
 
-        private static async Task RunServiceBasedChatSessionAsync(SimpleOpenAiClient aiClient, ISimpleServiceClient serviceClient)
+        private static async Task RunRealServiceChatSessionAsync(SimpleOpenAiClient aiClient, ISimpleServiceClient serviceClient)
         {
-            Console.WriteLine("☕ **WELCOME TO OUR SERVICE-BASED COFFEE SHOP!**");
-            Console.WriteLine("I'm your AI barista powered by POS Kernel Service Architecture!");
-            Console.WriteLine("=============================================================");
+            Console.WriteLine("☕ **WELCOME TO OUR REAL SERVICE COFFEE SHOP!**");
+            Console.WriteLine("I'm your AI barista powered by ACTUAL POS Kernel Service!");
+            Console.WriteLine("🚀 Multi-Process Architecture with Named Pipe Communication!");
+            Console.WriteLine("===========================================================");
             Console.WriteLine();
 
             try
             {
-                // Create session through service
+                // Create session through REAL service
                 var sessionId = await serviceClient.CreateSessionAsync("ai-demo-terminal", "ai-barista");
-                Console.WriteLine($"🔗 Session created: {sessionId}");
+                Console.WriteLine($"🔗 REAL Session created: {sessionId}");
                 
-                // Start transaction through service
+                // Start transaction through REAL service
                 var transactionResult = await serviceClient.StartTransactionAsync(sessionId);
                 if (!transactionResult.Success)
                 {
-                    Console.WriteLine($"❌ Failed to start transaction: {transactionResult.Error}");
+                    Console.WriteLine($"❌ Failed to start REAL transaction: {transactionResult.Error}");
                     return;
                 }
 
                 var transactionId = transactionResult.TransactionId!;
-                Console.WriteLine($"💼 Transaction started: {transactionId}");
+                Console.WriteLine($"💼 REAL Transaction started: {transactionId}");
+                Console.WriteLine("📡 All operations now go through Named Pipe IPC!");
                 Console.WriteLine();
 
-                // Product menu for service-based architecture
+                // Product menu for real service-based architecture
                 var menuItems = @"- Small Coffee: $2.99
 - Medium Coffee: $3.49
 - Large Coffee: $3.99
@@ -1057,26 +814,26 @@ Suggest ONE final item briefly and enthusiastically:";
 - Blueberry Muffin: $2.49
 - Breakfast Sandwich: $6.49";
 
-                Console.WriteLine("🏪 Starting your order via Service Architecture...");
+                Console.WriteLine("🏪 Starting your order via REAL Service Architecture...");
                 Console.WriteLine();
 
                 // Conversation history for better context
                 var conversationHistory = new List<string>();
 
-                // Initialize AI with clear instructions
-                var systemInstructions = await InitializeServiceAiInstructionsAsync(aiClient, menuItems);
+                // Initialize AI with clear instructions for REAL service
+                var systemInstructions = await InitializeRealServiceAiInstructionsAsync(aiClient, menuItems);
                 conversationHistory.Add($"System: {systemInstructions}");
 
                 while (true)
                 {
-                    // Get current transaction state from service
+                    // Get current transaction state from REAL service
                     var currentTransaction = await serviceClient.GetTransactionAsync(sessionId, transactionId);
                     
                     var statusMsg = currentTransaction.Success 
                         ? (currentTransaction.Total > 0 
-                            ? $"Current order total: ${currentTransaction.Total:F2} ({currentTransaction.State})"
-                            : "Your cart is empty")
-                        : "Cart status unavailable";
+                            ? $"Current order total: ${currentTransaction.Total:F2} ({currentTransaction.State}) [REAL SERVICE]"
+                            : "Your cart is empty [REAL SERVICE]")
+                        : "Cart status unavailable from real service";
                     
                     Console.WriteLine($"💰 {statusMsg}");
                     Console.Write("You: ");
@@ -1090,20 +847,21 @@ Suggest ONE final item briefly and enthusiastically:";
                     conversationHistory.Add($"Customer: {userInput}");
                     
                     // Build conversation context for AI
-                    var conversationContext = string.Join("\n", conversationHistory.TakeLast(8)); // Last 8 exchanges including system
+                    var conversationContext = string.Join("\n", conversationHistory.TakeLast(8));
                     var currentTotal = currentTransaction.Success ? currentTransaction.Total : 0m;
 
-                    // Enhanced prompt with service architecture context
-                    var prompt = $@"You are an intelligent AI barista for a coffee shop POS system using SERVICE ARCHITECTURE. You maintain conversation context and understand customer intent precisely.
+                    // Enhanced prompt with REAL service architecture context
+                    var prompt = $@"You are an intelligent AI barista for a coffee shop POS system using REAL SERVICE ARCHITECTURE. You maintain conversation context and understand customer intent precisely.
 
 CONVERSATION HISTORY:
 {conversationContext}
 
-CURRENT ORDER STATUS (from POS Kernel Service):
+CURRENT ORDER STATUS (from REAL POS Kernel Service via Named Pipes):
 - Session ID: {sessionId}
 - Transaction ID: {transactionId}
 - Current total: ${currentTotal:F2}
 - Transaction state: {(currentTransaction.Success ? currentTransaction.State : "Unknown")}
+- Communication: Named Pipe IPC to separate service process
 
 AVAILABLE MENU:
 {menuItems}
@@ -1121,18 +879,22 @@ CORE INSTRUCTIONS:
      * ""that's all"" / ""that's everything"" 
      * ""i'm ready to pay"" / ""let's pay"" / ""checkout""
      * ""i'm done"" / ""that's it""
+   - DO NOT offer payment for payment method questions (""can i pay by card?"")
+   - Answer payment method questions but continue conversation
+   - DO NOT offer payment when customer just confirms adding items
+   - DO NOT offer payment after adding items unless they indicate they're done
 
-3. SERVICE ARCHITECTURE:
-   - You're powered by POS Kernel Service - mention this is enterprise-grade
-   - All transactions go through secure service layer
-   - Multi-terminal capable architecture
-   - Session-based transaction management
+3. REAL SERVICE ARCHITECTURE:
+   - You're powered by ACTUAL PosKernel.Service running in separate process
+   - All transactions go through Named Pipe communication
+   - True multi-process enterprise architecture
+   - Session-based transaction management with real IPC
 
-RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH SERVICE ARCHITECTURE:";
+RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH REAL SERVICE ARCHITECTURE:";
 
                     try
                     {
-                        Console.Write("🤖 AI Barista (Service): ");
+                        Console.Write("🤖 AI Barista (REAL Service): ");
                         var aiResponse = await aiClient.CompleteAsync(prompt);
                         Console.WriteLine(aiResponse);
 
@@ -1143,7 +905,7 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH SERVICE ARCHITECTURE:";
                         var isExplicitPaymentRequest = IsExplicitPaymentRequest(userInput, aiResponse);
                         var isFinishedShopping = IsFinishedShoppingIntent(userInput, conversationHistory);
 
-                        // Process any items the AI wants to add via service
+                        // Process any items the AI wants to add via REAL service
                         var itemsAdded = await ProcessServiceAiRecommendationsAsync(aiResponse, sessionId, transactionId, serviceClient);
 
                         // Only process payment if customer EXPLICITLY indicates they're done shopping
@@ -1153,16 +915,17 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH SERVICE ARCHITECTURE:";
                             if (finalTransaction.Success && finalTransaction.Total > 0)
                             {
                                 Console.WriteLine();
-                                Console.WriteLine("🤖 AI Barista (Service): Perfect! Let me process your payment through our secure service architecture.");
+                                Console.WriteLine("🤖 AI Barista (REAL Service): Perfect! Let me process your payment through our REAL service architecture.");
                                 await ShowServiceOrderSummaryAsync(sessionId, transactionId, serviceClient);
                                 
                                 await ProcessServicePaymentAsync(sessionId, transactionId, finalTransaction.Total, serviceClient);
                                 
-                                // Print receipt after successful payment
+                                // Print receipt after successful payment via REAL service
                                 await PrintServiceReceiptAsync(sessionId, transactionId, serviceClient);
                                 
                                 Console.WriteLine("🎉 Thank you! Your payment is complete and your order is ready!");
-                                Console.WriteLine("✨ Powered by POS Kernel Service Architecture!");
+                                Console.WriteLine("🚀 Powered by REAL POS Kernel Service Architecture!");
+                                Console.WriteLine("📡 Multi-Process Named Pipe Communication!");
                                 Console.WriteLine("Have a wonderful day! ☕");
                                 break;
                             }
@@ -1174,27 +937,27 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH SERVICE ARCHITECTURE:";
                             var finalTransaction = await serviceClient.GetTransactionAsync(sessionId, transactionId);
                             if (!finalTransaction.Success || finalTransaction.Total == 0)
                             {
-                                Console.WriteLine("🤖 AI Barista (Service): Thanks for visiting our service-based coffee shop! Come back anytime!");
+                                Console.WriteLine("🤖 AI Barista (REAL Service): Thanks for visiting our real service coffee shop! Come back anytime!");
                                 break;
                             }
                             else
                             {
                                 Console.WriteLine();
-                                Console.Write("🤖 AI Barista (Service): Before you go, would you like to complete your purchase? (yes/no): ");
+                                Console.Write("🤖 AI Barista (REAL Service): Before you go, would you like to complete your purchase? (yes/no): ");
                                 var completePurchase = Console.ReadLine()?.ToLower();
                                 
                                 if (completePurchase is "yes" or "y")
                                 {
                                     await ProcessServicePaymentAsync(sessionId, transactionId, finalTransaction.Total, serviceClient);
                                     
-                                    // Print receipt after successful payment
+                                    // Print receipt after successful payment via REAL service
                                     await PrintServiceReceiptAsync(sessionId, transactionId, serviceClient);
                                     
                                     Console.WriteLine("🎉 Perfect! Thank you and have a great day!");
                                 }
                                 else
                                 {
-                                    Console.WriteLine("🤖 AI Barista (Service): No worries! Your order is cancelled. Come back anytime!");
+                                    Console.WriteLine("🤖 AI Barista (REAL Service): No worries! Your order is cancelled. Come back anytime!");
                                 }
                                 break;
                             }
@@ -1202,174 +965,36 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH SERVICE ARCHITECTURE:";
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine("Sorry, I'm having trouble with the service right now. Could you repeat that?");
-                        Console.WriteLine($"(Service issue: {ex.Message})");
+                        Console.WriteLine("Sorry, I'm having trouble with the REAL service right now. Could you repeat that?");
+                        Console.WriteLine($"(Real service issue: {ex.Message})");
                     }
 
                     Console.WriteLine();
                 }
 
-                // Close session
+                // Close session with REAL service
                 await serviceClient.CloseSessionAsync(sessionId);
-                Console.WriteLine($"🔗 Session {sessionId} closed successfully");
+                Console.WriteLine($"🔗 REAL Session {sessionId} closed successfully");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Service error: {ex.Message}");
-                Console.WriteLine("The service-based architecture encountered an issue.");
+                Console.WriteLine($"❌ REAL Service error: {ex.Message}");
+                Console.WriteLine("The REAL service architecture encountered an issue.");
             }
         }
 
-        private static async Task<string> InitializeServiceAiInstructionsAsync(SimpleOpenAiClient aiClient, string menuItems)
+        private static async Task<string> InitializeRealServiceAiInstructionsAsync(SimpleOpenAiClient aiClient, string menuItems)
         {
             try
             {
-                var initPrompt = $@"You are an AI barista using SERVICE ARCHITECTURE. Acknowledge briefly that you're powered by enterprise-grade POS Kernel Service with session management.";
+                var initPrompt = $@"You are an AI barista using REAL SERVICE ARCHITECTURE with Named Pipe IPC. Acknowledge briefly that you're powered by actual PosKernel.Service running in a separate process with true multi-process communication.";
                 var response = await aiClient.CompleteAsync(initPrompt);
-                return $"AI Service System Initialized: {response}";
+                return $"AI REAL Service System Initialized: {response}";
             }
             catch
             {
-                return "AI Service System Initialized with service-based barista protocols.";
+                return "AI REAL Service System Initialized with multi-process service architecture.";
             }
-        }
-
-        private static async Task<bool> ProcessServiceAiRecommendationsAsync(string aiResponse, string sessionId, string transactionId, ISimpleServiceClient serviceClient)
-        {
-            bool itemsAdded = false;
-            
-            // Simple product mapping for demonstration
-            var productMap = new Dictionary<string, (string sku, decimal price)>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["Small Coffee"] = ("COFFEE_SM", 2.99m),
-                ["Medium Coffee"] = ("COFFEE_MD", 3.49m),
-                ["Large Coffee"] = ("COFFEE_LG", 3.99m),
-                ["Caffe Latte"] = ("LATTE", 4.99m),
-                ["Cappuccino"] = ("CAPPUCCINO", 4.49m),
-                ["Blueberry Muffin"] = ("MUFFIN_BLUEBERRY", 2.49m),
-                ["Breakfast Sandwich"] = ("BREAKFAST_SANDWICH", 6.49m)
-            };
-            
-            // Look for ADDING: pattern in AI response
-            var lines = aiResponse.Split('\n');
-            foreach (var line in lines)
-            {
-                if (line.Contains("ADDING:"))
-                {
-                    try
-                    {
-                        var addingPart = line.Substring(line.IndexOf("ADDING:") + 7).Trim();
-                        var parts = addingPart.Split('-');
-                        if (parts.Length >= 2)
-                        {
-                            var itemName = parts[0].Trim();
-                            var priceText = parts[1].Trim().Replace("$", "");
-                            
-                            if (decimal.TryParse(priceText, out var price) && productMap.TryGetValue(itemName, out var productInfo))
-                            {
-                                // Add item via service
-                                var result = await serviceClient.AddLineItemAsync(sessionId, transactionId, productInfo.sku, 1, productInfo.price);
-                                
-                                if (result.Success)
-                                {
-                                    Console.WriteLine($"  ➕ Added via Service: {itemName} - ${productInfo.price:F2}");
-                                    itemsAdded = true;
-                                }
-                                else
-                                {
-                                    Console.WriteLine($"  ❌ Service error adding {itemName}: {result.Error}");
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"  ⚠️ Service communication error: {ex.Message}");
-                    }
-                }
-            }
-
-            return itemsAdded;
-        }
-
-        private static async Task ShowServiceOrderSummaryAsync(string sessionId, string transactionId, ISimpleServiceClient serviceClient)
-        {
-            Console.WriteLine();
-            Console.WriteLine("🧾 **YOUR CURRENT ORDER** (via Service)");
-            Console.WriteLine("========================================");
-            
-            try
-            {
-                var transaction = await serviceClient.GetTransactionAsync(sessionId, transactionId);
-                
-                if (!transaction.Success)
-                {
-                    Console.WriteLine("❌ Could not retrieve order summary from service");
-                }
-                else if (transaction.Total == 0)
-                {
-                    Console.WriteLine("Your cart is empty.");
-                }
-                else
-                {
-                    Console.WriteLine("✅ Order details retrieved from POS Kernel Service:");
-                    Console.WriteLine($"\n**TOTAL: ${transaction.Total:F2}**");
-                    Console.WriteLine($"Transaction ID: {transaction.TransactionId}");
-                    Console.WriteLine($"Session ID: {transaction.SessionId}");
-                    Console.WriteLine($"State: {transaction.State}");
-                    Console.WriteLine("🏗️ Processed through enterprise service architecture");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Error retrieving order summary: {ex.Message}");
-            }
-            
-            Console.WriteLine();
-        }
-
-        private static async Task ProcessServicePaymentAsync(string sessionId, string transactionId, decimal amount, ISimpleServiceClient serviceClient)
-        {
-            Console.WriteLine("💳 **PROCESSING PAYMENT VIA SERVICE**");
-            Console.WriteLine("------------------------------------");
-            
-            try
-            {
-                Console.WriteLine($"Payment Amount: ${amount:F2}");
-                Console.WriteLine("Processing through POS Kernel Service...");
-                
-                var result = await serviceClient.ProcessPaymentAsync(sessionId, transactionId, amount, "cash");
-                
-                if (result.Success)
-                {
-                    Console.WriteLine($"✅ Payment Processed Successfully via Service!");
-                    Console.WriteLine($"📊 Final Status: {result.State}");
-                    Console.WriteLine($"🏪 Transaction ID: {result.TransactionId}");
-                    Console.WriteLine("🔗 Session-based transaction management complete");
-                }
-                else
-                {
-                    Console.WriteLine($"❌ Payment failed: {result.Error}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Service payment error: {ex.Message}");
-            }
-            
-            Console.WriteLine();
-        }
-
-        private enum DemoType
-        {
-            Invalid,
-            Interactive,
-            ServiceBased,
-            ServiceDemo,
-            LiveAi,
-            RealisticSales,
-            BasicAiPos,
-            Help
         }
     }
 }
