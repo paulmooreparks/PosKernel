@@ -62,8 +62,10 @@ namespace PosKernel.AI.Services
                 }
             }
             
+            // If that doesn't exist, try the current directory structure
             if (string.IsNullOrEmpty(_databasePath))
             {
+                _databasePath = Path.Combine("data", "catalog", "restaurant_catalog.db");
                 throw new FileNotFoundException($"Restaurant database not found. Checked paths: {string.Join(", ", possiblePaths)}");
             }
             
@@ -416,7 +418,9 @@ namespace PosKernel.AI.Services
         private void ThrowIfDisposed()
         {
             if (_disposed)
+            {
                 throw new ObjectDisposedException(nameof(RestaurantProductCatalogService));
+            }
         }
 
         public void Dispose()
