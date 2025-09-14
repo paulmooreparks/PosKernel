@@ -54,10 +54,11 @@ namespace PosKernel.AI.Core
         /// <summary>
         /// Sends a completion request to the AI model with security validation.
         /// </summary>
-        public async Task<McpResponse> CompleteAsync(string prompt, McpContext? context = null)
+        public virtual async Task<McpResponse> CompleteAsync(string prompt, McpContext? context = null)
         {
-            if (string.IsNullOrEmpty(prompt))
+            if (string.IsNullOrEmpty(prompt)) {
                 throw new ArgumentException("Prompt cannot be null or empty", nameof(prompt));
+            }
 
             // Security: Sanitize prompt and validate context
             var sanitizedPrompt = await _securityService.SanitizePromptAsync(prompt);
@@ -79,13 +80,15 @@ namespace PosKernel.AI.Core
         /// <summary>
         /// Sends an analysis request for structured data analysis.
         /// </summary>
-        public async Task<McpResponse> AnalyzeAsync(string analysisType, object data)
+        public virtual async Task<McpResponse> AnalyzeAsync(string analysisType, object data)
         {
-            if (string.IsNullOrEmpty(analysisType))
+            if (string.IsNullOrEmpty(analysisType)) {
                 throw new ArgumentException("Analysis type cannot be null or empty", nameof(analysisType));
-            
-            if (data == null)
+            }
+
+            if (data == null) {
                 throw new ArgumentNullException(nameof(data));
+            }
 
             // Security: Filter sensitive data before sending to AI
             var filteredData = await _securityService.FilterDataForAiAsync(data);
@@ -104,13 +107,15 @@ namespace PosKernel.AI.Core
         /// <summary>
         /// Sends a prediction request for forecasting and predictive analytics.
         /// </summary>
-        public async Task<McpResponse> PredictAsync(string predictionType, object data)
+        public virtual async Task<McpResponse> PredictAsync(string predictionType, object data)
         {
-            if (string.IsNullOrEmpty(predictionType))
+            if (string.IsNullOrEmpty(predictionType)) {
                 throw new ArgumentException("Prediction type cannot be null or empty", nameof(predictionType));
-            
-            if (data == null)
+            }
+
+            if (data == null) {
                 throw new ArgumentNullException(nameof(data));
+            }
 
             // Security: Filter sensitive data
             var filteredData = await _securityService.FilterDataForAiAsync(data);
@@ -139,8 +144,9 @@ namespace PosKernel.AI.Core
                 var responseJson = await httpResponse.Content.ReadAsStringAsync();
                 var mcpResponse = JsonSerializer.Deserialize<McpResponse>(responseJson, _configuration.JsonOptions);
 
-                if (mcpResponse == null)
+                if (mcpResponse == null) {
                     throw new McpException("Received null response from MCP server");
+                }
 
                 // Security: Validate response before returning
                 var validatedResponse = await _securityService.ValidateResponseAsync(mcpResponse);
@@ -156,8 +162,7 @@ namespace PosKernel.AI.Core
 
                 return validatedResponse;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) {
                 // Audit: Log the failure
                 await _securityService.LogAiInteractionAsync(new AiAuditEvent
                 {
@@ -186,11 +191,34 @@ namespace PosKernel.AI.Core
     /// </summary>
     public class McpConfiguration
     {
+        /// <summary>
+        /// Gets or sets the base URL for the MCP server.
+        /// </summary>
         public string BaseUrl { get; set; } = "https://api.openai.com/v1";
+        
+        /// <summary>
+        /// Gets or sets the completion endpoint path.
+        /// </summary>
         public string CompletionEndpoint { get; set; } = "chat/completions";
+        
+        /// <summary>
+        /// Gets or sets the API key for authentication.
+        /// </summary>
         public string? ApiKey { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the request timeout in seconds.
+        /// </summary>
         public int TimeoutSeconds { get; set; } = 30;
+        
+        /// <summary>
+        /// Gets or sets the default parameters sent with requests.
+        /// </summary>
         public Dictionary<string, object> DefaultParameters { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets the JSON serialization options.
+        /// </summary>
         public JsonSerializerOptions JsonOptions { get; set; } = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -203,12 +231,39 @@ namespace PosKernel.AI.Core
     /// </summary>
     public class McpRequest
     {
+        /// <summary>
+        /// Gets or sets the request type (completion, analysis, prediction).
+        /// </summary>
         public string Type { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the prompt for completion requests.
+        /// </summary>
         public string? Prompt { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the analysis type for analysis requests.
+        /// </summary>
         public string? AnalysisType { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the prediction type for prediction requests.
+        /// </summary>
         public string? PredictionType { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the data payload for analysis/prediction requests.
+        /// </summary>
         public object? Data { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the context information for the request.
+        /// </summary>
         public McpContext? Context { get; set; }
+        
+        /// <summary>
+        /// Gets or sets additional parameters for the request.
+        /// </summary>
         public Dictionary<string, object> Parameters { get; set; } = new();
     }
 
@@ -217,11 +272,34 @@ namespace PosKernel.AI.Core
     /// </summary>
     public class McpResponse
     {
+        /// <summary>
+        /// Gets or sets the unique identifier for the response.
+        /// </summary>
         public string Id { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the response type.
+        /// </summary>
         public string Type { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the main content of the response.
+        /// </summary>
         public string Content { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the confidence level of the AI response (0-1).
+        /// </summary>
         public double Confidence { get; set; }
+        
+        /// <summary>
+        /// Gets or sets additional metadata about the response.
+        /// </summary>
         public Dictionary<string, object> Metadata { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets any warnings or notices about the response.
+        /// </summary>
         public List<string> Warnings { get; set; } = new();
     }
 
@@ -230,10 +308,29 @@ namespace PosKernel.AI.Core
     /// </summary>
     public class McpContext
     {
+        /// <summary>
+        /// Gets or sets the unique session identifier.
+        /// </summary>
         public string SessionId { get; set; } = Guid.NewGuid().ToString();
+        
+        /// <summary>
+        /// Gets or sets the user identifier.
+        /// </summary>
         public string UserId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the store identifier.
+        /// </summary>
         public string StoreId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets business-specific context data.
+        /// </summary>
         public Dictionary<string, object> BusinessContext { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets security tags for audit and compliance.
+        /// </summary>
         public List<string> SecurityTags { get; set; } = new();
     }
 
@@ -242,7 +339,17 @@ namespace PosKernel.AI.Core
     /// </summary>
     public class McpException : Exception
     {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="McpException"/> class with a specified error message.
+        /// </summary>
+        /// <param name="message">The message that describes the error.</param>
         public McpException(string message) : base(message) { }
+        
+        /// <summary>
+        /// Initializes a new instance of the <see cref="McpException"/> class with a specified error message and inner exception.
+        /// </summary>
+        /// <param name="message">The message that describes the error.</param>
+        /// <param name="innerException">The exception that is the cause of the current exception.</param>
         public McpException(string message, Exception innerException) : base(message, innerException) { }
     }
 }

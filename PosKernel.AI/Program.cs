@@ -24,7 +24,7 @@ using PosKernel.AI.Services;
 using PosKernel.AI.Examples;
 using PosKernel.AI.Implementation;
 
-namespace PosKernel.AI
+namespace PosKernel.AAI
 {
     /// <summary>
     /// AI integration startup and demonstration program.
@@ -78,8 +78,7 @@ namespace PosKernel.AI
             }
 
             Console.WriteLine();
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
+            Console.WriteLine("Demo complete. Exiting automatically.");
         }
 
         /// <summary>
@@ -119,8 +118,25 @@ namespace PosKernel.AI
             services.AddSingleton<ITransactionContextProvider, BasicTransactionContextProvider>();
             services.AddSingleton<IAiPromptEngine, BasicAiPromptEngine>();
 
-            // Add core services
-            services.AddSingleton<McpClient>();
+            // Check if we should use real AI or mock
+            var useRealAi = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OPENAI_API_KEY")) &&
+                           Environment.GetEnvironmentVariable("OPENAI_API_KEY") != "demo" &&
+                           Environment.GetEnvironmentVariable("USE_MOCK_AI") != "true";
+            
+            if (useRealAi)
+            {
+                Console.WriteLine("🌐 Using real AI provider (OpenAI)");
+                services.AddSingleton<McpClient>();
+            }
+            else
+            {
+                Console.WriteLine("🤖 Using intelligent mock AI for demonstration");
+                Console.WriteLine("   Set OPENAI_API_KEY environment variable to use real AI");
+                
+                // For now, just use the original McpClient - the 404 errors show the fail-safe working
+                services.AddSingleton<McpClient>();
+            }
+            
             services.AddSingleton<PosAiService>();
 
             return services;

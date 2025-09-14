@@ -338,12 +338,39 @@ namespace PosKernel.AI.Core
     /// </summary>
     public class AiAuditEvent
     {
+        /// <summary>
+        /// Gets or sets the type of AI request (completion, analysis, prediction).
+        /// </summary>
         public string RequestType { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the timestamp when the interaction occurred.
+        /// </summary>
         public DateTimeOffset Timestamp { get; set; }
+        
+        /// <summary>
+        /// Gets or sets whether the AI interaction was successful.
+        /// </summary>
         public bool Success { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the error message if the interaction failed.
+        /// </summary>
         public string? Error { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the length of the response content.
+        /// </summary>
         public int ResponseLength { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the security level of the interaction.
+        /// </summary>
         public SecurityLevel SecurityLevel { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the compliance flags for regulatory tracking.
+        /// </summary>
         public List<string> ComplianceFlags { get; set; } = new();
     }
 
@@ -352,10 +379,29 @@ namespace PosKernel.AI.Core
     /// </summary>
     public class SecurityAuditEvent
     {
+        /// <summary>
+        /// Gets or sets the type of security event.
+        /// </summary>
         public string EventType { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the pattern that triggered the security event.
+        /// </summary>
         public string? Pattern { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the timestamp of the security event.
+        /// </summary>
         public DateTimeOffset Timestamp { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the severity level of the security event.
+        /// </summary>
         public SecuritySeverity Severity { get; set; }
+        
+        /// <summary>
+        /// Gets or sets additional details about the security event.
+        /// </summary>
         public string? Details { get; set; }
     }
 
@@ -364,9 +410,24 @@ namespace PosKernel.AI.Core
     /// </summary>
     public enum SecurityLevel
     {
+        /// <summary>
+        /// Low security risk interaction.
+        /// </summary>
         Low,
+        
+        /// <summary>
+        /// Medium security risk interaction.
+        /// </summary>
         Medium,
+        
+        /// <summary>
+        /// High security risk interaction.
+        /// </summary>
         High,
+        
+        /// <summary>
+        /// Critical security risk interaction.
+        /// </summary>
         Critical
     }
 
@@ -375,9 +436,24 @@ namespace PosKernel.AI.Core
     /// </summary>
     public enum SecuritySeverity
     {
+        /// <summary>
+        /// Low severity security event.
+        /// </summary>
         Low,
+        
+        /// <summary>
+        /// Medium severity security event.
+        /// </summary>
         Medium,
+        
+        /// <summary>
+        /// High severity security event.
+        /// </summary>
         High,
+        
+        /// <summary>
+        /// Critical severity security event.
+        /// </summary>
         Critical
     }
 
@@ -386,7 +462,17 @@ namespace PosKernel.AI.Core
     /// </summary>
     public class SecurityException : Exception
     {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SecurityException"/> class with a specified error message.
+        /// </summary>
+        /// <param name="message">The message that describes the error.</param>
         public SecurityException(string message) : base(message) { }
+        
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SecurityException"/> class with a specified error message and inner exception.
+        /// </summary>
+        /// <param name="message">The message that describes the error.</param>
+        /// <param name="innerException">The exception that is the cause of the current exception.</param>
         public SecurityException(string message, Exception innerException) : base(message, innerException) { }
     }
 }

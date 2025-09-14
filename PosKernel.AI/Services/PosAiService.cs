@@ -292,11 +292,34 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class TransactionContext
     {
+        /// <summary>
+        /// Gets or sets the store identifier.
+        /// </summary>
         public string StoreId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the terminal identifier.
+        /// </summary>
         public string TerminalId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the currency code.
+        /// </summary>
         public string Currency { get; set; } = "USD";
+        
+        /// <summary>
+        /// Gets or sets the timestamp of the transaction context.
+        /// </summary>
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+        
+        /// <summary>
+        /// Gets or sets the list of product categories available.
+        /// </summary>
         public List<string> ProductCategories { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets additional metadata for the transaction context.
+        /// </summary>
         public Dictionary<string, object> Metadata { get; set; } = new();
     }
 
@@ -305,9 +328,24 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class BusinessContext
     {
+        /// <summary>
+        /// Gets or sets the store identifier for the business context.
+        /// </summary>
         public string StoreId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the date range for the query period.
+        /// </summary>
         public DateRange QueryPeriod { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets the list of available metrics for analysis.
+        /// </summary>
         public List<string> AvailableMetrics { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets the constraints for the business query.
+        /// </summary>
         public Dictionary<string, object> Constraints { get; set; } = new();
     }
 
@@ -316,9 +354,24 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class TransactionSuggestion
     {
+        /// <summary>
+        /// Gets or sets the list of recommended items for the transaction.
+        /// </summary>
         public List<SuggestedItem> RecommendedItems { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets the estimated total for the suggested transaction.
+        /// </summary>
         public decimal EstimatedTotal { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the confidence level of the AI suggestion (0-1).
+        /// </summary>
         public double Confidence { get; set; }
+        
+        /// <summary>
+        /// Gets or sets any warnings about the transaction suggestion.
+        /// </summary>
         public List<string> Warnings { get; set; } = new();
     }
 
@@ -327,10 +380,29 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class SuggestedItem
     {
+        /// <summary>
+        /// Gets or sets the SKU (stock keeping unit) of the suggested item.
+        /// </summary>
         public string Sku { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the name of the suggested item.
+        /// </summary>
         public string Name { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the suggested quantity.
+        /// </summary>
         public int Quantity { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the price of the suggested item.
+        /// </summary>
         public decimal Price { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the confidence level for this specific item suggestion.
+        /// </summary>
         public double Confidence { get; set; }
     }
 
@@ -339,9 +411,24 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class FraudRiskAssessment
     {
+        /// <summary>
+        /// Gets or sets the assessed risk level for the transaction.
+        /// </summary>
         public RiskLevel RiskLevel { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the confidence level of the risk assessment.
+        /// </summary>
         public double Confidence { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the reason for the risk assessment.
+        /// </summary>
         public string Reason { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the recommended action based on the risk assessment.
+        /// </summary>
         public string RecommendedAction { get; set; } = "";
     }
 
@@ -350,10 +437,29 @@ namespace PosKernel.AI.Services
     /// </summary>
     public enum RiskLevel
     {
+        /// <summary>
+        /// Risk level cannot be determined.
+        /// </summary>
         Unknown,
+        
+        /// <summary>
+        /// Low risk transaction.
+        /// </summary>
         Low,
+        
+        /// <summary>
+        /// Medium risk transaction requiring attention.
+        /// </summary>
         Medium,
+        
+        /// <summary>
+        /// High risk transaction requiring approval.
+        /// </summary>
         High,
+        
+        /// <summary>
+        /// Critical risk transaction that should be blocked.
+        /// </summary>
         Critical
     }
 
@@ -362,10 +468,29 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class UpsellSuggestion
     {
+        /// <summary>
+        /// Gets or sets the product identifier for the upsell item.
+        /// </summary>
         public string ProductId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the name of the upsell product.
+        /// </summary>
         public string ProductName { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the price of the upsell product.
+        /// </summary>
         public decimal Price { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the reason for the upsell suggestion.
+        /// </summary>
         public string Reason { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the confidence level of the upsell suggestion.
+        /// </summary>
         public double Confidence { get; set; }
     }
 
@@ -374,9 +499,24 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class InventoryInsight
     {
+        /// <summary>
+        /// Gets or sets the product identifier for the inventory insight.
+        /// </summary>
         public string ProductId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the type of inventory insight.
+        /// </summary>
         public string InsightType { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the descriptive message about the insight.
+        /// </summary>
         public string Message { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the priority level of the insight (1-10).
+        /// </summary>
         public int Priority { get; set; }
     }
 
@@ -385,10 +525,29 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class QueryResult
     {
+        /// <summary>
+        /// Gets or sets whether the query processing was successful.
+        /// </summary>
         public bool Success { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the answer to the natural language query.
+        /// </summary>
         public string Answer { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the confidence level of the answer.
+        /// </summary>
         public double Confidence { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the sources used to generate the answer.
+        /// </summary>
         public string Sources { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the error message if query processing failed.
+        /// </summary>
         public string? Error { get; set; }
     }
 
@@ -397,7 +556,14 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class DateRange
     {
+        /// <summary>
+        /// Gets or sets the start date of the range.
+        /// </summary>
         public DateTime Start { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the end date of the range.
+        /// </summary>
         public DateTime End { get; set; }
     }
 
@@ -406,10 +572,29 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class Transaction
     {
+        /// <summary>
+        /// Gets or sets the unique transaction identifier.
+        /// </summary>
         public string Id { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the list of transaction line items.
+        /// </summary>
         public List<TransactionLine> Lines { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets the total amount of the transaction.
+        /// </summary>
         public decimal Total { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the currency code for the transaction.
+        /// </summary>
         public string Currency { get; set; } = "USD";
+        
+        /// <summary>
+        /// Gets or sets the timestamp when the transaction occurred.
+        /// </summary>
         public DateTime Timestamp { get; set; } = DateTime.UtcNow;
     }
 
@@ -418,10 +603,29 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class TransactionLine
     {
+        /// <summary>
+        /// Gets or sets the product identifier.
+        /// </summary>
         public string ProductId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the product name.
+        /// </summary>
         public string ProductName { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the quantity of the product.
+        /// </summary>
         public int Quantity { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the unit price of the product.
+        /// </summary>
         public decimal UnitPrice { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the total price for this line item.
+        /// </summary>
         public decimal Total { get; set; }
     }
 
@@ -430,7 +634,17 @@ namespace PosKernel.AI.Services
     /// </summary>
     public class AiProcessingException : Exception
     {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AiProcessingException"/> class with a specified error message.
+        /// </summary>
+        /// <param name="message">The message that describes the error.</param>
         public AiProcessingException(string message) : base(message) { }
+        
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AiProcessingException"/> class with a specified error message and inner exception.
+        /// </summary>
+        /// <param name="message">The message that describes the error.</param>
+        /// <param name="innerException">The exception that is the cause of the current exception.</param>
         public AiProcessingException(string message, Exception innerException) : base(message, innerException) { }
     }
 }
