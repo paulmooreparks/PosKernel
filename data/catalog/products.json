@@ -1,0 +1,248 @@
+{
+  "$schema": "https://poskernel.org/schemas/product-catalog-v1.json",
+  "catalog": {
+    "metadata": {
+      "version": "1.0",
+      "store_id": "DEMO_STORE_001",
+      "currency": "USD",
+      "last_updated": "2025-01-13T00:00:00Z",
+      "total_products": 71
+    },
+    "categories": [
+      {
+        "id": "hot-beverages",
+        "name": "Hot Beverages",
+        "description": "Coffee, tea, and hot drinks",
+        "tax_category": "BEVERAGE",
+        "requires_preparation": true
+      },
+      {
+        "id": "cold-beverages", 
+        "name": "Cold Beverages",
+        "description": "Iced drinks, sodas, and juices",
+        "tax_category": "BEVERAGE",
+        "requires_preparation": false
+      },
+      {
+        "id": "bakery",
+        "name": "Bakery Items",
+        "description": "Fresh baked goods and pastries",
+        "tax_category": "FOOD",
+        "requires_preparation": false
+      },
+      {
+        "id": "breakfast",
+        "name": "Breakfast",
+        "description": "Morning meals and breakfast items",
+        "tax_category": "FOOD",
+        "requires_preparation": true
+      },
+      {
+        "id": "lunch",
+        "name": "Lunch",
+        "description": "Sandwiches, salads, and lunch items",
+        "tax_category": "FOOD", 
+        "requires_preparation": true
+      },
+      {
+        "id": "snacks",
+        "name": "Snacks & Treats",
+        "description": "Cookies, chips, and quick snacks",
+        "tax_category": "FOOD",
+        "requires_preparation": false
+      },
+      {
+        "id": "retail",
+        "name": "Retail Items",
+        "description": "Coffee beans, mugs, and merchandise",
+        "tax_category": "RETAIL",
+        "requires_preparation": false
+      },
+      {
+        "id": "gift-cards",
+        "name": "Gift Cards", 
+        "description": "Electronic and physical gift cards",
+        "tax_category": "EXEMPT",
+        "requires_preparation": false
+      }
+    ],
+    "products": [
+      {
+        "sku": "COFFEE_SM",
+        "name": "Small Coffee",
+        "description": "Classic drip coffee, 8oz",
+        "category": "hot-beverages",
+        "base_price": 2.99,
+        "tax_category": "BEVERAGE",
+        "requires_preparation": true,
+        "is_active": true,
+        "metadata": {
+          "size": "8oz",
+          "caffeine_content": "medium",
+          "allergens": [],
+          "calories": 5
+        }
+      },
+      {
+        "sku": "COFFEE_MD", 
+        "name": "Medium Coffee",
+        "description": "Classic drip coffee, 12oz",
+        "category": "hot-beverages",
+        "base_price": 3.49,
+        "tax_category": "BEVERAGE",
+        "requires_preparation": true,
+        "is_active": true,
+        "metadata": {
+          "size": "12oz",
+          "caffeine_content": "medium", 
+          "allergens": [],
+          "calories": 8
+        }
+      },
+      {
+        "sku": "COFFEE_LG",
+        "name": "Large Coffee", 
+        "description": "Classic drip coffee, 16oz",
+        "category": "hot-beverages",
+        "base_price": 3.99,
+        "tax_category": "BEVERAGE",
+        "requires_preparation": true,
+        "is_active": true,
+        "metadata": {
+          "size": "16oz",
+          "caffeine_content": "high",
+          "allergens": [],
+          "calories": 10,
+          "popularity_rank": 1
+        }
+      },
+      {
+        "sku": "LATTE",
+        "name": "Caffe Latte",
+        "description": "Espresso with steamed milk",
+        "category": "hot-beverages", 
+        "base_price": 4.99,
+        "tax_category": "BEVERAGE",
+        "requires_preparation": true,
+        "is_active": true,
+        "metadata": {
+          "size": "12oz",
+          "caffeine_content": "medium",
+          "allergens": ["dairy"],
+          "calories": 150,
+          "popularity_rank": 2
+        }
+      },
+      {
+        "sku": "CAPPUCCINO",
+        "name": "Cappuccino",
+        "description": "Espresso with steamed milk and foam",
+        "category": "hot-beverages",
+        "base_price": 4.49, 
+        "tax_category": "BEVERAGE",
+        "requires_preparation": true,
+        "is_active": true,
+        "metadata": {
+          "size": "8oz",
+          "caffeine_content": "medium",
+          "allergens": ["dairy"],
+          "calories": 120
+        }
+      },
+      {
+        "sku": "MOCHA",
+        "name": "Caffe Mocha",
+        "description": "Espresso with chocolate and steamed milk", 
+        "category": "hot-beverages",
+        "base_price": 5.49,
+        "tax_category": "BEVERAGE", 
+        "requires_preparation": true,
+        "is_active": true,
+        "metadata": {
+          "size": "12oz",
+          "caffeine_content": "medium",
+          "allergens": ["dairy", "chocolate"], 
+          "calories": 290
+        }
+      },
+      {
+        "sku": "MUFFIN_BLUEBERRY",
+        "name": "Blueberry Muffin",
+        "description": "Fresh blueberry muffin",
+        "category": "bakery",
+        "base_price": 2.49,
+        "tax_category": "FOOD",
+        "requires_preparation": false,
+        "is_active": true, 
+        "metadata": {
+          "allergens": ["gluten", "eggs", "dairy"],
+          "calories": 420,
+          "popularity_rank": 3,
+          "fresh_baked": true
+        }
+      },
+      {
+        "sku": "BREAKFAST_SANDWICH",
+        "name": "Breakfast Sandwich",
+        "description": "Egg, cheese, and bacon on English muffin",
+        "category": "breakfast",
+        "base_price": 6.49,
+        "tax_category": "FOOD", 
+        "requires_preparation": true,
+        "is_active": true,
+        "metadata": {
+          "allergens": ["gluten", "eggs", "dairy"],
+          "calories": 450,
+          "popularity_rank": 4,
+          "prep_time_minutes": 3
+        }
+      },
+      {
+        "sku": "SANDWICH_TURKEY",
+        "name": "Turkey Club Sandwich", 
+        "description": "Turkey, bacon, lettuce, tomato on sourdough",
+        "category": "lunch",
+        "base_price": 9.99,
+        "tax_category": "FOOD",
+        "requires_preparation": true,
+        "is_active": true,
+        "metadata": {
+          "allergens": ["gluten", "dairy"],
+          "calories": 520,
+          "popularity_rank": 5,
+          "prep_time_minutes": 5
+        }
+      },
+      {
+        "sku": "GIFT_CARD_25",
+        "name": "$25 Gift Card",
+        "description": "Electronic gift card worth $25",
+        "category": "gift-cards",
+        "base_price": 25.00,
+        "tax_category": "EXEMPT",
+        "requires_preparation": false,
+        "is_active": true,
+        "metadata": {
+          "gift_card_value": 25.00,
+          "digital": true,
+          "expiry_months": 24
+        }
+      }
+    ],
+    "price_rules": [
+      {
+        "id": "happy_hour_coffee",
+        "name": "Happy Hour Coffee Discount", 
+        "applies_to": ["COFFEE_SM", "COFFEE_MD", "COFFEE_LG"],
+        "discount_type": "percentage",
+        "discount_value": 0.15,
+        "active_hours": {
+          "start": "14:00",
+          "end": "16:00"
+        },
+        "active_days": ["monday", "tuesday", "wednesday", "thursday", "friday"],
+        "is_active": true
+      }
+    ]
+  }
+}

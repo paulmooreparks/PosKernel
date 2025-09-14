@@ -1,0 +1,51 @@
+# AI Module Configuration (XferLang Format)
+# AI-specific settings for PosKernel
+
+# AI Provider Configuration
+AI:Provider = "OpenAI"
+AI:Model = "chatgpt-4o-latest"
+AI:Temperature = 0.2
+AI:MaxTokens = 1500
+AI:TimeoutSeconds = 30
+
+# Alternative Models (commented examples)
+# AI:Model = "gpt-4o-mini"     # Cost-effective option
+# AI:Model = "gpt-4o"          # Standard option  
+# AI:Model = "claude-3-sonnet" # Anthropic alternative
+
+# MCP (Model Context Protocol) Settings
+MCP:BaseUrl = "https://api.openai.com/v1"
+MCP:CompletionEndpoint = "chat/completions"
+MCP:RetryAttempts = 3
+MCP:RetryDelayMs = 1000
+
+# AI Security Settings
+Security:EnablePromptSanitization = true
+Security:EnableResponseValidation = true
+Security:FilterSensitiveData = true
+Security:MaxPromptLength = 2000
+Security:MaxResponseLength = 10000
+
+# AI Features
+Features:NaturalLanguageProcessing = true
+Features:FraudDetection = true
+Features:BusinessIntelligence = true
+Features:SmartRecommendations = true
+Features:VoiceCommands = false      # Phase 2 feature
+Features:ComputerVision = false     # Phase 2 feature
+
+# Fail-Safe Settings  
+FailSafe:EnableMockMode = false
+FailSafe:FallbackToHuman = true
+FailSafe:GracefulDegradation = true
+
+# Performance
+Performance:EnableCaching = true
+Performance:CacheExpiryMinutes = 30
+Performance:MaxConcurrentRequests = 10
+
+# Compliance
+Compliance:EnableGDPR = true
+Compliance:EnableCCPA = false
+Compliance:DataRetentionDays = 90
+Compliance:LogAllInteractions = true

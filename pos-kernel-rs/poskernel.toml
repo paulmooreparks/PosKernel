@@ -1,0 +1,136 @@
+# POS Kernel Configuration
+# TOML format for Rust kernel - clean, readable, type-safe
+
+[kernel]
+# Core kernel settings
+max_terminals = 64
+transaction_timeout_seconds = 30
+audit_level = "full"  # Options: minimal, standard, full, debug
+currency_precision = 2
+default_currency = "USD"
+
+# Multi-process coordination
+coordination_mode = "file"  # Options: file, shared_memory, redis
+coordination_timeout_seconds = 5
+
+[storage]
+# Data storage configuration
+data_dir = "pos_kernel_data"
+wal_sync_mode = "immediate"  # Options: immediate, normal, checkpoint
+backup_enabled = true
+backup_interval_minutes = 60
+max_wal_size_mb = 100
+
+# Transaction log settings
+transaction_log_enabled = true
+transaction_log_retention_days = 2555  # 7 years for compliance
+compress_old_logs = true
+
+[security]
+# Security and compliance
+tamper_detection = true
+audit_checksums = true
+require_operator_authentication = true
+session_timeout_minutes = 30
+
+# Encryption settings (when implemented)
+encrypt_audit_logs = false
+encryption_key_rotation_days = 90
+
+[performance]
+# Performance tuning
+worker_threads = 4
+io_threads = 2
+max_concurrent_transactions = 1000
+cache_size_mb = 64
+
+# Timeouts and limits  
+max_line_items_per_transaction = 1000
+max_transaction_value_cents = 10000000  # $100,000 limit
+
+[domain_extensions]
+# Domain-specific business logic extensions
+# These run as separate processes communicating via C ABI
+
+[domain_extensions.restaurant]
+enabled = true
+executable = "poskernel-restaurant-ext"
+priority = 10
+timeout_milliseconds = 100
+max_restarts = 3
+business_domain = "restaurant"
+
+# Extension-specific settings (passed to extension process)
+[domain_extensions.restaurant.settings]
+allergen_validation = true
+preparation_time_tracking = true
+menu_scheduling = true
+seasonal_availability = true
+
+[domain_extensions.pharmacy]
+enabled = false  # Disabled by default
+executable = "poskernel-pharmacy-ext"
+priority = 15
+timeout_milliseconds = 200
+max_restarts = 1  # More strict for controlled substances
+business_domain = "pharmacy"
+
+[domain_extensions.pharmacy.settings]
+ndc_validation = true
+controlled_substance_verification = true
+dea_compliance = true
+prescription_tracking = true
+insurance_verification = false
+
+[domain_extensions.retail]
+enabled = false
+executable = "poskernel-retail-ext" 
+priority = 5
+timeout_milliseconds = 50
+max_restarts = 5
+business_domain = "retail"
+
+[domain_extensions.retail.settings]
+gtin_validation = true
+inventory_tracking = true
+price_verification = false
+backorder_support = true
+
+[logging]
+# Kernel logging configuration
+level = "info"  # Options: error, warn, info, debug, trace
+format = "json"  # Options: json, plain, structured
+output = "file"  # Options: stdout, file, syslog
+
+# Log files
+log_file = "pos_kernel_data/logs/kernel.log"
+max_log_file_size_mb = 10
+max_log_files = 10
+compress_rotated_logs = true
+
+# Audit logging (always enabled for compliance)
+audit_log_file = "pos_kernel_data/audit/audit.log"
+audit_log_format = "structured"  # Immutable format for legal compliance
+
+[monitoring]
+# System monitoring and health checks
+health_check_enabled = true
+health_check_interval_seconds = 30
+metrics_enabled = true
+metrics_port = 8080
+
+# Alerting thresholds
+max_transaction_latency_ms = 100
+max_memory_usage_mb = 512
+max_disk_usage_percent = 85
+
+[development]
+# Development and testing settings
+debug_mode = false
+mock_extensions = false  # Use mock implementations for testing
+performance_profiling = false
+memory_debugging = false
+
+# Test data
+load_test_data = false
+test_data_file = "test_data/sample_products.toml"

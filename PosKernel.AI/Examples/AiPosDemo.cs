@@ -14,321 +14,127 @@
 // limitations under the License.
 //
 
-using System;
-using System.Linq;
-using System.Threading.Tasks;
-using PosKernel.AI.Core;
+using Microsoft.Extensions.Logging;
 using PosKernel.AI.Services;
-using PosKernel.Host;
-
-// Resolve ambiguity by using aliases
-using AiTransaction = PosKernel.AI.Services.Transaction;
-using PosTransaction = PosKernel.Host.Transaction;
 
 namespace PosKernel.AI.Examples
 {
     /// <summary>
-    /// Demonstration of AI-enhanced POS operations showing natural language processing,
-    /// fraud detection, and intelligent assistance capabilities.
+    /// Basic AI-POS integration demo showing natural language processing
+    /// and intelligent transaction assistance.
     /// </summary>
     public class AiPosDemo
     {
         private readonly PosAiService _aiService;
-        private readonly McpClient _mcpClient;
+        private readonly ILogger<AiPosDemo> _logger;
 
-        public AiPosDemo(PosAiService aiService, McpClient mcpClient)
+        public AiPosDemo(PosAiService aiService, ILogger<AiPosDemo> logger)
         {
             _aiService = aiService ?? throw new ArgumentNullException(nameof(aiService));
-            _mcpClient = mcpClient ?? throw new ArgumentNullException(nameof(mcpClient));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
-        /// Demonstrates natural language transaction processing.
+        /// Runs the basic AI-POS demonstration.
         /// </summary>
-        public async Task DemonstrateNaturalLanguageTransactionAsync()
+        public async Task RunDemoAsync()
         {
-            Console.WriteLine("=== AI-Enhanced Natural Language Transaction Processing ===");
-            Console.WriteLine();
+            Console.WriteLine("🤖 AI-POS Integration Demo");
+            Console.WriteLine("==========================");
 
-            try
+            // Natural language processing demo
+            await DemonstrateNaturalLanguageProcessing();
+
+            // Transaction risk analysis demo
+            await DemonstrateRiskAnalysis();
+
+            // Upselling suggestions demo
+            await DemonstrateUpsellSuggestions();
+
+            Console.WriteLine("\n✅ Demo complete!");
+        }
+
+        private async Task DemonstrateNaturalLanguageProcessing()
+        {
+            Console.WriteLine("\n🗣️  Natural Language Processing Demo");
+            Console.WriteLine("------------------------------------");
+
+            var queries = new[]
             {
-                // Simulate natural language input
-                var userInputs = new[]
-                {
-                    "I need two coffees and a muffin",
-                    "Add three sandwiches and two bottles of water", 
-                    "I want the lunch special for four people",
-                    "Can I get a large coffee with extra milk and sugar?"
-                };
+                "Add a large coffee to the transaction",
+                "What's our best-selling item today?",
+                "Show me yesterday's sales totals"
+            };
 
-                var context = new TransactionContext
+            foreach (var query in queries)
+            {
+                Console.WriteLine($"\nUser: \"{query}\"");
+                
+                var response = await _aiService.ProcessNaturalLanguageAsync(query);
+                
+                if (response.IsSuccessful)
                 {
-                    StoreId = "STORE_001",
-                    TerminalId = "REGISTER_01",
-                    Currency = "USD",
-                    ProductCategories = new() { "beverage", "food", "snack" }
-                };
-
-                foreach (var input in userInputs)
-                {
-                    Console.WriteLine($"Customer says: '{input}'");
-                    
-                    try
-                    {
-                        // Process natural language with AI
-                        var suggestion = await _aiService.ProcessNaturalLanguageAsync(input, context);
-                        
-                        Console.WriteLine($"AI Confidence: {suggestion.Confidence:P1}");
-                        Console.WriteLine($"Suggested items: {suggestion.RecommendedItems.Count}");
-                        Console.WriteLine($"Estimated total: ${suggestion.EstimatedTotal:F2}");
-                        
-                        if (suggestion.Warnings.Any())
-                        {
-                            Console.WriteLine($"Warnings: {string.Join(", ", suggestion.Warnings)}");
-                        }
-
-                        // Demonstrate actual transaction creation (if confidence is high enough)
-                        if (suggestion.Confidence > 0.8)
-                        {
-                            Console.WriteLine("  🤖 High confidence - would create actual transaction");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"❌ AI processing failed: {ex.Message}");
-                    }
-                    
-                    Console.WriteLine();
+                    Console.WriteLine($"🤖 AI: {response.ResponseText} (Confidence: {response.Confidence:P0})");
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Demo failed: {ex.Message}");
+                else
+                {
+                    Console.WriteLine($"❌ Error: {response.ErrorMessage}");
+                }
             }
         }
 
-        /// <summary>
-        /// Demonstrates real-time fraud detection capabilities.
-        /// </summary>
-        public async Task DemonstrateFraudDetectionAsync()
+        private async Task DemonstrateRiskAnalysis()
         {
-            Console.WriteLine("=== AI-Powered Fraud Detection ===");
-            Console.WriteLine();
+            Console.WriteLine("\n🚨 Transaction Risk Analysis Demo");
+            Console.WriteLine("---------------------------------");
 
-            try
+            // Create a sample transaction
+            var transaction = new SimpleTransaction
             {
-                // Create sample transactions with varying risk profiles
-                var transactions = new[]
+                Id = "TXN_001",
+                Lines = new List<SimpleTransactionLine>
                 {
-                    new AiTransaction // Normal transaction
-                    {
-                        Id = "TXN_001",
-                        Lines = new()
-                        {
-                            new() { ProductId = "COFFEE", ProductName = "Coffee", Quantity = 1, UnitPrice = 3.99m },
-                            new() { ProductId = "MUFFIN", ProductName = "Muffin", Quantity = 1, UnitPrice = 2.49m }
-                        },
-                        Total = 6.48m
-                    },
-                    
-                    new AiTransaction // High-value transaction
-                    {
-                        Id = "TXN_002", 
-                        Lines = new()
-                        {
-                            new() { ProductId = "LAPTOP", ProductName = "Laptop Computer", Quantity = 5, UnitPrice = 1299.99m },
-                            new() { ProductId = "PHONE", ProductName = "Mobile Phone", Quantity = 10, UnitPrice = 899.99m }
-                        },
-                        Total = 15499.85m
-                    },
-                    
-                    new AiTransaction // Unusual pattern
-                    {
-                        Id = "TXN_003",
-                        Lines = new()
-                        {
-                            new() { ProductId = "GIFTCARD", ProductName = "Gift Card", Quantity = 20, UnitPrice = 100.00m }
-                        },
-                        Total = 2000.00m
-                    }
-                };
+                    new() { ProductId = "COFFEE_LG", ProductName = "Large Coffee", Quantity = 1, UnitPrice = 3.99m, Total = 3.99m }
+                },
+                Total = 3.99m,
+                Currency = "USD"
+            };
 
-                foreach (var transaction in transactions)
-                {
-                    Console.WriteLine($"Analyzing transaction {transaction.Id} (${transaction.Total:F2}):");
-                    
-                    try
-                    {
-                        // Analyze transaction with AI
-                        var riskAssessment = await _aiService.AnalyzeTransactionRiskAsync(transaction);
-                        
-                        Console.WriteLine($"  Risk Level: {riskAssessment.RiskLevel}");
-                        Console.WriteLine($"  Confidence: {riskAssessment.Confidence:P1}");
-                        Console.WriteLine($"  Reason: {riskAssessment.Reason}");
-                        Console.WriteLine($"  Recommended Action: {riskAssessment.RecommendedAction}");
-                        
-                        // Take action based on risk level
-                        switch (riskAssessment.RiskLevel)
-                        {
-                            case RiskLevel.High or RiskLevel.Critical:
-                                Console.WriteLine("  ⚠️  ALERT: Transaction requires manager approval");
-                                break;
-                            case RiskLevel.Medium:
-                                Console.WriteLine("  ⚡ INFO: Additional verification recommended");
-                                break;
-                            case RiskLevel.Low:
-                                Console.WriteLine("  ✅ OK: Transaction appears normal");
-                                break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"  ❌ Risk analysis failed: {ex.Message}");
-                    }
-                    
-                    Console.WriteLine();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Fraud detection demo failed: {ex.Message}");
-            }
+            var riskAssessment = await _aiService.AnalyzeTransactionRiskAsync(transaction);
+
+            Console.WriteLine($"Transaction: {transaction.Id} - ${transaction.Total:F2}");
+            Console.WriteLine($"Risk Level: {riskAssessment.RiskLevel}");
+            Console.WriteLine($"Confidence: {riskAssessment.Confidence:P0}");
+            Console.WriteLine($"Reason: {riskAssessment.Reason}");
+            Console.WriteLine($"Action: {riskAssessment.RecommendedAction}");
         }
 
-        /// <summary>
-        /// Demonstrates AI-powered business intelligence queries.
-        /// </summary>
-        public async Task DemonstrateBusinessIntelligenceAsync()
+        private async Task DemonstrateUpsellSuggestions()
         {
-            Console.WriteLine("=== AI Business Intelligence Queries ===");
-            Console.WriteLine();
+            Console.WriteLine("\n💰 Upselling Suggestions Demo");
+            Console.WriteLine("-----------------------------");
 
-            try
+            // Create a sample transaction
+            var transaction = new SimpleTransaction
             {
-                var businessContext = new BusinessContext
+                Id = "TXN_002",
+                Lines = new List<SimpleTransactionLine>
                 {
-                    StoreId = "STORE_001",
-                    QueryPeriod = new() { Start = DateTime.Today.AddDays(-30), End = DateTime.Today },
-                    AvailableMetrics = new() { "sales", "transactions", "customers", "inventory" }
-                };
+                    new() { ProductId = "COFFEE_SM", ProductName = "Small Coffee", Quantity = 1, UnitPrice = 2.99m, Total = 2.99m }
+                },
+                Total = 2.99m,
+                Currency = "USD"
+            };
 
-                var queries = new[]
-                {
-                    "What were our top-selling items yesterday?",
-                    "How did our sales compare to last month?", 
-                    "Which products should we reorder?",
-                    "What time of day are we busiest?",
-                    "Are there any unusual sales patterns I should know about?"
-                };
+            var suggestions = await _aiService.GetUpsellSuggestionsAsync(transaction);
 
-                foreach (var query in queries)
-                {
-                    Console.WriteLine($"Business Query: '{query}'");
-                    
-                    try
-                    {
-                        var result = await _aiService.ProcessNaturalLanguageQueryAsync(query, businessContext);
-                        
-                        if (result.Success)
-                        {
-                            Console.WriteLine($"  Answer: {result.Answer}");
-                            Console.WriteLine($"  Confidence: {result.Confidence:P1}");
-                            Console.WriteLine($"  Sources: {result.Sources}");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"  ❌ Query failed: {result.Error}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"  ❌ Query processing failed: {ex.Message}");
-                    }
-                    
-                    Console.WriteLine();
-                }
-            }
-            catch (Exception ex)
+            Console.WriteLine($"Current Transaction: {transaction.Total:C}");
+            Console.WriteLine("🤖 AI Suggestions:");
+
+            foreach (var suggestion in suggestions)
             {
-                Console.WriteLine($"❌ Business intelligence demo failed: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Demonstrates AI-powered upselling and recommendations.
-        /// </summary>
-        public async Task DemonstrateIntelligentRecommendationsAsync()
-        {
-            Console.WriteLine("=== AI-Powered Upselling and Recommendations ===");
-            Console.WriteLine();
-
-            try
-            {
-                // Create a sample transaction in progress
-                var currentTransaction = new AiTransaction
-                {
-                    Id = "TXN_CURRENT",
-                    Lines = new()
-                    {
-                        new() { ProductId = "COFFEE", ProductName = "Large Coffee", Quantity = 1, UnitPrice = 4.99m }
-                    },
-                    Total = 4.99m
-                };
-
-                Console.WriteLine("Current transaction:");
-                Console.WriteLine($"  {currentTransaction.Lines[0].ProductName} - ${currentTransaction.Lines[0].UnitPrice:F2}");
-                Console.WriteLine();
-
-                // Get AI recommendations
-                try
-                {
-                    var upsellSuggestions = await _aiService.GetUpsellSuggestionsAsync(currentTransaction);
-                    
-                    Console.WriteLine("AI Recommendations:");
-                    foreach (var suggestion in upsellSuggestions)
-                    {
-                        Console.WriteLine($"  • {suggestion.ProductName} - ${suggestion.Price:F2}");
-                        Console.WriteLine($"    Reason: {suggestion.Reason}");
-                        Console.WriteLine($"    Confidence: {suggestion.Confidence:P1}");
-                    }
-                    
-                    if (!upsellSuggestions.Any())
-                    {
-                        Console.WriteLine("  No recommendations available at this time.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"  ❌ Recommendation engine failed: {ex.Message}");
-                }
-
-                Console.WriteLine();
-
-                // Get inventory insights
-                try
-                {
-                    var inventoryInsights = await _aiService.CheckInventoryImpactAsync(currentTransaction);
-                    
-                    Console.WriteLine("Inventory Insights:");
-                    foreach (var insight in inventoryInsights)
-                    {
-                        Console.WriteLine($"  • {insight.InsightType}: {insight.Message}");
-                        Console.WriteLine($"    Priority: {insight.Priority}/10");
-                    }
-                    
-                    if (!inventoryInsights.Any())
-                    {
-                        Console.WriteLine("  No inventory concerns detected.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"  ❌ Inventory analysis failed: {ex.Message}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Recommendations demo failed: {ex.Message}");
+                Console.WriteLine($"  • {suggestion.ProductName} - {suggestion.Price:C}");
+                Console.WriteLine($"    Reason: {suggestion.Reason} (Confidence: {suggestion.Confidence:P0})");
             }
         }
     }

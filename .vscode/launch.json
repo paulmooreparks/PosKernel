@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug .NET with Native",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/PosKernel.Host/bin/Debug/net9.0/PosKernel.Host.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Build All",
+            "console": "internalConsole",
+            "stopAtEntry": false,
+            "justMyCode": false,
+            "enableStepFiltering": false,
+            "suppressJITOptimizations": true
+        }
+    ]
+}

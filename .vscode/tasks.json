@@ -1,0 +1,25 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build All",
+			"dependsOn": ["Build Rust Library", "Build .NET Solution"],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "Build Rust Library",
+			"type": "shell",
+			"command": "cd pos-kernel-rs && cargo build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Build .NET Solution",
+			"type": "shell",
+			"command": "dotnet build PosKernel.sln",
+			"problemMatcher": []
+		}
+	]
+}

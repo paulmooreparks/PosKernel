@@ -24,8 +24,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     
     <!-- Package Information -->
-    <Title>POS Kernel AI Integration Demo</Title>
-    <Description>AI-powered demonstration of POS Kernel capabilities with live OpenAI integration and domain extension architecture</Description>
+    <Title>POS Kernel Restaurant Domain Extension</Title>
+    <Description>Restaurant domain extension for POS Kernel with SQLite product catalog</Description>
     <Authors>Paul Moore Parks</Authors>
     <Copyright>Copyright 2025 Paul Moore Parks and contributors</Copyright>
     <PackageProjectUrl>https://github.com/paulmooreparks/PosKernel</PackageProjectUrl>
@@ -37,20 +37,24 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    <PackageReference Include="ParksComputing.Xfer.Lang" Version="0.15.25-prerelease" />
+    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PosKernel.Abstractions\PosKernel.Abstractions.csproj" />
-    <ProjectReference Include="..\PosKernel.Core\PosKernel.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="restaurant-config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
