@@ -77,8 +77,10 @@ namespace PosKernel.Configuration
                 try
                 {
                     if (value is T directValue)
+                    {
                         return directValue;
-                    
+                    }
+
                     // Handle string to other type conversions
                     if (value is string stringValue && typeof(T) != typeof(string))
                     {
@@ -218,7 +220,9 @@ namespace PosKernel.Configuration
                     {
                         var trimmed = line.Trim();
                         if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#"))
+                        {
                             continue;
+                        }
 
                         var parts = trimmed.Split('=', 2);
                         if (parts.Length == 2)
@@ -319,7 +323,9 @@ namespace PosKernel.Configuration
             {
                 var trimmed = line.Trim();
                 if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#") || trimmed.StartsWith("//"))
+                {
                     continue;
+                }
 
                 var parts = trimmed.Split('=', 2);
                 if (parts.Length == 2)
@@ -338,17 +344,23 @@ namespace PosKernel.Configuration
             if (targetType == typeof(bool) || targetType == typeof(bool?))
             {
                 if (bool.TryParse(stringValue, out var boolValue))
+                {
                     return (T)(object)boolValue;
+                }
             }
             else if (targetType == typeof(int) || targetType == typeof(int?))
             {
                 if (int.TryParse(stringValue, out var intValue))
+                {
                     return (T)(object)intValue;
+                }
             }
             else if (targetType == typeof(double) || targetType == typeof(double?))
             {
                 if (double.TryParse(stringValue, out var doubleValue))
+                {
                     return (T)(object)doubleValue;
+                }
             }
             
             return default;
@@ -359,15 +371,170 @@ namespace PosKernel.Configuration
             var targetType = typeof(T);
             
             if (targetType == typeof(string))
+            {
                 return (T)(object)jsonElement.GetString()!;
+            }
             else if (targetType == typeof(bool) || targetType == typeof(bool?))
+            {
                 return (T)(object)jsonElement.GetBoolean();
+            }
             else if (targetType == typeof(int) || targetType == typeof(int?))
+            {
                 return (T)(object)jsonElement.GetInt32();
+            }
             else if (targetType == typeof(double) || targetType == typeof(double?))
+            {
                 return (T)(object)jsonElement.GetDouble();
+            }
             
             return default;
+        }
+
+        private void LoadFromFile(string filePath)
+        {
+            if (!File.Exists(filePath))
+            {
+                return;
+            }
+
+            var extension = Path.GetExtension(filePath).ToLowerInvariant();
+            
+            try
+            {
+                switch (extension)
+                {
+                    case ".json":
+                        LoadFromJson(filePath);
+                        break;
+                    case ".env":
+                        LoadFromEnv(filePath);
+                        break;
+                    case ".xfer":
+                        LoadFromXfer(filePath);
+                        break;
+                    default:
+                        LoadFromEnv(filePath); // Default to env format
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to load configuration from {filePath}: {ex.Message}", ex);
+            }
+        }
+
+        private void LoadFromEnv(string filePath)
+        {
+            var lines = File.ReadAllLines(filePath);
+            
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#"))
+                {
+                    continue;
+                }
+
+                var equalIndex = trimmed.IndexOf('=');
+                if (equalIndex > 0)
+                {
+                    var key = trimmed.Substring(0, equalIndex).Trim();
+                    var value = trimmed.Substring(equalIndex + 1).Trim();
+                    
+                    // Remove surrounding quotes if present
+                    if ((value.StartsWith("\"") && value.EndsWith("\"")) ||
+                        (value.StartsWith("'") && value.EndsWith("'")))
+                    {
+                        value = value.Substring(1, value.Length - 2);
+                    }
+                    
+                    _config[key] = value;
+                }
+            }
+        }
+
+        private void LoadFromXfer(string filePath)
+        {
+            var lines = File.ReadAllLines(filePath);
+            
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#") || trimmed.StartsWith("//"))
+                {
+                    continue;
+                }
+
+                var colonIndex = trimmed.IndexOf(':');
+                if (colonIndex > 0)
+                {
+                    var key = trimmed.Substring(0, colonIndex).Trim();
+                    var value = trimmed.Substring(colonIndex + 1).Trim();
+                    
+                    // Remove surrounding quotes if present
+                    if ((value.StartsWith("\"") && value.EndsWith("\"")) ||
+                        (value.StartsWith("'") && value.EndsWith("'")))
+                    {
+                        value = value.Substring(1, value.Length - 2);
+                    }
+                    
+                    _config[key] = ParseValue(value);
+                }
+            }
+        }
+
+        private object ParseValue(string value)
+        {
+            // Try to parse as different types
+            if (string.IsNullOrEmpty(value))
+            {
+                return "";
+            }
+
+            var stringValue = value.Trim();
+            
+            // Boolean
+            if (bool.TryParse(stringValue, out var boolValue))
+            {
+                return boolValue;
+            }
+
+            // Integer
+            if (int.TryParse(stringValue, out var intValue))
+            {
+                return intValue;
+            }
+
+            // Double
+            if (double.TryParse(stringValue, out var doubleValue))
+            {
+                return doubleValue;
+            }
+
+            // Default to string
+            return stringValue;
+        }
+
+        private object? ConvertValue(object value, Type targetType)
+        {
+            if (targetType == typeof(string))
+            {
+                return value.ToString();
+            }
+            else if (targetType == typeof(bool) || targetType == typeof(bool?))
+            {
+                return Convert.ToBoolean(value);
+            }
+            else if (targetType == typeof(int) || targetType == typeof(int?))
+            {
+                return Convert.ToInt32(value);
+            }
+            else if (targetType == typeof(double) || targetType == typeof(double?))
+            {
+                return Convert.ToDouble(value);
+            }
+
+            return Convert.ChangeType(value, targetType);
         }
     }
 

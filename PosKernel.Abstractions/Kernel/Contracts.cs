@@ -56,8 +56,18 @@ public sealed class Transaction
     /// </summary>
     public void AddLine(ProductId productId, int quantity, Money unitPrice)
     {
-        if (State != TransactionState.Building) throw new InvalidOperationException("Cannot add line when not building");
-        Lines.Add(new TransactionLine { ProductId = productId, Quantity = quantity, UnitPrice = unitPrice });
+        if (State != TransactionState.Building)
+        {
+            throw new InvalidOperationException("Cannot add line when not building");
+        }
+
+        var line = new TransactionLine
+        {
+            ProductId = productId,
+            Quantity = quantity,
+            UnitPrice = unitPrice
+        };
+        Lines.Add(line);
     }
 
     /// <summary>
@@ -65,8 +75,14 @@ public sealed class Transaction
     /// </summary>
     public void AddCashTender(Money amount)
     {
-        if (State != TransactionState.Building) throw new InvalidOperationException("Cannot tender when not building");
-        Tendered = Tendered.Add(amount);
-        if (Tendered.MinorUnits >= Total.MinorUnits) State = TransactionState.Completed;
+        if (State != TransactionState.Building)
+        {
+            throw new InvalidOperationException("Cannot tender when not building");
+        }
+        Tendered = new Money(Tendered.MinorUnits + amount.MinorUnits, amount.Currency);
+        if (Tendered.MinorUnits >= Total.MinorUnits)
+        {
+            State = TransactionState.Completed;
+        }
     }
 }

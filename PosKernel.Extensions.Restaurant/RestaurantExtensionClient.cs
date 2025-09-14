@@ -297,6 +297,47 @@ namespace PosKernel.Extensions.Restaurant.Client
             }
         }
 
+        public async Task DisconnectAsync()
+        {
+            try
+            {
+                if (_client?.IsConnected == true)
+                {
+                    var disconnectMessage = new
+                    {
+                        id = Guid.NewGuid().ToString(),
+                        jsonrpc = "2.0",
+                        method = "disconnect",
+                        @params = new { }
+                    };
+
+                    await SendMessageAsync(JsonSerializer.Serialize(disconnectMessage));
+                }
+
+                if (_stream != null)
+                {
+                    await _stream.DisposeAsync();
+                    _stream = null;
+                }
+
+                if (_client != null)
+                {
+                    _client.Close();
+                    _client = null;
+                }
+
+                _writer = null;
+                _reader = null;
+                IsConnected = false;
+                
+                _logger?.LogInformation("Disconnected from restaurant extension service");
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Error during disconnect");
+            }
+        }
+
         public void Dispose()
         {
             _reader?.Dispose();

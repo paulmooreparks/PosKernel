@@ -79,17 +79,17 @@ namespace PosKernel.Extensions.Restaurant
 
                 var product = new ProductInfo
                 {
-                    Sku = reader.GetString("sku"),
-                    Name = reader.GetString("name"),
-                    Description = reader.GetString("description"),
-                    CategoryId = reader.GetString("category_id"),
-                    CategoryName = reader.GetString("category_name"),
-                    BasePriceCents = reader.GetInt64("base_price_cents"),
-                    IsActive = reader.GetBoolean("is_active"),
-                    RequiresPreparation = reader.GetBoolean("requires_preparation"),
-                    PreparationTimeMinutes = reader.GetInt32("preparation_time_minutes"),
-                    TaxCategory = reader.GetString("tax_category"),
-                    PopularityRank = reader.GetInt32("popularity_rank")
+                    Sku = reader.GetString(0), // "sku"
+                    Name = reader.GetString(1), // "name" 
+                    Description = reader.GetString(2), // "description"
+                    CategoryId = reader.GetString(3), // "category_id"
+                    CategoryName = reader.GetString(9), // "category_name"
+                    BasePriceCents = reader.GetInt64(4), // "base_price_cents"
+                    IsActive = reader.GetBoolean(5), // "is_active"
+                    RequiresPreparation = reader.GetBoolean(6), // "requires_preparation"
+                    PreparationTimeMinutes = reader.GetInt32(7), // "preparation_time_minutes"
+                    TaxCategory = reader.GetString(10), // "tax_category"
+                    PopularityRank = reader.GetInt32(8) // "popularity_rank"
                 };
 
                 reader.Close();
@@ -163,10 +163,10 @@ namespace PosKernel.Extensions.Restaurant
             {
                 allergens.Add(new AllergenInfo
                 {
-                    Id = reader.GetString("id"),
-                    Name = reader.GetString("name"),
-                    Description = reader.GetString("description"),
-                    ContaminationRisk = reader.GetString("contamination_risk")
+                    Id = reader.GetString(0), // "id"
+                    Name = reader.GetString(1), // "name"
+                    Description = reader.GetString(2), // "description"
+                    ContaminationRisk = reader.GetString(3) // "contamination_risk"
                 });
             }
             
@@ -187,9 +187,9 @@ namespace PosKernel.Extensions.Restaurant
             
             while (reader.Read())
             {
-                var key = reader.GetString("spec_key");
-                var value = reader.GetString("spec_value");
-                var type = reader.GetString("spec_type");
+                var key = reader.GetString(0); // "spec_key"
+                var value = reader.GetString(1); // "spec_value"
+                var type = reader.GetString(2); // "spec_type"
 
                 specifications[key] = type switch
                 {
@@ -217,18 +217,19 @@ namespace PosKernel.Extensions.Restaurant
             
             while (reader.Read())
             {
-                var type = reader.GetString("customization_type");
+                var type = reader.GetString(0); // "customization_type"
                 var option = new CustomizationOption
                 {
-                    Value = reader.GetString("option_value"),
-                    PriceModifierCents = reader.GetInt64("price_modifier_cents"),
-                    IsDefault = reader.GetBoolean("is_default"),
-                    DisplayOrder = reader.GetInt32("display_order")
+                    Value = reader.GetString(1), // "option_value"
+                    PriceModifierCents = reader.GetInt64(2), // "price_modifier_cents" 
+                    IsDefault = reader.GetBoolean(3), // "is_default"
+                    DisplayOrder = reader.GetInt32(4) // "display_order"
                 };
 
                 if (!customizations.ContainsKey(type))
+                {
                     customizations[type] = new List<CustomizationOption>();
-                
+                }
                 customizations[type].Add(option);
             }
             
@@ -253,11 +254,11 @@ namespace PosKernel.Extensions.Restaurant
             {
                 upsells.Add(new UpsellSuggestion
                 {
-                    Sku = reader.GetString("suggested_sku"),
-                    Name = reader.GetString("name"),
-                    SuggestionType = reader.GetString("suggestion_type"),
-                    Priority = reader.GetInt32("priority"),
-                    PriceCents = reader.GetInt64("base_price_cents")
+                    Sku = reader.GetString(0), // "suggested_sku"
+                    SuggestionType = reader.GetString(1), // "suggestion_type"
+                    Priority = reader.GetInt32(2), // "priority"
+                    Name = reader.GetString(3), // "name"
+                    PriceCents = reader.GetInt64(4) // "base_price_cents"
                 });
             }
             
@@ -283,7 +284,7 @@ namespace PosKernel.Extensions.Restaurant
             using var reader = command.ExecuteReader();
             if (reader.Read())
             {
-                var hoursJson = reader.GetString("availability_hours");
+                var hoursJson = reader.GetString(0); // "availability_hours"
                 try
                 {
                     var hours = JsonSerializer.Deserialize<AvailabilityHours>(hoursJson);
@@ -337,13 +338,15 @@ namespace PosKernel.Extensions.Restaurant
             
             while (reader.Read())
             {
-                var discountType = reader.GetString("discount_type");
-                var discountValue = reader.GetDouble("discount_value");
-                var conditionsJson = reader.IsDBNull("conditions") ? null : reader.GetString("conditions");
+                var discountType = reader.GetString(0); // "discount_type"
+                var discountValue = reader.GetDouble(1); // "discount_value"
+                var conditionsJson = reader.IsDBNull(2) ? null : reader.GetString(2); // "conditions"
 
                 // Check if conditions are met
                 if (conditionsJson != null && !EvaluatePricingConditions(conditionsJson, context))
+                {
                     continue;
+                }
 
                 // Apply discount
                 appliedPrice = discountType switch
@@ -362,7 +365,10 @@ namespace PosKernel.Extensions.Restaurant
             try
             {
                 var conditions = JsonSerializer.Deserialize<PricingConditions>(conditionsJson);
-                if (conditions == null) return true;
+                if (conditions == null) 
+                {
+                    return true;
+                }
 
                 var now = DateTime.Now;
 
@@ -371,7 +377,9 @@ namespace PosKernel.Extensions.Restaurant
                 {
                     var currentDay = now.DayOfWeek.ToString().ToLowerInvariant();
                     if (!conditions.Days.Contains(currentDay))
+                    {
                         return false;
+                    }
                 }
 
                 if (!string.IsNullOrEmpty(conditions.StartTime) && !string.IsNullOrEmpty(conditions.EndTime))
@@ -381,7 +389,9 @@ namespace PosKernel.Extensions.Restaurant
                     {
                         var currentTime = now.TimeOfDay;
                         if (currentTime < startTime || currentTime > endTime)
+                        {
                             return false;
+                        }
                     }
                 }
 
