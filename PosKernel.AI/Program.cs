@@ -51,8 +51,24 @@ namespace PosKernel.AI
                         await RunInteractiveMcpChatAsync();
                         break;
 
+                    case DemoType.Kopitiam:
+                        await RunKopitiamMcpChatAsync();
+                        break;
+
                     case DemoType.LiveDemo:
                         await RunLiveMcpSalesProcessAsync();
+                        break;
+
+                    case DemoType.MinimalTest:
+                        await MinimalTest.RunCoreTranslationTestAsync();
+                        break;
+
+                    case DemoType.McpTest:
+                        await McpToolTest.TestMcpToolExecutionAsync();
+                        break;
+
+                    case DemoType.MenuTest:
+                        await MenuContextTest.TestMenuContextLoadingAsync();
                         break;
 
                     case DemoType.Help:
@@ -125,6 +141,71 @@ namespace PosKernel.AI
                 var toolsProvider = serviceProvider.GetRequiredService<PosToolsProvider>();
 
                 await RunMcpChatSessionAsync(mcpClient, toolsProvider, productCatalog);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Service initialization failed: {ex.Message}");
+                Console.WriteLine("Please check your configuration and try again.");
+            }
+        }
+
+        private static async Task RunKopitiamMcpChatAsync()
+        {
+            Console.WriteLine("🇸🇬 SINGAPORE KOPITIAM UNCLE MCP EXPERIENCE");
+            Console.WriteLine("==========================================");
+            Console.WriteLine("Authentic Singaporean kopitiam with traditional uncle");
+            Console.WriteLine("Multi-language support: Singlish, Mandarin, Cantonese, Hokkien, Malay, Tamil");
+            Console.WriteLine();
+
+            // Load configuration following documented patterns
+            var config = PosKernelConfiguration.Initialize();
+            var aiConfig = new AiConfiguration(config);
+            
+            var apiKey = aiConfig.ApiKey;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                Console.WriteLine("❌ OpenAI API key not found!");
+                Console.WriteLine("Please configure your API key in one of these locations:");
+                Console.WriteLine($"  • {PosKernelConfiguration.SecretsFilePath}");
+                Console.WriteLine($"  • Environment variable: OPENAI_API_KEY");
+                Console.WriteLine();
+                Console.WriteLine("Format in .env file: OPENAI_API_KEY=your-key-here");
+                return;
+            }
+
+            Console.WriteLine($"✅ API key loaded from configuration (ends with: ...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))})");
+            Console.WriteLine();
+
+            // Configure services with kopitiam personality
+            var services = new ServiceCollection();
+            services.AddLogging(builder => 
+                builder.AddConsole()
+                       .SetMinimumLevel(LogLevel.Warning)); // Keep it clean - only warnings and errors
+            
+            // Register kopitiam-specific services
+            services.AddSingleton<IProductCatalogService, KopitiamProductCatalogService>();
+            
+            // Register customization service for proper product + modifier handling
+            services.AddSingleton<ProductCustomizationService>();
+            
+            // Register MCP services with proper configuration
+            var mcpConfig = aiConfig.ToMcpConfiguration();
+            services.AddSingleton(mcpConfig);
+            services.AddSingleton<McpClient>();
+            services.AddSingleton<PosToolsProvider>();
+            
+            using var serviceProvider = services.BuildServiceProvider();
+            
+            try 
+            {
+                var productCatalog = serviceProvider.GetRequiredService<IProductCatalogService>();
+                var mcpClient = serviceProvider.GetRequiredService<McpClient>();
+                var toolsProvider = serviceProvider.GetRequiredService<PosToolsProvider>();
+
+                // Create kopitiam personality configuration
+                var personalityConfig = AiPersonalityFactory.CreatePersonality(PersonalityType.SingaporeanKopitiamUncle);
+
+                await RunMcpChatSessionWithPersonalityAsync(mcpClient, toolsProvider, productCatalog, personalityConfig);
             }
             catch (Exception ex)
             {
@@ -271,7 +352,15 @@ Greet the customer now:";
                         conversationHistory.Add($"Barista: {response.Content}");
                     }
 
-                    // Check for completion
+                    // Check for completion - Exit if transaction is completed by payment
+                    if (transaction.State == TransactionState.Completed)
+                    {
+                        // Transaction was just completed by payment processing - exit gracefully
+                        Console.WriteLine("✨ Transaction complete - thank you for your business!");
+                        break;
+                    }
+                    
+                    // Also check for explicit completion requests
                     if (IsCompletionRequest(userInput) && transaction.Lines.Any())
                     {
                         // Don't call HandleTransactionCompletion if transaction is already completed by payment processing
@@ -285,6 +374,380 @@ Greet the customer now:";
                 catch (Exception ex)
                 {
                     Console.WriteLine("Sorry, I'm having trouble with my MCP connection right now. Could you repeat that?");
+                    Console.WriteLine($"(Technical issue: {ex.Message})");
+                }
+
+                Console.WriteLine();
+            }
+        }
+
+        private static async Task RunMcpKopitiamSessionAsync(McpClient mcpClient, PosToolsProvider toolsProvider, IProductCatalogService productCatalog)
+        {
+            Console.WriteLine("☕ **WELCOME TO SINGAPORE KOPITIAM EXPERIENCE**");
+            Console.WriteLine("I'm your AI Kopitiam uncle using Model Context Protocol!");
+            Console.WriteLine("================================================");
+            Console.WriteLine();
+
+            // Create transaction using documented kernel contracts
+            var transaction = new Transaction
+            {
+                Id = TransactionId.New(),
+                State = TransactionState.Building,
+                Currency = "USD" // Following ISO 4217 standard
+            };
+
+            var availableProducts = await productCatalog.GetPopularItemsAsync();
+            var availableTools = toolsProvider.GetAvailableTools();
+
+            Console.WriteLine($"🏪 Transaction started: {transaction.Id}");
+            Console.WriteLine($"🛠️  MCP tools available: {availableTools.Count}");
+            Console.WriteLine($"📦 Products in catalog: {availableProducts.Count}");
+            Console.WriteLine();
+
+            var conversationHistory = new List<string>();
+            
+            // Generate contextual AI greeting
+            var currentTime = DateTime.Now;
+            var timeOfDay = currentTime.Hour < 10 ? "morning" : currentTime.Hour < 17 ? "afternoon" : "evening";
+            
+            var initialGreetingPrompt = $@"You are an AI barista at a coffee shop in Singapore (kopitiam). A customer just walked in. Give them a brief, natural greeting like a real kopitiam uncle would.
+
+TIME OF DAY: {timeOfDay} ({currentTime:HH:mm})
+
+Be friendly but concise - just greet them and ask what you can get them. Use simple, direct language like a local uncle. Don't list menu items or be overly sales-focused.
+
+Examples of good greetings:
+- ""Morning! What you want ah?""
+- ""Hi there! What you want to eat and drink?""
+- ""Afternoon! How can I help you?""/
+
+Greet the customer now:";
+
+            // AI greeting with fallback
+            try
+            {
+                Console.Write("🤖 AI Uncle (MCP): ");
+                
+                // FIRST: Load Uncle's menu context for cultural intelligence
+                var menuContextCall = new McpToolCall
+                {
+                    Id = "startup-menu-" + Guid.NewGuid().ToString()[..8],
+                    FunctionName = "load_menu_context",
+                    Arguments = new Dictionary<string, System.Text.Json.JsonElement>
+                    {
+                        ["include_categories"] = System.Text.Json.JsonSerializer.SerializeToElement(true)
+                    }
+                };
+                
+                Console.WriteLine("Loading complete menu knowledge...");
+                var menuContext = await toolsProvider.ExecuteToolAsync(menuContextCall, transaction);
+                
+                // Create enhanced greeting prompt with menu context
+                var enhancedGreetingPrompt = initialGreetingPrompt + $@"
+UNCLE'S MENU KNOWLEDGE (just loaded):
+{menuContext}
+
+Now that you have complete menu knowledge, greet the customer appropriately:";
+                
+                var greetingResponse = await mcpClient.CompleteWithToolsAsync(enhancedGreetingPrompt, availableTools);
+                Console.WriteLine(greetingResponse.Content);
+                Console.WriteLine();
+                conversationHistory.Add($"Uncle: {greetingResponse.Content}");
+            }
+            catch
+            {
+                Console.WriteLine("Morning! Welcome to our kopitiam! I can help you find what you need. What you like to drink and eat today?");
+                Console.WriteLine("(MCP greeting failed - using fallback)");
+                Console.WriteLine();
+                conversationHistory.Add("Uncle: Morning! Welcome to our kopitiam!");
+            }
+
+            // Main conversation loop
+            while (true)
+            {
+                DisplayTransactionStatus(transaction);
+                Console.Write("You: ");
+                
+                var userInput = Console.ReadLine()?.Trim();
+                
+                if (string.IsNullOrEmpty(userInput))
+                {
+                    continue;
+                }
+
+                // Handle exit commands
+                if (IsExitCommand(userInput))
+                {
+                    HandleExitCommand(userInput, transaction);
+                    break;
+                }
+
+                conversationHistory.Add($"Customer: {userInput}");
+                var conversationContext = string.Join("\n", conversationHistory.TakeLast(8));
+
+                // Create MCP-enhanced prompt following documented patterns
+                var prompt = CreateMcpPrompt(conversationContext, transaction, userInput);
+
+                try
+                {
+                    Console.Write("🤖 AI Uncle (MCP): ");
+                    var response = await mcpClient.CompleteWithToolsAsync(prompt, availableTools);
+                    
+                    // Display AI's conversational response FIRST
+                    if (!string.IsNullOrEmpty(response.Content))
+                    {
+                        Console.WriteLine(response.Content);
+                    }
+
+                    // Execute MCP tool calls and show results
+                    if (response.ToolCalls.Any())
+                    {
+                        Console.WriteLine($"  🛠️  Executing {response.ToolCalls.Count} MCP tool(s)...");
+                        
+                        var toolResults = new List<string>();
+                        foreach (var toolCall in response.ToolCalls)
+                        {
+                            var result = await toolsProvider.ExecuteToolAsync(toolCall, transaction);
+                            Console.WriteLine($"  📊 {toolCall.FunctionName}: {result}");
+                            toolResults.Add(result);
+                        }
+
+                        // Generate follow-up response after tool execution
+                        var followUpPrompt = CreateFollowUpPrompt(conversationContext, transaction, userInput, response.Content, toolResults);
+                        
+                        try 
+                        {
+                            var followUpResponse = await mcpClient.CompleteWithToolsAsync(followUpPrompt, availableTools);
+                            if (!string.IsNullOrEmpty(followUpResponse.Content))
+                            {
+                                Console.WriteLine($"🤖 {followUpResponse.Content}");
+                            }
+                            
+                            // Add the complete conversation to history
+                            conversationHistory.Add($"Uncle: {response.Content} [Executed tools] {followUpResponse.Content}");
+                        }
+                        catch
+                        {
+                            // Fallback follow-up without personality (this is the old kopitiam method)
+                            var itemCount = transaction.Lines.Count;
+                            var total = transaction.Total.ToDecimal();
+                            Console.WriteLine($"🤖 Good! Your order now has {itemCount} items totaling ${total:F2}. What else you want ah?");
+                            conversationHistory.Add($"Uncle: {response.Content} [Executed tools] Good! What else you want ah?");
+                        }
+                    }
+                    else
+                    {
+                        // No tools called, just add the response to history
+                        conversationHistory.Add($"Uncle: {response.Content}");
+                    }
+
+                    // Check for completion - Exit if transaction is completed by payment
+                    if (transaction.State == TransactionState.Completed)
+                    {
+                        // Transaction was just completed by payment processing - exit gracefully
+                        Console.WriteLine("✨ Transaction complete - thank you for your business!");
+                        break;
+                    }
+                    
+                    // Also check for explicit completion requests
+                    if (IsCompletionRequest(userInput) && transaction.Lines.Any())
+                    {
+                        // Don't call HandleTransactionCompletion if transaction is already completed by payment processing
+                        if (transaction.State != TransactionState.Completed)
+                        {
+                            HandleTransactionCompletion(transaction);
+                        }
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Sorry, I encounter problem with my MCP connection now. Can you repeat what you want?");
+                    Console.WriteLine($"(Technical issue: {ex.Message})");
+                }
+
+                Console.WriteLine();
+            }
+        }
+
+        private static async Task RunMcpChatSessionWithPersonalityAsync(McpClient mcpClient, PosToolsProvider toolsProvider, IProductCatalogService productCatalog, AiPersonalityConfig personality)
+        {
+            Console.WriteLine($"☕ **WELCOME TO OUR {personality.VenueTitle.ToUpper()}!**");
+            Console.WriteLine($"Your {personality.StaffTitle} is ready to serve you using Model Context Protocol!");
+            Console.WriteLine("================================================");
+            Console.WriteLine();
+
+            // Create transaction using documented kernel contracts
+            var transaction = new Transaction
+            {
+                Id = TransactionId.New(),
+                State = TransactionState.Building,
+                Currency = "SGD" // Singapore Dollar for kopitiam
+            };
+
+            var availableProducts = await productCatalog.GetPopularItemsAsync();
+            var availableTools = toolsProvider.GetAvailableTools();
+
+            Console.WriteLine($"🏪 Transaction started: {transaction.Id}");
+            Console.WriteLine($"🛠️  MCP tools available: {availableTools.Count}");
+            Console.WriteLine($"📦 Products in catalog: {availableProducts.Count}");
+            if (personality.SupportedLanguages.Count > 1)
+            {
+                Console.WriteLine($"🗣️  Languages supported: {string.Join(", ", personality.SupportedLanguages)}");
+            }
+            Console.WriteLine();
+
+            var conversationHistory = new List<string>();
+            
+            // Generate contextual AI greeting using personality
+            var currentTime = DateTime.Now;
+            var timeOfDay = currentTime.Hour < 12 ? "morning" : currentTime.Hour < 17 ? "afternoon" : "evening";
+            
+            var greetingPrompt = CreatePersonalizedGreetingPrompt(personality, timeOfDay, currentTime);
+
+            // AI greeting with fallback
+            try
+            {
+                Console.Write($"🤖 {personality.StaffTitle} (MCP): ");
+                
+                // FIRST: Load Uncle's menu context for cultural intelligence
+                var menuContextCall = new McpToolCall
+                {
+                    Id = "startup-menu-" + Guid.NewGuid().ToString()[..8],
+                    FunctionName = "load_menu_context",
+                    Arguments = new Dictionary<string, System.Text.Json.JsonElement>
+                    {
+                        ["include_categories"] = System.Text.Json.JsonSerializer.SerializeToElement(true)
+                    }
+                };
+                
+                Console.WriteLine("Loading complete menu knowledge...");
+                var menuContext = await toolsProvider.ExecuteToolAsync(menuContextCall, transaction);
+                
+                // Create enhanced greeting prompt with menu context
+                var enhancedGreetingPrompt = greetingPrompt + $@"
+UNCLE'S MENU KNOWLEDGE (just loaded):
+{menuContext}
+
+Now that you have complete menu knowledge, greet the customer appropriately:";
+                
+                var greetingResponse = await mcpClient.CompleteWithToolsAsync(enhancedGreetingPrompt, availableTools);
+                Console.WriteLine(greetingResponse.Content);
+                Console.WriteLine();
+                conversationHistory.Add($"{personality.StaffTitle}: {greetingResponse.Content}");
+            }
+            catch
+            {
+                var fallbackGreeting = GetFallbackGreeting(personality, timeOfDay);
+                Console.WriteLine(fallbackGreeting);
+                Console.WriteLine("(MCP greeting failed - using fallback)");
+                Console.WriteLine();
+                conversationHistory.Add($"{personality.StaffTitle}: {fallbackGreeting}");
+            }
+
+            // Main conversation loop with personality-aware prompts
+            while (true)
+            {
+                DisplayTransactionStatus(transaction);
+                Console.Write("You: ");
+                
+                var userInput = Console.ReadLine()?.Trim();
+                
+                if (string.IsNullOrEmpty(userInput))
+                {
+                    continue;
+                }
+
+                // Handle exit commands
+                if (IsExitCommand(userInput))
+                {
+                    HandleExitCommand(userInput, transaction);
+                    break;
+                }
+
+                conversationHistory.Add($"Customer: {userInput}");
+                var conversationContext = string.Join("\n", conversationHistory.TakeLast(8));
+
+                // Create personality-aware MCP prompt
+                var prompt = CreatePersonalizedMcpPrompt(personality, conversationContext, transaction, userInput);
+
+                try
+                {
+                    Console.Write($"🤖 {personality.StaffTitle} (MCP): ");
+                    var response = await mcpClient.CompleteWithToolsAsync(prompt, availableTools);
+                    
+                    // Display AI's conversational response FIRST
+                    if (!string.IsNullOrEmpty(response.Content))
+                    {
+                        Console.WriteLine(response.Content);
+                    }
+
+                    // Execute MCP tool calls and show results
+                    if (response.ToolCalls.Any())
+                    {
+                        Console.WriteLine($"  🛠️  Executing {response.ToolCalls.Count} MCP tool(s)...");
+                        
+                        var toolResults = new List<string>();
+                        foreach (var toolCall in response.ToolCalls)
+                        {
+                            var result = await toolsProvider.ExecuteToolAsync(toolCall, transaction);
+                            Console.WriteLine($"  📊 {toolCall.FunctionName}: {result}");
+                            toolResults.Add(result);
+                        }
+
+                        // Generate personality-aware follow-up response
+                        var followUpPrompt = CreatePersonalizedFollowUpPrompt(personality, conversationContext, transaction, userInput, response.Content, toolResults);
+                        
+                        try 
+                        {
+                            var followUpResponse = await mcpClient.CompleteWithToolsAsync(followUpPrompt, availableTools);
+                            if (!string.IsNullOrEmpty(followUpResponse.Content))
+                            {
+                                Console.WriteLine($"🤖 {followUpResponse.Content}");
+                            }
+                            
+                            // Add the complete conversation to history
+                            conversationHistory.Add($"{personality.StaffTitle}: {response.Content} [Executed tools] {followUpResponse.Content}");
+                        }
+                        catch
+                        {
+                            // Fallback follow-up with personality
+                            var itemCount = transaction.Lines.Count;
+                            var total = transaction.Total.ToDecimal();
+                            var fallbackResponse = GetPersonalityFallback(personality, itemCount, total);
+                            Console.WriteLine($"🤖 {fallbackResponse}");
+                            conversationHistory.Add($"{personality.StaffTitle}: {response.Content} [Executed tools] {fallbackResponse}");
+                        }
+                    }
+                    else
+                    {
+                        // No tools called, just add the response to history
+                        conversationHistory.Add($"{personality.StaffTitle}: {response.Content}");
+                    }
+
+                    // Check for completion - Exit if transaction is completed by payment
+                    if (transaction.State == TransactionState.Completed)
+                    {
+                        // Transaction was just completed by payment processing - exit gracefully
+                        Console.WriteLine("✨ Transaction complete - thank you for your business!");
+                        break;
+                    }
+                    
+                    // Also check for explicit completion requests
+                    if (IsCompletionRequest(userInput) && transaction.Lines.Any())
+                    {
+                        // Don't call HandleTransactionCompletion if transaction is already completed by payment processing
+                        if (transaction.State != TransactionState.Completed)
+                        {
+                            HandleTransactionCompletion(transaction);
+                        }
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var errorResponse = GetPersonalityErrorResponse(personality);
+                    Console.WriteLine($"{errorResponse}");
                     Console.WriteLine($"(Technical issue: {ex.Message})");
                 }
 
@@ -318,6 +781,12 @@ If transaction state is Completed, the customer has PAID and the sale is DONE. D
 
 FOLLOW-UP INSTRUCTIONS - INTERPRET MCP RESULTS LIKE A REAL BARISTA:
 
+If MCP returned ORDER_VERIFICATION (order summary):
+- Present the order clearly to customer
+- Ask for confirmation: ""Does this look correct?""
+- Wait for their confirmation before calling process_payment
+- Example: ""Here's your order: Large Coffee $3.99, Muffin $2.50. Total $6.49. Does this look correct?""
+
 If MCP returned payment processed and transaction is COMPLETED:
 - Thank them for their purchase
 - Confirm what they ordered
@@ -339,20 +808,18 @@ If MCP returned product not found:
 - Be a helpful barista! Ask clarifying questions
 - Suggest alternatives or ask what they had in mind
 
+VERIFICATION PROTOCOL:
+- When customer wants to pay → ALWAYS verify order first
+- Show them exactly what they're buying
+- Wait for confirmation before processing payment
+- This builds trust and prevents errors
+
 SMART UPSELLING - BUT ONLY IF TRANSACTION IS NOT COMPLETED:
 - The MCP layer provides strategic upsell hints based on business rules
 - Use these hints naturally in your conversation
 - BUT NEVER upsell after payment is processed!
 
-EXAMPLE RESPONSES:
-
-If transaction is COMPLETED (payment processed):
-Perfect! Your payment has been processed and your Medium Coffee and Breakfast Sandwich are ready. Thank you for visiting us today - enjoy your meal!
-
-If transaction is NOT completed and MCP returned ""ADDED: Large Coffee ($3.99) | UPSELL_HINT: pastry"":
-Excellent! I've added that Large Coffee ($3.99) to your order. Your total is now $3.99. Would you like one of our fresh pastries to go with that coffee? What else can I get for you?
-
-REMEMBER: Once payment is processed, the interaction should END gracefully, not continue selling!
+REMEMBER: Verification before payment is mandatory for customer trust and accuracy!
 
 Provide your follow-up response now based on the actual MCP results:";
         }
@@ -384,15 +851,19 @@ WHEN CUSTOMER WANTS TO ORDER:
 WHEN CUSTOMER ASKS QUESTIONS:
 1. Use 'get_popular_items' or 'search_products' for general information
 
-WHEN CUSTOMER IS DONE:
-1. Use 'process_payment'
+WHEN CUSTOMER WANTS TO PAY OR CHECKOUT:
+1. FIRST call 'verify_order' to show what they ordered
+2. Ask them to confirm: ""Does this look correct?""
+3. Only AFTER they confirm call 'process_payment'
+4. This verification is MANDATORY - never skip it!
 
-KEY RULE: Always use 'add_item_to_transaction' when they want to order something. The MCP layer will handle everything else!
+KEY RULE: Always use 'add_item_to_transaction' when they want to order something. Always verify before payment!
 
 CONVERSATIONAL BEHAVIOR:
 - Always respond enthusiastically first
 - Use natural coffee shop language
 - Trust the MCP layer completely
+- VERIFY orders before processing payment
 
 Respond as a skilled barista:";
         }
@@ -414,7 +885,12 @@ Respond as a skilled barista:";
 
         private static bool IsCompletionRequest(string userInput)
         {
-            var finishedPhrases = new[] { "that's all", "that's everything", "ready to pay", "i'm done", "checkout" };
+            var finishedPhrases = new[] { 
+                "that's all", "that's everything", "ready to pay", "i'm done", 
+                "checkout", "pay now", "finish order", "complete order",
+                "that's it", "nothing else", "just these", "can pay",
+                "habis", "sudah", "selesai", "finished", "done"  // Add multilingual completion terms
+            };
             return finishedPhrases.Any(phrase => userInput.ToLower().Contains(phrase));
         }
 
@@ -579,6 +1055,124 @@ Give a brief, enthusiastic follow-up response acknowledging what you added and t
             }
         }
 
+        private enum DemoType
+        {
+            Invalid,
+            Interactive,
+            Kopitiam,
+            LiveDemo,
+            MinimalTest,
+            McpTest,
+            MenuTest,
+            Help
+        }
+
+        private static string CreatePersonalizedGreetingPrompt(AiPersonalityConfig personality, string timeOfDay, DateTime currentTime)
+        {
+            if (personality.Type == PersonalityType.SingaporeanKopitiamUncle)
+            {
+                return personality.GreetingTemplate
+                    .Replace("{timeOfDay}", timeOfDay)
+                    .Replace("{currentTime}", currentTime.ToString("HH:mm"));
+            }
+
+            // Default American barista greeting
+            return $@"You are an AI barista at a coffee shop. A customer just walked in. Give them a brief, natural greeting like a real barista would.
+
+TIME OF DAY: {timeOfDay} ({currentTime:HH:mm})
+
+Be friendly but concise - just greet them and ask what you can get them. Don't list menu items or be overly sales-focused.
+
+Examples of good greetings:
+- ""Good morning! What can I get for you today?""
+- ""Hi there! What sounds good to you?""
+- ""Good afternoon! How can I help you?""
+
+Greet the customer now:";
+        }
+
+        private static string GetFallbackGreeting(AiPersonalityConfig personality, string timeOfDay)
+        {
+            if (personality.Type == PersonalityType.SingaporeanKopitiamUncle)
+            {
+                return timeOfDay switch
+                {
+                    "morning" => personality.CommonPhrases.GetValueOrDefault("greeting_morning", "Morning! What you want?"),
+                    "afternoon" => personality.CommonPhrases.GetValueOrDefault("greeting_afternoon", "Afternoon lah! Order what?"),
+                    _ => personality.CommonPhrases.GetValueOrDefault("greeting_evening", "Evening! You want order or not?")
+                };
+            }
+
+            return $"Good {timeOfDay}! Welcome to our coffee shop! What can I get for you today?";
+        }
+
+        private static string CreatePersonalizedMcpPrompt(AiPersonalityConfig personality, string conversationContext, Transaction transaction, string userInput)
+        {
+            if (personality.Type == PersonalityType.SingaporeanKopitiamUncle)
+            {
+                var culturalIntelligence = GetCulturalIntelligence(personality, userInput);
+                return personality.OrderingTemplate
+                    .Replace("{conversationContext}", conversationContext)
+                    .Replace("{cartItems}", transaction.Lines.Any() ? 
+                        string.Join(", ", transaction.Lines.Select(l => $"{l.ProductId} x{l.Quantity}")) : "none")
+                    .Replace("{currentTotal}", transaction.Total.ToDecimal().ToString("F2"))
+                    .Replace("{currency}", transaction.Currency)
+                    .Replace("{userInput}", userInput)
+                    .Replace("{culturalIntelligence}", culturalIntelligence);
+            }
+
+            // Default American barista prompt (existing logic)
+            return CreateMcpPrompt(conversationContext, transaction, userInput);
+        }
+
+        private static string GetCulturalIntelligence(AiPersonalityConfig personality, string userInput)
+        {
+            if (personality.Type == PersonalityType.SingaporeanKopitiamUncle)
+            {
+                return @"
+
+🌏 KOPITIAM UNCLE'S CULTURAL INTELLIGENCE:
+
+CULTURAL UNDERSTANDING:
+Customer says 'teh si kosong dua' means:
+- Base product: 'Teh C' (tea with evaporated milk) 
+- Preparation: 'kosong' (no sugar)
+- Quantity: 'dua' (two cups)
+
+YOUR WORKFLOW:
+1. Translate: 'teh si kosong' → 'teh c kosong' 
+2. MCP will find base product: 'Teh C'
+3. You tell customer: 'Can! Teh C two cups, kosong ah!'
+4. You tell drink maker: 'Teh C kosong!' (preparation instruction)
+
+TRANSLATION RULES:
+• 'teh si' → 'teh c' (evaporated milk tea)
+• 'kopi si' → 'kopi c' (evaporated milk coffee)
+• 'roti kaya' → 'kaya toast'
+
+PREPARATION INSTRUCTIONS (not separate products):
+• kosong = no sugar (tell drink maker)
+• siew dai = less sugar (tell drink maker)  
+• gao = strong/thick (tell drink maker)
+• poh = weak/diluted (tell drink maker)
+• peng = iced (tell drink maker)
+
+QUANTITY INTELLIGENCE:
+• 'satu' = 1, 'dua' = 2, 'tiga' = 3
+
+MCP TOOL CALLING:
+Always call with FULL customer phrase:
+- 'teh si kosong dua' → add_item_to_transaction('teh si kosong', quantity=2)
+- MCP will find 'Teh C' and add it to cart
+- You handle the cultural communication
+
+UNCLE'S ROLE:
+You're the cultural bridge between customer language and POS system!";
+            }
+
+            return "";
+        }
+        
         private static DemoType ParseDemoType(string[] args)
         {
             if (args.Length == 0)
@@ -590,7 +1184,11 @@ Give a brief, enthusiastic follow-up response acknowledging what you added and t
             return arg switch
             {
                 "--interactive" or "--chat" or "-i" => DemoType.Interactive,
+                "--kopitiam" or "-k" => DemoType.Kopitiam,
                 "--live" or "--demo" or "-l" => DemoType.LiveDemo,
+                "--minimal" or "--test" or "-t" => DemoType.MinimalTest,
+                "--mcp" or "--tool" => DemoType.McpTest,
+                "--menu" or "--context" => DemoType.MenuTest,
                 "--help" or "-h" => DemoType.Help,
                 _ => DemoType.Invalid
             };
@@ -602,53 +1200,68 @@ Give a brief, enthusiastic follow-up response acknowledging what you added and t
             Console.WriteLine();
             Console.WriteLine("Options:");
             Console.WriteLine("  --interactive, --chat, -i   💬 Interactive MCP AI Barista Chat (DEFAULT)");
+            Console.WriteLine("  --kopitiam, -k              🇸🇬 Singaporean Kopitiam Uncle Experience");
             Console.WriteLine("  --live, --demo, -l          🔥 Live MCP AI Sales Process Demo");
+            Console.WriteLine("  --minimal, --test, -t       🔧 Minimal Core Translation Test");
+            Console.WriteLine("  --mcp, --tool               🛠️  MCP Tool Execution Test");
+            Console.WriteLine("  --menu, --context           📂 Menu Context Loading Test");
             Console.WriteLine("  --help, -h                  Show this help message");
             Console.WriteLine();
-            Console.WriteLine("💬 Interactive MCP AI Barista Chat:");
-            Console.WriteLine("  • Model Context Protocol (MCP) structured tool calling");
-            Console.WriteLine("  • Real POS Kernel transaction processing");
-            Console.WriteLine("  • Live OpenAI integration with function calling");
-            Console.WriteLine("  • Actual restaurant database with SQLite");
-            Console.WriteLine("  • Professional AI-driven customer service");
-            Console.WriteLine("  • Security-first design with kernel isolation");
-            Console.WriteLine();
-            Console.WriteLine("🔥 Live MCP AI Sales Process Demo:");
-            Console.WriteLine("  • Automated MCP-powered sales scenario");
-            Console.WriteLine("  • AI-driven product recommendations via structured tools");
-            Console.WriteLine("  • Complete transaction lifecycle with MCP");
-            Console.WriteLine("  • Demonstrates advanced AI customer interaction patterns");
-            Console.WriteLine();
-            Console.WriteLine("🚀 MCP Architecture Features:");
-            Console.WriteLine("   ✅ Model Context Protocol (MCP) industry standard");
-            Console.WriteLine("   ✅ Structured function calling (no brittle text parsing)");
-            Console.WriteLine("   ✅ Real-time inventory queries via MCP tools");
-            Console.WriteLine("   ✅ Type-safe AI-to-POS integration");
-            Console.WriteLine("   ✅ Actual POS Kernel transaction engine");
-            Console.WriteLine("   ✅ Professional error handling and logging");
-            Console.WriteLine("   ✅ Configuration-driven setup following documented patterns");
-            Console.WriteLine();
-            Console.WriteLine("🔐 Security & Design Standards:");
-            Console.WriteLine("   ✅ Security-first design with AI isolation from kernel");
-            Console.WriteLine("   ✅ Proper dependency injection patterns");
-            Console.WriteLine("   ✅ Documented error handling strategies");
-            Console.WriteLine("   ✅ ISO 4217 currency code compliance");
-            Console.WriteLine("   ✅ Kernel contract adherence");
-            Console.WriteLine();
-            Console.WriteLine("💡 Try the MCP AI barista:");
-            Console.WriteLine("   dotnet run -- --interactive");
-            Console.WriteLine();
-            Console.WriteLine("📁 Configuration:");
-            Console.WriteLine($"   Config directory: {PosKernelConfiguration.ConfigDirectory}");
-            Console.WriteLine($"   Secrets file: {PosKernelConfiguration.SecretsFilePath}");
         }
 
-        private enum DemoType
+        private static string CreatePersonalizedFollowUpPrompt(AiPersonalityConfig personality, string conversationContext, Transaction transaction, string userInput, string initialResponse, List<string> toolResults)
         {
-            Invalid,
-            Interactive,
-            LiveDemo,
-            Help
+            if (personality.Type == PersonalityType.SingaporeanKopitiamUncle)
+            {
+                var toolSummary = string.Join("; ", toolResults);
+                
+                return $@"You are a kopitiam uncle. The MCP tools returned: {toolSummary}
+
+Customer said: '{userInput}'
+
+KOPITIAM UNCLE FOLLOW-UP:
+
+If MCP returned DISAMBIGUATION_NEEDED:
+- Present options clearly: 'You want kaya toast ($2.80) or kaya toast set ($4.80)?'
+
+If MCP returned ADDED:  
+- Acknowledge: 'Can!'
+- State what was added: 'Kaya toast $2.80'
+- Give total if multiple items: 'Total $4.40 dollar'
+- Ask what else: 'What else?'
+
+If MCP returned PRODUCT_NOT_FOUND:
+- Ask: 'You want what ah?'
+
+Keep it short and direct like a real kopitiam uncle.";
+            }
+
+            // Default American barista follow-up (existing logic)
+            return CreateFollowUpPrompt(conversationContext, transaction, userInput, initialResponse, toolResults);
+        }
+
+        private static string GetPersonalityFallback(AiPersonalityConfig personality, int itemCount, decimal total)
+        {
+            if (personality.Type == PersonalityType.SingaporeanKopitiamUncle)
+            {
+                return itemCount > 0 
+                    ? $"Can! {itemCount} items, total {total:F2} dollar. What else?"
+                    : "What you want order?";
+            }
+
+            return $"Great! Your order now has {itemCount} items totaling ${total:F2}. What else can I get for you today?";
+        }
+
+        private static string GetPersonalityErrorResponse(AiPersonalityConfig personality)
+        {
+            if (personality.Type == PersonalityType.SingaporeanKopitiamUncle)
+            {
+                return "Sorry, I encounter problem with my MCP connection now. Can you repeat what you want?" +
+                       " (Technical issue: {ex.Message})";
+            }
+
+            return "Sorry, I'm having trouble with my MCP connection right now. Could you repeat that?" +
+                   " (Technical issue: {ex.Message})";
         }
     }
 }
