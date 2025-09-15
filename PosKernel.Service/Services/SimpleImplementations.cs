@@ -34,6 +34,10 @@ namespace PosKernel.Service.Services
         private int _successfulTransactions;
         private double _totalTransactionTime;
 
+        /// <summary>
+        /// Initializes a new instance of the MetricsCollector class.
+        /// </summary>
+        /// <param name="logger">Logger for debugging and diagnostics.</param>
         public MetricsCollector(ILogger<MetricsCollector> logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -41,6 +45,12 @@ namespace PosKernel.Service.Services
             _timings = new ConcurrentDictionary<string, double>();
         }
 
+        /// <summary>
+        /// Records a transaction metric for performance monitoring.
+        /// </summary>
+        /// <param name="operation">The operation name.</param>
+        /// <param name="duration">The operation duration.</param>
+        /// <param name="success">Whether the operation was successful.</param>
         public void RecordTransaction(string operation, TimeSpan duration, bool success)
         {
             lock (_lockObject)
@@ -63,21 +73,32 @@ namespace PosKernel.Service.Services
                 operation, duration.TotalMilliseconds, success);
         }
 
+        /// <summary>
+        /// Records a session event for monitoring.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="eventName">The event name.</param>
         public void RecordSession(string sessionId, string eventName)
         {
             _counters.AddOrUpdate($"session_{eventName}", 1, (k, v) => v + 1);
             _logger.LogDebug("Recorded session event: {SessionId} -> {Event}", sessionId, eventName);
         }
 
+        /// <summary>
+        /// Gets the current performance metrics snapshot.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A snapshot of current performance metrics.</returns>
         public async Task<MetricsSnapshot> GetMetricsAsync(CancellationToken cancellationToken = default)
         {
             var process = Process.GetCurrentProcess();
             
+            MetricsSnapshot result;
             lock (_lockObject)
             {
                 var averageTime = _totalTransactions > 0 ? _totalTransactionTime / _totalTransactions : 0;
                 
-                return new MetricsSnapshot
+                result = new MetricsSnapshot
                 {
                     Timestamp = DateTime.UtcNow,
                     TotalTransactions = _totalTransactions,
@@ -94,8 +115,17 @@ namespace PosKernel.Service.Services
                     }
                 };
             }
+
+            // Fix CS1996 warning - await outside of lock
+            await Task.CompletedTask;
+            return result;
         }
 
+        /// <summary>
+        /// Resets all collected metrics.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous reset operation.</returns>
         public async Task ResetMetricsAsync(CancellationToken cancellationToken = default)
         {
             lock (_lockObject)
@@ -108,6 +138,9 @@ namespace PosKernel.Service.Services
             }
 
             _logger.LogInformation("Metrics reset");
+            
+            // Fix CS1998 warning
+            await Task.CompletedTask;
         }
 
         private double CalculateRequestsPerSecond()
@@ -126,6 +159,12 @@ namespace PosKernel.Service.Services
         private readonly IPosKernelEngine _kernelEngine;
         private readonly ISessionManager _sessionManager;
 
+        /// <summary>
+        /// Initializes a new instance of the HealthChecker class.
+        /// </summary>
+        /// <param name="logger">Logger for debugging and diagnostics.</param>
+        /// <param name="kernelEngine">The POS kernel engine to monitor.</param>
+        /// <param name="sessionManager">The session manager to monitor.</param>
         public HealthChecker(
             ILogger<HealthChecker> logger,
             IPosKernelEngine kernelEngine,
@@ -136,6 +175,11 @@ namespace PosKernel.Service.Services
             _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         }
 
+        /// <summary>
+        /// Performs a comprehensive health check of the system.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The health check result with detailed information.</returns>
         public async Task<HealthCheckResult> CheckHealthAsync(CancellationToken cancellationToken = default)
         {
             var startTime = DateTime.UtcNow;
@@ -193,6 +237,11 @@ namespace PosKernel.Service.Services
             };
         }
 
+        /// <summary>
+        /// Gets the current health status of the system.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The current health status.</returns>
         public async Task<HealthStatus> GetHealthStatusAsync(CancellationToken cancellationToken = default)
         {
             var result = await CheckHealthAsync(cancellationToken);
@@ -207,35 +256,62 @@ namespace PosKernel.Service.Services
     public class JsonRpcServer : IJsonRpcServer
     {
         private readonly ILogger<JsonRpcServer> _logger;
-        private bool _isRunning = false;
 
+        /// <summary>
+        /// Initializes a new instance of the JsonRpcServer class.
+        /// </summary>
+        /// <param name="logger">Logger for debugging and diagnostics.</param>
         public JsonRpcServer(ILogger<JsonRpcServer> logger)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
+        /// <summary>
+        /// Starts the JSON-RPC server (placeholder implementation).
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous start operation.</returns>
         public async Task StartAsync(CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("JSON-RPC Server start requested (placeholder implementation)");
-            _isRunning = true;
             
             // In a real implementation, this would start an HTTP server
             // For now, just log that it's disabled
             _logger.LogInformation("JSON-RPC Server is disabled in this version - use Named Pipes for communication");
+            
+            // Fix CS1998 warning
+            await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Stops the JSON-RPC server (placeholder implementation).
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous stop operation.</returns>
         public async Task StopAsync(CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("JSON-RPC Server stop requested");
-            _isRunning = false;
+            
+            // Fix CS1998 warning
+            await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Processes a JSON-RPC request (placeholder implementation).
+        /// </summary>
+        /// <param name="request">The JSON-RPC request to process.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The JSON-RPC response as a JsonElement.</returns>
         public async Task<JsonElement> ProcessRequestAsync(JsonElement request, CancellationToken cancellationToken = default)
         {
             // Placeholder implementation
             _logger.LogDebug("JSON-RPC request received (placeholder)");
             
-            return JsonDocument.Parse("""{"jsonrpc": "2.0", "error": {"code": "not_implemented", "message": "JSON-RPC server not implemented in this version"}}""").RootElement;
+            var result = JsonDocument.Parse("""{"jsonrpc": "2.0", "error": {"code": "not_implemented", "message": "JSON-RPC server not implemented in this version"}}""").RootElement;
+            
+            // Fix CS1998 warning
+            await Task.CompletedTask;
+            return result;
         }
     }
 }

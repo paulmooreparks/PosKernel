@@ -398,18 +398,53 @@ namespace PosKernel.Configuration
     {
         private readonly PosKernelConfiguration _config;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AiConfiguration"/> class.
+        /// </summary>
+        /// <param name="config">The underlying configuration system.</param>
         public AiConfiguration(PosKernelConfiguration config)
         {
             _config = config;
         }
 
+        /// <summary>
+        /// Gets the AI provider name.
+        /// </summary>
         public string Provider => _config.GetValue("AI:Provider", "OpenAI")!;
+
+        /// <summary>
+        /// Gets the AI model name.
+        /// </summary>
         public string Model => _config.GetValue("AI:Model", "gpt-4o-mini")!;
+
+        /// <summary>
+        /// Gets the temperature setting for AI responses.
+        /// </summary>
         public double Temperature => _config.GetValue("AI:Temperature", 0.3);
+
+        /// <summary>
+        /// Gets the maximum tokens for AI responses.
+        /// </summary>
         public int MaxTokens => _config.GetValue("AI:MaxTokens", 1000);
+
+        /// <summary>
+        /// Gets the timeout in seconds for AI requests.
+        /// </summary>
         public int TimeoutSeconds => _config.GetValue("AI:TimeoutSeconds", 30);
+
+        /// <summary>
+        /// Gets the base URL for the AI service.
+        /// </summary>
         public string BaseUrl => _config.GetValue("MCP_BASE_URL", "https://api.openai.com/v1/")!;
+
+        /// <summary>
+        /// Gets the API key for the AI service.
+        /// </summary>
         public string? ApiKey => _config.GetValue<string>("OPENAI_API_KEY");
+
+        /// <summary>
+        /// Gets a value indicating whether to use mock AI instead of real AI.
+        /// </summary>
         public bool UseMockAi => _config.GetValue("USE_MOCK_AI", "false")!.Equals("true", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>

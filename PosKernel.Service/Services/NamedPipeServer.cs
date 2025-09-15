@@ -20,14 +20,12 @@ using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 
-namespace PosKernel.Service.Services
-{
+namespace PosKernel.Service.Services {
     /// <summary>
     /// Named pipe server implementation for high-performance local IPC communication.
     /// Handles multiple concurrent client connections with JSON-RPC protocol.
     /// </summary>
-    public class NamedPipeServer : INamedPipeServer, IDisposable
-    {
+    public class NamedPipeServer : INamedPipeServer, IDisposable {
         private readonly ILogger<NamedPipeServer> _logger;
         private readonly PosKernelServiceOptions _options;
         private readonly IPosKernelEngine _kernelEngine;
@@ -36,12 +34,18 @@ namespace PosKernel.Service.Services
         private readonly List<Task> _serverTasks;
         private bool _disposed = false;
 
+        /// <summary>
+        /// Initializes a new instance of the NamedPipeServer class.
+        /// </summary>
+        /// <param name="logger">Logger for debugging and diagnostics.</param>
+        /// <param name="options">Service configuration options.</param>
+        /// <param name="kernelEngine">The POS kernel engine for processing requests.</param>
+        /// <param name="metricsCollector">Metrics collector for performance monitoring.</param>
         public NamedPipeServer(
             ILogger<NamedPipeServer> logger,
             IOptions<PosKernelServiceOptions> options,
             IPosKernelEngine kernelEngine,
-            IMetricsCollector metricsCollector)
-        {
+            IMetricsCollector metricsCollector) {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
             _kernelEngine = kernelEngine ?? throw new ArgumentNullException(nameof(kernelEngine));
@@ -50,33 +54,28 @@ namespace PosKernel.Service.Services
             _serverTasks = new List<Task>();
         }
 
-        public async Task StartAsync(CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                _logger.LogInformation("Starting named pipe server on pipe: {PipeName}", _options.NamedPipe.PipeName);
+        /// <summary>
+        /// Starts the named pipe server for client connections.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous start operation.</returns>
+        public async Task StartAsync(CancellationToken cancellationToken = default) {
+            _logger.LogInformation("Starting Named Pipe Server on pipe: {PipeName}", _options.NamedPipe.PipeName);
 
-                // Create multiple server instances for concurrent connections
-                for (int i = 0; i < _options.NamedPipe.MaxServerInstances; i++)
-                {
-                    var serverTask = Task.Run(() => RunServerInstanceAsync(i, _cancellationTokenSource.Token));
-                    _serverTasks.Add(serverTask);
-                }
+            // Start background task to handle clients
+            _ = Task.Run(() => HandleClientsAsync(cancellationToken), cancellationToken);
 
-                _logger.LogInformation("Named pipe server started with {InstanceCount} server instances", 
-                    _options.NamedPipe.MaxServerInstances);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error starting named pipe server");
-                throw;
-            }
+            // Add await to fix CS1998
+            await Task.CompletedTask;
         }
 
-        public async Task StopAsync(CancellationToken cancellationToken = default)
-        {
-            try
-            {
+        /// <summary>
+        /// Stops the named pipe server and closes all active connections.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous stop operation.</returns>
+        public async Task StopAsync(CancellationToken cancellationToken = default) {
+            try {
                 _logger.LogInformation("Stopping named pipe server...");
 
                 _cancellationTokenSource.Cancel();
@@ -86,77 +85,73 @@ namespace PosKernel.Service.Services
 
                 _logger.LogInformation("Named pipe server stopped successfully");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) {
                 _logger.LogError(ex, "Error stopping named pipe server");
                 throw;
             }
         }
 
-        private async Task RunServerInstanceAsync(int instanceId, CancellationToken cancellationToken)
-        {
-            _logger.LogDebug("Starting named pipe server instance {InstanceId}", instanceId);
+        private async Task HandleClientsAsync(CancellationToken cancellationToken) {
+            try {
+                _logger.LogInformation("Named Pipe Server is running. Waiting for client connections...");
 
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                try
-                {
-                    using var pipeServer = new NamedPipeServerStream(
-                        _options.NamedPipe.PipeName,
-                        PipeDirection.InOut,
-                        _options.NamedPipe.MaxServerInstances,
-                        PipeTransmissionMode.Message,
-                        PipeOptions.Asynchronous,
-                        _options.NamedPipe.BufferSize,
-                        _options.NamedPipe.BufferSize);
+                while (!cancellationToken.IsCancellationRequested) {
+                    try {
+                        using var pipeServer = new NamedPipeServerStream(
+                            _options.NamedPipe.PipeName,
+                            PipeDirection.InOut,
+                            _options.NamedPipe.MaxServerInstances,
+#if WINDOWS
+                            PipeTransmissionMode.Message,
+#else
+                            PipeTransmissionMode.Byte,
+#endif
+                            PipeOptions.Asynchronous,
+                            _options.NamedPipe.BufferSize,
+                            _options.NamedPipe.BufferSize);
 
-                    _logger.LogDebug("Instance {InstanceId}: Waiting for client connection...", instanceId);
+                        _logger.LogDebug("Waiting for client connection...");
 
-                    // Wait for client connection
-                    await pipeServer.WaitForConnectionAsync(cancellationToken);
+                        // Wait for client connection
+                        await pipeServer.WaitForConnectionAsync(cancellationToken);
 
-                    _logger.LogDebug("Instance {InstanceId}: Client connected", instanceId);
+                        _logger.LogDebug("Client connected");
 
-                    // Handle the client connection
-                    await HandleClientConnectionAsync(pipeServer, instanceId, cancellationToken);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    // Expected during shutdown
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error in named pipe server instance {InstanceId}", instanceId);
-                    
-                    // Brief delay before retrying to avoid tight loop on persistent errors
-                    await Task.Delay(1000, cancellationToken);
+                        // Handle the client connection
+                        await HandleClientConnectionAsync(pipeServer, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+                        // Expected during shutdown
+                        break;
+                    }
+                    catch (Exception ex) {
+                        _logger.LogError(ex, "Error in named pipe server instance");
+
+                        // Brief delay before retrying to avoid tight loop on persistent errors
+                        await Task.Delay(1000, cancellationToken);
+                    }
                 }
             }
-
-            _logger.LogDebug("Named pipe server instance {InstanceId} stopped", instanceId);
+            catch (Exception ex) {
+                _logger.LogError(ex, "Error in HandleClientsAsync");
+            }
         }
 
-        private async Task HandleClientConnectionAsync(NamedPipeServerStream pipeServer, int instanceId, CancellationToken cancellationToken)
-        {
-            try
-            {
+        private async Task HandleClientConnectionAsync(NamedPipeServerStream pipeServer, CancellationToken cancellationToken) {
+            try {
                 using var reader = new StreamReader(pipeServer, Encoding.UTF8, false, _options.NamedPipe.BufferSize, true);
                 using var writer = new StreamWriter(pipeServer, Encoding.UTF8, _options.NamedPipe.BufferSize, true) { AutoFlush = true };
 
-                while (pipeServer.IsConnected && !cancellationToken.IsCancellationRequested)
-                {
-                    try
-                    {
+                while (pipeServer.IsConnected && !cancellationToken.IsCancellationRequested) {
+                    try {
                         // Read request
                         var requestJson = await reader.ReadLineAsync(cancellationToken);
-                        if (requestJson == null)
-                        {
-                            _logger.LogDebug("Instance {InstanceId}: Client disconnected", instanceId);
+                        if (requestJson == null) {
+                            _logger.LogDebug("Client disconnected");
                             break;
                         }
 
-                        _logger.LogDebug("Instance {InstanceId}: Received request: {Request}", instanceId, requestJson);
+                        _logger.LogDebug("Received request: {Request}", requestJson);
 
                         // Process request
                         var responseJson = await ProcessRequestAsync(requestJson, cancellationToken);
@@ -164,49 +159,47 @@ namespace PosKernel.Service.Services
                         // Send response
                         await writer.WriteLineAsync(responseJson);
 
-                        _logger.LogDebug("Instance {InstanceId}: Sent response: {Response}", instanceId, responseJson);
+                        _logger.LogDebug("Sent response: {Response}", responseJson);
                     }
-                    catch (IOException ex)
-                    {
-                        _logger.LogDebug(ex, "Instance {InstanceId}: Client connection closed", instanceId);
+                    catch (IOException ex) {
+                        _logger.LogDebug(ex, "Client connection closed");
                         break;
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Instance {InstanceId}: Error processing client request", instanceId);
-                        
+                    catch (Exception ex) {
+                        _logger.LogError(ex, "Error processing client request");
+
                         // Send error response to client
-                        try
-                        {
+                        try {
                             var errorResponse = CreateErrorResponse("internal_error", $"Internal server error: {ex.Message}");
                             await writer.WriteLineAsync(errorResponse);
                         }
-                        catch (Exception writeEx)
-                        {
-                            _logger.LogError(writeEx, "Instance {InstanceId}: Failed to send error response", instanceId);
+                        catch (Exception writeEx) {
+                            _logger.LogError(writeEx, "Failed to send error response");
                             break;
                         }
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Instance {InstanceId}: Error handling client connection", instanceId);
+            catch (Exception ex) {
+                _logger.LogError(ex, "Error handling client connection");
             }
         }
 
-        public async Task<string> ProcessRequestAsync(string requestJson, CancellationToken cancellationToken = default)
-        {
+        /// <summary>
+        /// Processes a JSON-RPC request from a client.
+        /// </summary>
+        /// <param name="requestJson">The JSON-RPC request string.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The JSON-RPC response as a string.</returns>
+        public async Task<string> ProcessRequestAsync(string requestJson, CancellationToken cancellationToken = default) {
             var startTime = DateTime.UtcNow;
             string operation = "unknown";
             bool success = false;
 
-            try
-            {
+            try {
                 // Parse JSON-RPC request
                 var request = JsonSerializer.Deserialize<JsonRpcRequest>(requestJson);
-                if (request == null)
-                {
+                if (request == null) {
                     return CreateErrorResponse("parse_error", "Invalid JSON-RPC request");
                 }
 
@@ -217,30 +210,25 @@ namespace PosKernel.Service.Services
                 var result = await RouteRequestAsync(request, cancellationToken);
                 success = true;
 
-                var response = new JsonRpcResponse
-                {
+                var response = new JsonRpcResponse {
                     Id = request.Id,
                     Result = result
                 };
 
                 return JsonSerializer.Serialize(response);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) {
                 _logger.LogError(ex, "Error processing request: {RequestJson}", requestJson);
                 return CreateErrorResponse("internal_error", $"Internal server error: {ex.Message}");
             }
-            finally
-            {
+            finally {
                 var duration = DateTime.UtcNow - startTime;
                 _metricsCollector.RecordTransaction(operation, duration, success);
             }
         }
 
-        private async Task<object?> RouteRequestAsync(JsonRpcRequest request, CancellationToken cancellationToken)
-        {
-            return request.Method switch
-            {
+        private async Task<object?> RouteRequestAsync(JsonRpcRequest request, CancellationToken cancellationToken) {
+            return request.Method switch {
                 "create_session" => await HandleCreateSessionAsync(request.Params, cancellationToken),
                 "start_transaction" => await HandleStartTransactionAsync(request.Params, cancellationToken),
                 "add_line_item" => await HandleAddLineItemAsync(request.Params, cancellationToken),
@@ -251,8 +239,7 @@ namespace PosKernel.Service.Services
             };
         }
 
-        private async Task<object?> HandleCreateSessionAsync(JsonElement? parameters, CancellationToken cancellationToken)
-        {
+        private async Task<object?> HandleCreateSessionAsync(JsonElement? parameters, CancellationToken cancellationToken) {
             var terminalId = parameters?.GetProperty("terminal_id").GetString() ?? "unknown";
             var operatorId = parameters?.GetProperty("operator_id").GetString() ?? "system";
 
@@ -260,8 +247,7 @@ namespace PosKernel.Service.Services
             return new { session_id = sessionId };
         }
 
-        private async Task<object?> HandleStartTransactionAsync(JsonElement? parameters, CancellationToken cancellationToken)
-        {
+        private async Task<object?> HandleStartTransactionAsync(JsonElement? parameters, CancellationToken cancellationToken) {
             var sessionId = parameters?.GetProperty("session_id").GetString() ?? throw new ArgumentException("session_id required");
             var currency = parameters?.GetProperty("currency").GetString() ?? "USD";
 
@@ -269,8 +255,7 @@ namespace PosKernel.Service.Services
             return result;
         }
 
-        private async Task<object?> HandleAddLineItemAsync(JsonElement? parameters, CancellationToken cancellationToken)
-        {
+        private async Task<object?> HandleAddLineItemAsync(JsonElement? parameters, CancellationToken cancellationToken) {
             var sessionId = parameters?.GetProperty("session_id").GetString() ?? throw new ArgumentException("session_id required");
             var transactionId = parameters?.GetProperty("transaction_id").GetString() ?? throw new ArgumentException("transaction_id required");
             var productId = parameters?.GetProperty("product_id").GetString() ?? throw new ArgumentException("product_id required");
@@ -281,8 +266,7 @@ namespace PosKernel.Service.Services
             return result;
         }
 
-        private async Task<object?> HandleProcessPaymentAsync(JsonElement? parameters, CancellationToken cancellationToken)
-        {
+        private async Task<object?> HandleProcessPaymentAsync(JsonElement? parameters, CancellationToken cancellationToken) {
             var sessionId = parameters?.GetProperty("session_id").GetString() ?? throw new ArgumentException("session_id required");
             var transactionId = parameters?.GetProperty("transaction_id").GetString() ?? throw new ArgumentException("transaction_id required");
             var amount = parameters?.GetProperty("amount").GetDecimal() ?? throw new ArgumentException("amount required");
@@ -292,8 +276,7 @@ namespace PosKernel.Service.Services
             return result;
         }
 
-        private async Task<object?> HandleGetTransactionAsync(JsonElement? parameters, CancellationToken cancellationToken)
-        {
+        private async Task<object?> HandleGetTransactionAsync(JsonElement? parameters, CancellationToken cancellationToken) {
             var sessionId = parameters?.GetProperty("session_id").GetString() ?? throw new ArgumentException("session_id required");
             var transactionId = parameters?.GetProperty("transaction_id").GetString() ?? throw new ArgumentException("transaction_id required");
 
@@ -301,24 +284,20 @@ namespace PosKernel.Service.Services
             return result;
         }
 
-        private async Task<object?> HandleCloseSessionAsync(JsonElement? parameters, CancellationToken cancellationToken)
-        {
+        private async Task<object?> HandleCloseSessionAsync(JsonElement? parameters, CancellationToken cancellationToken) {
             var sessionId = parameters?.GetProperty("session_id").GetString() ?? throw new ArgumentException("session_id required");
 
             await _kernelEngine.CloseSessionAsync(sessionId, cancellationToken);
             return new { success = true };
         }
 
-        private static string CreateErrorResponse(string code, string message, object? id = null)
-        {
-            var error = new JsonRpcError
-            {
+        private static string CreateErrorResponse(string code, string message, object? id = null) {
+            var error = new JsonRpcError {
                 Code = code,
                 Message = message
             };
 
-            var response = new JsonRpcResponse
-            {
+            var response = new JsonRpcResponse {
                 Id = id,
                 Error = error
             };
@@ -326,10 +305,11 @@ namespace PosKernel.Service.Services
             return JsonSerializer.Serialize(response);
         }
 
-        public void Dispose()
-        {
-            if (!_disposed)
-            {
+        /// <summary>
+        /// Releases all resources used by the NamedPipeServer.
+        /// </summary>
+        public void Dispose() {
+            if (!_disposed) {
                 _cancellationTokenSource?.Cancel();
                 _cancellationTokenSource?.Dispose();
                 _disposed = true;
@@ -339,26 +319,73 @@ namespace PosKernel.Service.Services
 
     // JSON-RPC Data Transfer Objects
 
-    public class JsonRpcRequest
-    {
+    /// <summary>
+    /// Represents a JSON-RPC request message.
+    /// </summary>
+    public class JsonRpcRequest {
+        /// <summary>
+        /// Gets or sets the JSON-RPC protocol version.
+        /// </summary>
         public string JsonRpc { get; set; } = "2.0";
+
+        /// <summary>
+        /// Gets or sets the method name to invoke.
+        /// </summary>
         public string Method { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the method parameters.
+        /// </summary>
         public JsonElement? Params { get; set; }
+
+        /// <summary>
+        /// Gets or sets the request identifier.
+        /// </summary>
         public object? Id { get; set; }
     }
 
-    public class JsonRpcResponse
-    {
+    /// <summary>
+    /// Represents a JSON-RPC response message.
+    /// </summary>
+    public class JsonRpcResponse {
+        /// <summary>
+        /// Gets or sets the JSON-RPC protocol version.
+        /// </summary>
         public string JsonRpc { get; set; } = "2.0";
+
+        /// <summary>
+        /// Gets or sets the result data for successful responses.
+        /// </summary>
         public object? Result { get; set; }
+
+        /// <summary>
+        /// Gets or sets the error information for failed responses.
+        /// </summary>
         public JsonRpcError? Error { get; set; }
+
+        /// <summary>
+        /// Gets or sets the request identifier that this response corresponds to.
+        /// </summary>
         public object? Id { get; set; }
     }
 
-    public class JsonRpcError
-    {
+    /// <summary>
+    /// Represents error information in a JSON-RPC response.
+    /// </summary>
+    public class JsonRpcError {
+        /// <summary>
+        /// Gets or sets the error code.
+        /// </summary>
         public string Code { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the human-readable error message.
+        /// </summary>
         public string Message { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets additional error data.
+        /// </summary>
         public object? Data { get; set; }
     }
 }

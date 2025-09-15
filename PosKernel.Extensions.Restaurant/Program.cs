@@ -16,20 +16,22 @@
 
 using System;
 using System.IO;
-using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using PosKernel.Extensions.Restaurant;
 
-namespace PosKernel.Extensions.Restaurant {
+namespace PosKernel.Extensions.Restaurant 
+{
     /// <summary>
     /// Main entry point for the restaurant domain extension.
     /// This runs as a pure service that provides product catalog operations
     /// via named pipe IPC for any client (AI demo, kernel service, etc.).
     /// </summary>
-    class Program {
-        static async Task<int> Main(string[] args) {
-            try {
+    class Program 
+    {
+        static async Task<int> Main(string[] args) 
+        {
+            try 
+            {
                 Console.WriteLine("POS Kernel Restaurant Extension v0.4.0");
                 Console.WriteLine("Simplified domain service");
 
@@ -146,61 +148,29 @@ namespace PosKernel.Extensions.Restaurant {
             }
         }
 
-        public static ProductValidationResult ValidateProduct(string productId, ValidationContext context) {
+        public static ProductValidationResult ValidateProduct(string productId, ValidationContext context) 
+        {
             // Validate product implementation
             // For demo, let's assume any product ID containing "COFFEE" is valid
-            if (productId.Contains("COFFEE")) {
-                return new ProductValidationResult {
+            if (productId.Contains("COFFEE")) 
+            {
+                return new ProductValidationResult 
+                {
                     IsValid = true,
-                    ProductInfo = new ProductInfo {
+                    ProductInfo = new ProductInfo 
+                    {
                         Name = "Sample Coffee",
-                        Description = "A delicious cup of coffee",
-                        Images = new List<string> { "image1.png", "image2.png" }
+                        Description = "A delicious cup of coffee"
                     },
                     EffectivePriceCents = 299
                 };
             }
 
-            return new ProductValidationResult {
+            return new ProductValidationResult 
+            {
                 IsValid = false,
                 ErrorMessage = "Product not found"
             };
         }
-    }
-
-    /// <summary>
-    /// Configuration class for restaurant extension settings.
-    /// </summary>
-    public class RestaurantConfig {
-        public string DatabasePath { get; set; } = "";
-    }
-
-    /// <summary>
-    /// Validation result class for product validation.
-    /// </summary>
-    public class ProductValidationResult {
-        public bool IsValid { get; set; }
-        public string ErrorMessage { get; set; } = "";
-        public ProductInfo? ProductInfo { get; set; }
-        public int EffectivePriceCents { get; set; }
-    }
-
-    /// <summary>
-    /// Product information class.
-    /// </summary>
-    public class ProductInfo {
-        public string Name { get; set; } = "";
-        public string Description { get; set; } = "";
-        public List<string> Images { get; set; } = new();
-    }
-
-    /// <summary>
-    /// Validation context for extension operations.
-    /// </summary>
-    public class ValidationContext {
-        public string StoreId { get; set; } = "STORE_COFFEE_001";
-        public string TerminalId { get; set; } = "TERMINAL_01";
-        public string OperatorId { get; set; } = "SYSTEM";
-        public DateTime RequestTime { get; set; } = DateTime.Now;
     }
 }

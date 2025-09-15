@@ -32,6 +32,11 @@ namespace PosKernel.Service.Services
         private readonly Timer _cleanupTimer;
         private bool _disposed = false;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="SessionManager"/> class.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="options">Configuration options for the session manager.</param>
         public SessionManager(ILogger<SessionManager> logger, IOptions<PosKernelServiceOptions> options)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -46,7 +51,14 @@ namespace PosKernel.Service.Services
                 _options.Session.TimeoutMinutes, _options.Session.MaxConcurrentSessions);
         }
 
-        public async Task<SessionInfo> CreateSessionAsync(string terminalId, string operatorId, CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Creates a new session for the specified terminal and operator.
+        /// </summary>
+        /// <param name="terminalId">The terminal identifier.</param>
+        /// <param name="operatorId">The operator identifier.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The created session information.</returns>
+        public Task<SessionInfo> CreateSessionAsync(string terminalId, string operatorId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -76,7 +88,7 @@ namespace PosKernel.Service.Services
                 _logger.LogInformation("Session created: {SessionId} for terminal {TerminalId}, operator {OperatorId}",
                     sessionId, terminalId, operatorId);
 
-                return sessionInfo;
+                return Task.FromResult(sessionInfo);
             }
             catch (Exception ex)
             {
@@ -86,7 +98,13 @@ namespace PosKernel.Service.Services
             }
         }
 
-        public async Task<SessionInfo?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Gets session information by session identifier.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>Session information if found, otherwise null.</returns>
+        public Task<SessionInfo?> GetSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -102,10 +120,10 @@ namespace PosKernel.Service.Services
                         sessionInfo.IsActive = false;
                     }
 
-                    return sessionInfo;
+                    return Task.FromResult<SessionInfo?>(sessionInfo);
                 }
 
-                return null;
+                return Task.FromResult<SessionInfo?>(null);
             }
             catch (Exception ex)
             {
@@ -114,7 +132,13 @@ namespace PosKernel.Service.Services
             }
         }
 
-        public async Task UpdateSessionActivityAsync(string sessionId, CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Updates the last activity timestamp for a session.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        public Task UpdateSessionActivityAsync(string sessionId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -127,6 +151,7 @@ namespace PosKernel.Service.Services
                 {
                     _logger.LogWarning("Attempted to update activity for non-existent session {SessionId}", sessionId);
                 }
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -135,7 +160,13 @@ namespace PosKernel.Service.Services
             }
         }
 
-        public async Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Closes a session and marks it as inactive.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        public Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -148,6 +179,7 @@ namespace PosKernel.Service.Services
                 {
                     _logger.LogWarning("Attempted to close non-existent session {SessionId}", sessionId);
                 }
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -156,7 +188,12 @@ namespace PosKernel.Service.Services
             }
         }
 
-        public async Task<IReadOnlyList<SessionInfo>> GetActiveSessionsAsync(CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Gets all currently active sessions.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A list of active session information.</returns>
+        public Task<IReadOnlyList<SessionInfo>> GetActiveSessionsAsync(CancellationToken cancellationToken = default)
         {
             try
             {
@@ -165,7 +202,7 @@ namespace PosKernel.Service.Services
                     .OrderBy(s => s.CreatedAt)
                     .ToArray();
 
-                return activeSessions;
+                return Task.FromResult<IReadOnlyList<SessionInfo>>(activeSessions);
             }
             catch (Exception ex)
             {
@@ -174,7 +211,12 @@ namespace PosKernel.Service.Services
             }
         }
 
-        public async Task CleanupExpiredSessionsAsync(CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Cleans up expired sessions and removes old inactive sessions.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        public Task CleanupExpiredSessionsAsync(CancellationToken cancellationToken = default)
         {
             try
             {
@@ -213,10 +255,12 @@ namespace PosKernel.Service.Services
                         _logger.LogInformation("Removed {Count} old inactive sessions", sessionsToRemove.Length);
                     }
                 }
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during session cleanup");
+                throw;
             }
         }
 
@@ -240,6 +284,9 @@ namespace PosKernel.Service.Services
             return $"session_{timestamp}_{random}";
         }
 
+        /// <summary>
+        /// Disposes the session manager and releases all resources.
+        /// </summary>
         public void Dispose()
         {
             if (!_disposed)

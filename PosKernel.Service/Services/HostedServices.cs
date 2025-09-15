@@ -28,6 +28,12 @@ namespace PosKernel.Service.Services
         private readonly IPosKernelEngine _kernelEngine;
         private readonly ISessionManager _sessionManager;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PosKernelServiceHost"/> class.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="kernelEngine">The POS kernel engine instance.</param>
+        /// <param name="sessionManager">The session manager instance.</param>
         public PosKernelServiceHost(
             ILogger<PosKernelServiceHost> logger,
             IPosKernelEngine kernelEngine,
@@ -38,6 +44,11 @@ namespace PosKernel.Service.Services
             _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         }
 
+        /// <summary>
+        /// Executes the service host background processing.
+        /// </summary>
+        /// <param name="stoppingToken">Token to signal service shutdown.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("POS Kernel Service starting...");
@@ -75,12 +86,22 @@ namespace PosKernel.Service.Services
         private readonly ILogger<NamedPipeServerHost> _logger;
         private readonly INamedPipeServer _namedPipeServer;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="NamedPipeServerHost"/> class.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="namedPipeServer">The named pipe server instance.</param>
         public NamedPipeServerHost(ILogger<NamedPipeServerHost> logger, INamedPipeServer namedPipeServer)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _namedPipeServer = namedPipeServer ?? throw new ArgumentNullException(nameof(namedPipeServer));
         }
 
+        /// <summary>
+        /// Executes the named pipe server background processing.
+        /// </summary>
+        /// <param name="stoppingToken">Token to signal service shutdown.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             try
@@ -95,6 +116,11 @@ namespace PosKernel.Service.Services
             }
         }
 
+        /// <summary>
+        /// Stops the named pipe server.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the stop operation.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
             try
@@ -118,12 +144,22 @@ namespace PosKernel.Service.Services
         private readonly ILogger<JsonRpcServerHost> _logger;
         private readonly IJsonRpcServer _jsonRpcServer;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="JsonRpcServerHost"/> class.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="jsonRpcServer">The JSON-RPC server instance.</param>
         public JsonRpcServerHost(ILogger<JsonRpcServerHost> logger, IJsonRpcServer jsonRpcServer)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _jsonRpcServer = jsonRpcServer ?? throw new ArgumentNullException(nameof(jsonRpcServer));
         }
 
+        /// <summary>
+        /// Executes the JSON-RPC server background processing.
+        /// </summary>
+        /// <param name="stoppingToken">Token to signal service shutdown.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             try
@@ -138,6 +174,11 @@ namespace PosKernel.Service.Services
             }
         }
 
+        /// <summary>
+        /// Stops the JSON-RPC server.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the stop operation.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
             try
@@ -161,12 +202,22 @@ namespace PosKernel.Service.Services
         private readonly ILogger<MetricsCollectorHost> _logger;
         private readonly IMetricsCollector _metricsCollector;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="MetricsCollectorHost"/> class.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="metricsCollector">The metrics collector instance.</param>
         public MetricsCollectorHost(ILogger<MetricsCollectorHost> logger, IMetricsCollector metricsCollector)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _metricsCollector = metricsCollector ?? throw new ArgumentNullException(nameof(metricsCollector));
         }
 
+        /// <summary>
+        /// Executes the metrics collection background processing.
+        /// </summary>
+        /// <param name="stoppingToken">Token to signal service shutdown.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("Metrics Collector started");
@@ -204,12 +255,22 @@ namespace PosKernel.Service.Services
         private readonly ILogger<HealthCheckerHost> _logger;
         private readonly IHealthChecker _healthChecker;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="HealthCheckerHost"/> class.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="healthChecker">The health checker instance.</param>
         public HealthCheckerHost(ILogger<HealthCheckerHost> logger, IHealthChecker healthChecker)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _healthChecker = healthChecker ?? throw new ArgumentNullException(nameof(healthChecker));
         }
 
+        /// <summary>
+        /// Executes the health checking background processing.
+        /// </summary>
+        /// <param name="stoppingToken">Token to signal service shutdown.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("Health Checker started");

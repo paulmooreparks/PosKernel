@@ -107,10 +107,29 @@ namespace PosKernel.Abstractions.Services
     /// </summary>
     public class ProductLookupContext
     {
+        /// <summary>
+        /// Gets or sets the store identifier.
+        /// </summary>
         public string StoreId { get; set; } = "STORE_DEFAULT";
+
+        /// <summary>
+        /// Gets or sets the terminal identifier.
+        /// </summary>
         public string TerminalId { get; set; } = "TERMINAL_01";
+
+        /// <summary>
+        /// Gets or sets the operator identifier.
+        /// </summary>
         public string OperatorId { get; set; } = "SYSTEM";
+
+        /// <summary>
+        /// Gets or sets the request timestamp.
+        /// </summary>
         public DateTime RequestTime { get; set; } = DateTime.Now;
+
+        /// <summary>
+        /// Gets or sets additional context data.
+        /// </summary>
         public Dictionary<string, object> AdditionalContext { get; set; } = new();
     }
 
@@ -119,9 +138,24 @@ namespace PosKernel.Abstractions.Services
     /// </summary>
     public class ProductValidationResult
     {
+        /// <summary>
+        /// Gets or sets a value indicating whether the product is valid.
+        /// </summary>
         public bool IsValid { get; set; }
+
+        /// <summary>
+        /// Gets or sets the error message if validation failed.
+        /// </summary>
         public string ErrorMessage { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product information if validation succeeded.
+        /// </summary>
         public IProductInfo? Product { get; set; }
+
+        /// <summary>
+        /// Gets or sets the effective price in cents.
+        /// </summary>
         public long EffectivePriceCents { get; set; }
     }
 
@@ -130,12 +164,39 @@ namespace PosKernel.Abstractions.Services
     /// </summary>
     public class GenericProductInfo : IProductInfo
     {
+        /// <summary>
+        /// Gets or sets the product SKU.
+        /// </summary>
         public string Sku { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product name.
+        /// </summary>
         public string Name { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product description.
+        /// </summary>
         public string Description { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product category.
+        /// </summary>
         public string Category { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the base price in cents.
+        /// </summary>
         public long BasePriceCents { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the product is active.
+        /// </summary>
         public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets the product attributes.
+        /// </summary>
         public IReadOnlyDictionary<string, object> Attributes { get; set; } = new Dictionary<string, object>();
     }
 }

@@ -33,6 +33,11 @@ namespace PosKernel.Extensions.Restaurant
         private readonly SqliteConnection _database;
         private readonly RestaurantConfig _config;
 
+        /// <summary>
+        /// Initializes a new instance of the RestaurantExtension class.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="config">Configuration settings for the restaurant extension.</param>
         public RestaurantExtension(ILogger<RestaurantExtension> logger, RestaurantConfig config)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -404,6 +409,9 @@ namespace PosKernel.Extensions.Restaurant
             }
         }
 
+        /// <summary>
+        /// Disposes the database connection and releases all resources.
+        /// </summary>
         public void Dispose()
         {
             _database?.Dispose();
@@ -411,95 +419,323 @@ namespace PosKernel.Extensions.Restaurant
     }
 
     // Data structures
+    /// <summary>
+    /// Configuration settings for the restaurant extension.
+    /// </summary>
     public class RestaurantConfig
     {
+        /// <summary>
+        /// Gets or sets the path to the SQLite database file.
+        /// </summary>
         public string DatabasePath { get; set; } = "data/catalog/restaurant_catalog.db";
+        
+        /// <summary>
+        /// Gets or sets whether allergen validation is enabled.
+        /// </summary>
         public bool AllergenValidation { get; set; } = true;
+        
+        /// <summary>
+        /// Gets or sets whether preparation time tracking is enabled.
+        /// </summary>
         public bool PreparationTimeTracking { get; set; } = true;
+        
+        /// <summary>
+        /// Gets or sets whether menu scheduling is enabled.
+        /// </summary>
         public bool MenuSchedulingEnabled { get; set; } = true;
+        
+        /// <summary>
+        /// Gets or sets whether seasonal availability checking is enabled.
+        /// </summary>
         public bool SeasonalAvailability { get; set; } = true;
+        
+        /// <summary>
+        /// Gets or sets the maximum allowed preparation time in minutes.
+        /// </summary>
         public int MaxPreparationTimeMinutes { get; set; } = 30;
     }
 
+    /// <summary>
+    /// Context information for product validation operations.
+    /// </summary>
     public class ValidationContext
     {
+        /// <summary>
+        /// Gets or sets the store identifier.
+        /// </summary>
         public string StoreId { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the terminal identifier.
+        /// </summary>
         public string TerminalId { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the operator identifier.
+        /// </summary>
         public string OperatorId { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the request timestamp.
+        /// </summary>
         public DateTime RequestTime { get; set; } = DateTime.UtcNow;
+
+        /// <summary>
+        /// Gets or sets additional context data.
+        /// </summary>
         public Dictionary<string, object> AdditionalContext { get; set; } = new();
     }
 
+    /// <summary>
+    /// Restaurant-specific product information with allergens and customization options.
+    /// </summary>
     public class ProductInfo
     {
+        /// <summary>
+        /// Gets or sets the product SKU.
+        /// </summary>
         public string Sku { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product name.
+        /// </summary>
         public string Name { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product description.
+        /// </summary>
         public string Description { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the category identifier.
+        /// </summary>
         public string CategoryId { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the category name.
+        /// </summary>
         public string CategoryName { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the base price in cents.
+        /// </summary>
         public long BasePriceCents { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the product is active.
+        /// </summary>
         public bool IsActive { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the product requires preparation.
+        /// </summary>
         public bool RequiresPreparation { get; set; }
+
+        /// <summary>
+        /// Gets or sets the preparation time in minutes.
+        /// </summary>
         public int PreparationTimeMinutes { get; set; }
+
+        /// <summary>
+        /// Gets or sets the tax category.
+        /// </summary>
         public string TaxCategory { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the popularity rank.
+        /// </summary>
         public int PopularityRank { get; set; }
+
+        /// <summary>
+        /// Gets or sets the list of allergens.
+        /// </summary>
         public List<AllergenInfo> Allergens { get; set; } = new();
+
+        /// <summary>
+        /// Gets or sets the product specifications.
+        /// </summary>
         public Dictionary<string, object> Specifications { get; set; } = new();
+
+        /// <summary>
+        /// Gets or sets the available customizations.
+        /// </summary>
         public Dictionary<string, List<CustomizationOption>> Customizations { get; set; } = new();
+
+        /// <summary>
+        /// Gets or sets the upsell suggestions.
+        /// </summary>
         public List<UpsellSuggestion> UpsellSuggestions { get; set; } = new();
     }
 
+    /// <summary>
+    /// Allergen information for restaurant products.
+    /// </summary>
     public class AllergenInfo
     {
+        /// <summary>
+        /// Gets or sets the allergen identifier.
+        /// </summary>
         public string Id { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the allergen name.
+        /// </summary>
         public string Name { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the allergen description.
+        /// </summary>
         public string Description { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the contamination risk level.
+        /// </summary>
         public string ContaminationRisk { get; set; } = "";
     }
 
+    /// <summary>
+    /// Customization option for restaurant products (e.g., milk type, size).
+    /// </summary>
     public class CustomizationOption
     {
+        /// <summary>
+        /// Gets or sets the option value.
+        /// </summary>
         public string Value { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the price modifier in cents.
+        /// </summary>
         public long PriceModifierCents { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether this is the default option.
+        /// </summary>
         public bool IsDefault { get; set; }
+
+        /// <summary>
+        /// Gets or sets the display order for UI purposes.
+        /// </summary>
         public int DisplayOrder { get; set; }
     }
 
+    /// <summary>
+    /// Upsell suggestion for cross-selling related products.
+    /// </summary>
     public class UpsellSuggestion
     {
+        /// <summary>
+        /// Gets or sets the suggested product SKU.
+        /// </summary>
         public string Sku { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the suggested product name.
+        /// </summary>
         public string Name { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the suggestion type (complement, alternative, etc.).
+        /// </summary>
         public string SuggestionType { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the suggestion priority.
+        /// </summary>
         public int Priority { get; set; }
+
+        /// <summary>
+        /// Gets or sets the price in cents.
+        /// </summary>
         public long PriceCents { get; set; }
     }
 
+    /// <summary>
+    /// Result of product validation operation.
+    /// </summary>
     public class ProductValidationResult
     {
+        /// <summary>
+        /// Gets or sets a value indicating whether the product is valid.
+        /// </summary>
         public bool IsValid { get; set; }
+
+        /// <summary>
+        /// Gets or sets the error message if validation failed.
+        /// </summary>
         public string ErrorMessage { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product information if validation succeeded.
+        /// </summary>
         public ProductInfo? ProductInfo { get; set; }
+
+        /// <summary>
+        /// Gets or sets the effective price in cents.
+        /// </summary>
         public long EffectivePriceCents { get; set; }
     }
 
+    /// <summary>
+    /// Result of menu timing validation.
+    /// </summary>
     public class MenuValidationResult
     {
+        /// <summary>
+        /// Gets or sets a value indicating whether the menu item is available.
+        /// </summary>
         public bool IsValid { get; set; }
+
+        /// <summary>
+        /// Gets or sets the error message if validation failed.
+        /// </summary>
         public string ErrorMessage { get; set; } = "";
     }
 
+    /// <summary>
+    /// Availability hours configuration for menu items.
+    /// </summary>
     public class AvailabilityHours
     {
+        /// <summary>
+        /// Gets or sets the start hour (24-hour format with decimals).
+        /// </summary>
         public double StartHour { get; set; }
+
+        /// <summary>
+        /// Gets or sets the end hour (24-hour format with decimals).
+        /// </summary>
         public double EndHour { get; set; }
     }
 
+    /// <summary>
+    /// Pricing conditions for promotional rules.
+    /// </summary>
     public class PricingConditions
     {
+        /// <summary>
+        /// Gets or sets the applicable days of the week.
+        /// </summary>
         public string[]? Days { get; set; }
+
+        /// <summary>
+        /// Gets or sets the start time for the pricing rule.
+        /// </summary>
         public string? StartTime { get; set; }
+
+        /// <summary>
+        /// Gets or sets the end time for the pricing rule.
+        /// </summary>
         public string? EndTime { get; set; }
+
+        /// <summary>
+        /// Gets or sets the minimum quantity required for the rule.
+        /// </summary>
         public int? MinimumQuantity { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the rule applies to same products only.
+        /// </summary>
         public bool? SameProduct { get; set; }
     }
 }

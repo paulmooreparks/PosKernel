@@ -69,30 +69,84 @@ namespace PosKernel.Client
     }
 
     /// <summary>
-    /// Result of a client transaction operation.
+    /// Result from client transaction operations.
     /// </summary>
     public class TransactionClientResult
     {
+        /// <summary>
+        /// Gets or sets a value indicating whether the operation succeeded.
+        /// </summary>
         public bool Success { get; set; }
+
+        /// <summary>
+        /// Gets or sets the error message if the operation failed.
+        /// </summary>
         public string? Error { get; set; }
+
+        /// <summary>
+        /// Gets or sets the transaction identifier.
+        /// </summary>
         public string? TransactionId { get; set; }
+
+        /// <summary>
+        /// Gets or sets the session identifier.
+        /// </summary>
         public string? SessionId { get; set; }
+
+        /// <summary>
+        /// Gets or sets the total amount.
+        /// </summary>
         public decimal Total { get; set; }
+
+        /// <summary>
+        /// Gets or sets the transaction state.
+        /// </summary>
         public string State { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets additional result data.
+        /// </summary>
         public object? Data { get; set; }
     }
 
     /// <summary>
-    /// Configuration options for the POS Kernel Client.
+    /// Configuration options for POS Kernel client connections.
     /// </summary>
     public class PosKernelClientOptions
     {
+        /// <summary>
+        /// Gets or sets the named pipe name.
+        /// </summary>
         public string PipeName { get; set; } = "poskernel-service";
+
+        /// <summary>
+        /// Gets or sets the connection timeout in milliseconds.
+        /// </summary>
         public int ConnectionTimeoutMs { get; set; } = 5000;
+
+        /// <summary>
+        /// Gets or sets the request timeout in milliseconds.
+        /// </summary>
         public int RequestTimeoutMs { get; set; } = 30000;
+
+        /// <summary>
+        /// Gets or sets the maximum retry attempts.
+        /// </summary>
         public int MaxRetryAttempts { get; set; } = 3;
+
+        /// <summary>
+        /// Gets or sets the retry delay in milliseconds.
+        /// </summary>
         public int RetryDelayMs { get; set; } = 1000;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to auto-reconnect on failure.
+        /// </summary>
         public bool AutoReconnect { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets the keep-alive interval in milliseconds.
+        /// </summary>
         public int KeepAliveIntervalMs { get; set; } = 30000;
     }
 }

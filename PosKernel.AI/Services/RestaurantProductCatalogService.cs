@@ -56,7 +56,7 @@ namespace PosKernel.AI.Services
                 @"C:\Users\paul\source\repos\PosKernel\data\catalog\restaurant_catalog.db"
             };
             
-            _databasePath = null;
+            _databasePath = string.Empty;
             foreach (var path in possiblePaths)
             {
                 if (File.Exists(path))

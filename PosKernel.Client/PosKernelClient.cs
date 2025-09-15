@@ -36,14 +36,27 @@ namespace PosKernel.Client
         private int _requestId = 0;
         private bool _disposed = false;
 
+        /// <summary>
+        /// Initializes a new instance of the PosKernelClient class.
+        /// </summary>
+        /// <param name="logger">Logger for debugging and diagnostics.</param>
+        /// <param name="options">Optional client configuration settings.</param>
         public PosKernelClient(ILogger<PosKernelClient> logger, PosKernelClientOptions? options = null)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _options = options ?? new PosKernelClientOptions();
         }
 
+        /// <summary>
+        /// Gets a value indicating whether the client is connected to the POS Kernel Service.
+        /// </summary>
         public bool IsConnected => _pipeClient?.IsConnected == true;
 
+        /// <summary>
+        /// Connects to the POS Kernel Service asynchronously.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the connection operation.</param>
+        /// <returns>A task representing the asynchronous connection operation.</returns>
         public async Task ConnectAsync(CancellationToken cancellationToken = default)
         {
             if (IsConnected)
@@ -76,6 +89,11 @@ namespace PosKernel.Client
             }
         }
 
+        /// <summary>
+        /// Disconnects from the POS Kernel Service and releases resources.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the disconnect operation.</param>
+        /// <returns>A task representing the asynchronous disconnect operation.</returns>
         public async Task DisconnectAsync(CancellationToken cancellationToken = default)
         {
             try
@@ -91,6 +109,9 @@ namespace PosKernel.Client
                 _pipeClient = null;
 
                 _logger.LogInformation("Disconnected from POS Kernel Service");
+                
+                // Add await to fix CS1998 warning
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -98,6 +119,13 @@ namespace PosKernel.Client
             }
         }
 
+        /// <summary>
+        /// Creates a new transaction session on the POS Kernel Service.
+        /// </summary>
+        /// <param name="terminalId">The terminal identifier.</param>
+        /// <param name="operatorId">The operator identifier.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The session identifier for the new session.</returns>
         public async Task<string> CreateSessionAsync(string terminalId, string operatorId, CancellationToken cancellationToken = default)
         {
             var request = new
@@ -122,6 +150,13 @@ namespace PosKernel.Client
             throw new InvalidOperationException("Failed to create session - invalid response");
         }
 
+        /// <summary>
+        /// Starts a new transaction within the specified session.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="currency">The transaction currency (default: USD).</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The result of the start transaction operation.</returns>
         public async Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency = "USD", CancellationToken cancellationToken = default)
         {
             var request = new
@@ -140,6 +175,16 @@ namespace PosKernel.Client
             return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
         }
 
+        /// <summary>
+        /// Adds a line item to the current transaction.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="productId">The product identifier or SKU.</param>
+        /// <param name="quantity">The quantity of items to add.</param>
+        /// <param name="unitPrice">The unit price of the item.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The result of the add line item operation.</returns>
         public async Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
         {
             var request = new
@@ -161,6 +206,15 @@ namespace PosKernel.Client
             return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
         }
 
+        /// <summary>
+        /// Processes payment for the specified transaction.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="amount">The payment amount.</param>
+        /// <param name="paymentType">The type of payment (default: cash).</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The result of the payment processing operation.</returns>
         public async Task<TransactionClientResult> ProcessPaymentAsync(string sessionId, string transactionId, decimal amount, string paymentType = "cash", CancellationToken cancellationToken = default)
         {
             var request = new
@@ -181,6 +235,13 @@ namespace PosKernel.Client
             return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
         }
 
+        /// <summary>
+        /// Gets the current state and details of the specified transaction.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The current transaction state and details.</returns>
         public async Task<TransactionClientResult> GetTransactionAsync(string sessionId, string transactionId, CancellationToken cancellationToken = default)
         {
             var request = new
@@ -199,6 +260,12 @@ namespace PosKernel.Client
             return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
         }
 
+        /// <summary>
+        /// Closes the specified session and releases associated resources.
+        /// </summary>
+        /// <param name="sessionId">The session identifier to close.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous close session operation.</returns>
         public async Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {
             var request = new
@@ -293,7 +360,7 @@ namespace PosKernel.Client
             }
 
             // Convert result to requested type
-            if (typeof(T) == typeof(object) || typeof(T) == typeof(dynamic))
+            if (typeof(T) == typeof(object))
             {
                 return (T)(object)jsonResponse.Result;
             }
@@ -307,6 +374,9 @@ namespace PosKernel.Client
             return Interlocked.Increment(ref _requestId);
         }
 
+        /// <summary>
+        /// Releases all resources used by the PosKernelClient.
+        /// </summary>
         public void Dispose()
         {
             if (!_disposed)
@@ -329,18 +399,50 @@ namespace PosKernel.Client
 
     // JSON-RPC Client Response DTOs
 
+    /// <summary>
+    /// Represents a JSON-RPC response from the POS Kernel Service.
+    /// </summary>
     public class JsonRpcClientResponse
     {
+        /// <summary>
+        /// Gets or sets the JSON-RPC version.
+        /// </summary>
         public string JsonRpc { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the response result data.
+        /// </summary>
         public object? Result { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the error information if the request failed.
+        /// </summary>
         public JsonRpcClientError? Error { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the request identifier that this response corresponds to.
+        /// </summary>
         public object? Id { get; set; }
     }
 
+    /// <summary>
+    /// Represents error information in a JSON-RPC response.
+    /// </summary>
     public class JsonRpcClientError
     {
+        /// <summary>
+        /// Gets or sets the error code.
+        /// </summary>
         public string Code { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the error message.
+        /// </summary>
         public string Message { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets additional error data.
+        /// </summary>
         public object? Data { get; set; }
     }
 }

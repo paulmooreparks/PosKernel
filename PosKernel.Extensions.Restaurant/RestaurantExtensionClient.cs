@@ -22,6 +22,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using PosKernel.Extensions.Restaurant;
 
 namespace PosKernel.Extensions.Restaurant.Client
 {
@@ -40,6 +41,11 @@ namespace PosKernel.Extensions.Restaurant.Client
         private StreamWriter? _writer;
         private int _requestId = 0;
 
+        /// <summary>
+        /// Initializes a new instance of the RestaurantExtensionClient.
+        /// </summary>
+        /// <param name="logger">Logger for debugging and diagnostics.</param>
+        /// <param name="pipeName">Named pipe name for IPC communication.</param>
         public RestaurantExtensionClient(ILogger<RestaurantExtensionClient> logger, string pipeName = "poskernel-restaurant-extension")
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -303,6 +309,10 @@ namespace PosKernel.Extensions.Restaurant.Client
             }
         }
 
+        /// <summary>
+        /// Disconnects from the restaurant extension service and cleans up resources.
+        /// </summary>
+        /// <returns>A task representing the disconnect operation.</returns>
         public async Task DisconnectAsync()
         {
             try
@@ -342,6 +352,9 @@ namespace PosKernel.Extensions.Restaurant.Client
             }
         }
 
+        /// <summary>
+        /// Disposes all resources used by the RestaurantExtensionClient.
+        /// </summary>
         public void Dispose()
         {
             _reader?.Dispose();
@@ -355,10 +368,61 @@ namespace PosKernel.Extensions.Restaurant.Client
     /// </summary>
     public class ProductSearchResult
     {
+        /// <summary>
+        /// Gets or sets the product information.
+        /// </summary>
         public ProductInfo ProductInfo { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets the effective price in cents.
+        /// </summary>
         public long EffectivePriceCents { get; set; }
     }
 
-    // Note: ProductInfo, ProductValidationResult, etc. classes are shared from RestaurantExtension.cs
-    // In a real implementation, these would be in a shared library
+    /// <summary>
+    /// Extension request for IPC communication.
+    /// </summary>
+    public class ExtensionRequest
+    {
+        /// <summary>
+        /// Gets or sets the request identifier.
+        /// </summary>
+        public string Id { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the method name.
+        /// </summary>
+        public string Method { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the request parameters.
+        /// </summary>
+        public Dictionary<string, JsonElement> Params { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Extension response for IPC communication.
+    /// </summary>
+    public class ExtensionResponse
+    {
+        /// <summary>
+        /// Gets or sets the response identifier.
+        /// </summary>
+        public string Id { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets whether the operation was successful.
+        /// </summary>
+        public bool Success { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the error message if the operation failed.
+        /// </summary>
+        public string? Error { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the response data.
+        /// </summary>
+        public Dictionary<string, object>? Data { get; set; }
+    }
 }

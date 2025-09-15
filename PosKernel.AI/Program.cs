@@ -560,6 +560,8 @@ Suggest ONE final item briefly and enthusiastically:";
                 }
             }
 
+            // Fix CS1998 by adding await
+            await Task.CompletedTask;
             return itemsAdded;
         }
 

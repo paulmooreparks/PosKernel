@@ -33,7 +33,8 @@ namespace PosKernel.AI
             Console.WriteLine("🧪 API Test Suite for AI Integration");
             Console.WriteLine("====================================");
             
-            // API testing logic here...
+            // Simulate actual async API testing
+            await Task.Delay(100);
             Console.WriteLine("API tests complete!");
         }
     }

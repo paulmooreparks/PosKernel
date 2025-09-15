@@ -31,6 +31,11 @@ namespace PosKernel.Service.Services
         private readonly ConcurrentDictionary<string, Transaction> _transactions;
         private bool _disposed = false;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PosKernelEngine"/> class.
+        /// </summary>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="sessionManager">The session manager for handling terminal sessions.</param>
         public PosKernelEngine(ILogger<PosKernelEngine> logger, ISessionManager sessionManager)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -38,6 +43,13 @@ namespace PosKernel.Service.Services
             _transactions = new ConcurrentDictionary<string, Transaction>();
         }
 
+        /// <summary>
+        /// Creates a new session for a terminal and operator.
+        /// </summary>
+        /// <param name="terminalId">The terminal identifier.</param>
+        /// <param name="operatorId">The operator identifier.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The session identifier.</returns>
         public async Task<string> CreateSessionAsync(string terminalId, string operatorId, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Creating session for terminal {TerminalId}, operator {OperatorId}", terminalId, operatorId);
@@ -48,6 +60,13 @@ namespace PosKernel.Service.Services
             return sessionInfo.SessionId;
         }
 
+        /// <summary>
+        /// Starts a new transaction for the specified session.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="currency">The transaction currency (default is USD).</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The transaction result.</returns>
         public async Task<TransactionResult> StartTransactionAsync(string sessionId, string currency = "USD", CancellationToken cancellationToken = default)
         {
             try
@@ -101,6 +120,16 @@ namespace PosKernel.Service.Services
             }
         }
 
+        /// <summary>
+        /// Adds a line item to an existing transaction.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="productId">The product identifier.</param>
+        /// <param name="quantity">The quantity of the product.</param>
+        /// <param name="unitPrice">The unit price of the product.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The updated transaction result.</returns>
         public async Task<TransactionResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
         {
             try
@@ -168,6 +197,15 @@ namespace PosKernel.Service.Services
             }
         }
 
+        /// <summary>
+        /// Processes a payment for the specified transaction.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="amount">The payment amount.</param>
+        /// <param name="paymentType">The payment type (default is cash).</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The updated transaction result.</returns>
         public async Task<TransactionResult> ProcessPaymentAsync(string sessionId, string transactionId, decimal amount, string paymentType = "cash", CancellationToken cancellationToken = default)
         {
             try
@@ -236,6 +274,13 @@ namespace PosKernel.Service.Services
             }
         }
 
+        /// <summary>
+        /// Gets the details of a specific transaction.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The transaction result with details.</returns>
         public async Task<TransactionResult> GetTransactionAsync(string sessionId, string transactionId, CancellationToken cancellationToken = default)
         {
             try
@@ -293,6 +338,12 @@ namespace PosKernel.Service.Services
             }
         }
 
+        /// <summary>
+        /// Closes a session and cleans up associated resources.
+        /// </summary>
+        /// <param name="sessionId">The session identifier to close.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public async Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {
             try
@@ -322,6 +373,9 @@ namespace PosKernel.Service.Services
             }
         }
 
+        /// <summary>
+        /// Disposes the POS kernel engine and releases all resources.
+        /// </summary>
         public void Dispose()
         {
             if (!_disposed)

@@ -231,7 +231,6 @@ namespace PosKernel.Abstractions.CAL.Products
         /// <summary>
         /// Registers a new provider type.
         /// </summary>
-        /// <param name="providerType">The provider implementation type.</param>
         void RegisterProvider<T>() where T : class, IProductCatalogProvider;
     }
 
