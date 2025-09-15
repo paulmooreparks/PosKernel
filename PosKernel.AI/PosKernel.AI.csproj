@@ -62,6 +62,8 @@
     <ProjectReference Include="..\PosKernel.Host\PosKernel.Host.csproj" />
     <ProjectReference Include="..\PosKernel.Abstractions\PosKernel.Abstractions.csproj" />
     <ProjectReference Include="..\PosKernel.Core\PosKernel.Core.csproj" />
+    <ProjectReference Include="..\PosKernel.Client\PosKernel.Client.csproj" />
+    <ProjectReference Include="..\PosKernel.Extensions.Restaurant\PosKernel.Extensions.Restaurant.csproj" />
   </ItemGroup>
 
   <ItemGroup>
