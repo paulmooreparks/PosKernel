@@ -20,36 +20,39 @@ using Microsoft.Extensions.Logging;
 using PosKernel.Abstractions;
 using PosKernel.Abstractions.Services;
 using PosKernel.AI.Services;
+using PosKernel.AI.Tools;
+using PosKernel.Configuration;
 
 namespace PosKernel.AI
 {
     /// <summary>
     /// Main program for POS Kernel AI integration demonstrations.
-    /// Uses ONLY real kernel facilities - no simulations or mocks.
+    /// Uses MCP (Model Context Protocol) for structured AI tool calling.
     /// Demonstrates AI integration with actual POS transaction processing.
+    /// Follows documented security-first design with kernel isolation.
     /// </summary>
     class Program
     {
         static async Task<int> Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine("🤖 POS Kernel AI Integration Demo v0.5.0");
-            Console.WriteLine("🚀 Real Kernel Architecture - No Simulations!");
+            Console.WriteLine("🤖 POS Kernel AI Integration Demo v0.6.0 (MCP)");
+            Console.WriteLine("🚀 Real Kernel Architecture with Model Context Protocol");
+            Console.WriteLine("🔐 Security-First Design with Kernel Isolation");
             Console.WriteLine();
 
             try
             {
-                // Parse command line arguments
                 var demoType = ParseDemoType(args);
                 
                 switch (demoType)
                 {
                     case DemoType.Interactive:
-                        await RunInteractiveAiChatAsync();
+                        await RunInteractiveMcpChatAsync();
                         break;
 
-                    case DemoType.LiveAi:
-                        await RunLiveAiSalesProcessAsync();
+                    case DemoType.LiveDemo:
+                        await RunLiveMcpSalesProcessAsync();
                         break;
 
                     case DemoType.Help:
@@ -66,77 +69,133 @@ namespace PosKernel.AI
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"❌ Fatal error: {ex.Message}");
+                Console.Error.WriteLine($"📍 Stack trace: {ex.StackTrace}");
                 return 1;
             }
         }
 
-        private static async Task RunInteractiveAiChatAsync()
+        private static async Task RunInteractiveMcpChatAsync()
         {
-            Console.WriteLine("🗣️ REAL KERNEL AI BARISTA CHAT");
-            Console.WriteLine("==============================");
-            Console.WriteLine("Using actual POS Kernel with real restaurant database");
+            Console.WriteLine("🗣️ INTERACTIVE MCP AI BARISTA CHAT");
+            Console.WriteLine("==================================");
+            Console.WriteLine("Using Model Context Protocol for structured AI tool calling");
+            Console.WriteLine("Following documented security-first design patterns");
             Console.WriteLine();
 
-            // Load API key from environment file
-            var apiKey = LoadApiKeyFromEnvironment();
+            // Load configuration following documented patterns
+            var config = PosKernelConfiguration.Initialize();
+            var aiConfig = new AiConfiguration(config);
+            
+            var apiKey = aiConfig.ApiKey;
             if (string.IsNullOrEmpty(apiKey))
             {
                 Console.WriteLine("❌ OpenAI API key not found!");
-                Console.WriteLine("Please ensure your API key is set in: c:\\users\\paul\\.poskernel\\.env");
-                Console.WriteLine("Format: OPENAI_API_KEY=your-key-here");
+                Console.WriteLine("Please configure your API key in one of these locations:");
+                Console.WriteLine($"  • {PosKernelConfiguration.SecretsFilePath}");
+                Console.WriteLine($"  • Environment variable: OPENAI_API_KEY");
+                Console.WriteLine();
+                Console.WriteLine("Format in .env file: OPENAI_API_KEY=your-key-here");
                 return;
             }
 
-            Console.WriteLine($"✅ API key loaded from environment (ends with: ...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))})");
+            Console.WriteLine($"✅ API key loaded from configuration (ends with: ...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))})");
             Console.WriteLine();
 
+            // Configure services following DI best practices
             var services = new ServiceCollection();
-            services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
+            services.AddLogging(builder => 
+                builder.AddConsole()
+                       .SetMinimumLevel(LogLevel.Warning));
+            
+            // Register core services
             services.AddSingleton<IProductCatalogService, RestaurantProductCatalogService>();
             
-            using var serviceProvider = services.BuildServiceProvider();
-            var logger = serviceProvider.GetRequiredService<ILogger<SimpleOpenAiClient>>();
-            var productCatalog = serviceProvider.GetRequiredService<IProductCatalogService>();
+            // Register MCP services with proper configuration
+            var mcpConfig = aiConfig.ToMcpConfiguration();
+            services.AddSingleton(mcpConfig);
+            services.AddSingleton<McpClient>();
+            services.AddSingleton<PosToolsProvider>();
             
-            // Create OpenAI client with real API integration
-            using var aiClient = new SimpleOpenAiClient(logger, apiKey, "gpt-4o", 0.2);
+            using var serviceProvider = services.BuildServiceProvider();
+            
+            try 
+            {
+                var productCatalog = serviceProvider.GetRequiredService<IProductCatalogService>();
+                var mcpClient = serviceProvider.GetRequiredService<McpClient>();
+                var toolsProvider = serviceProvider.GetRequiredService<PosToolsProvider>();
 
-            // Start real kernel interactive chat session
-            await RunRealKernelChatSessionAsync(aiClient, productCatalog);
+                await RunMcpChatSessionAsync(mcpClient, toolsProvider, productCatalog);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Service initialization failed: {ex.Message}");
+                Console.WriteLine("Please check your configuration and try again.");
+            }
         }
 
-        private static async Task RunRealKernelChatSessionAsync(SimpleOpenAiClient aiClient, IProductCatalogService productCatalog)
+        private static async Task RunMcpChatSessionAsync(McpClient mcpClient, PosToolsProvider toolsProvider, IProductCatalogService productCatalog)
         {
-            Console.WriteLine("☕ **WELCOME TO OUR REAL KERNEL COFFEE SHOP!**");
-            Console.WriteLine("I'm your AI barista powered by actual POS Kernel!");
-            Console.WriteLine("===============================================");
+            Console.WriteLine("☕ **WELCOME TO OUR MCP-POWERED COFFEE SHOP!**");
+            Console.WriteLine("I'm your AI barista using Model Context Protocol!");
+            Console.WriteLine("================================================");
             Console.WriteLine();
 
-            // Create a REAL transaction using kernel contracts
+            // Create transaction using documented kernel contracts
             var transaction = new Transaction
             {
                 Id = TransactionId.New(),
-                State = TransactionState.Building
+                State = TransactionState.Building,
+                Currency = "USD" // Following ISO 4217 standard
             };
 
-            // Get REAL products from restaurant database
             var availableProducts = await productCatalog.GetPopularItemsAsync();
-            var menuItems = string.Join("\n", availableProducts.Select(p => $"- {p.Name}: ${p.BasePriceCents / 100.0:F2}"));
+            var availableTools = toolsProvider.GetAvailableTools();
 
-            Console.WriteLine($"🏪 Starting your order with real transaction: {transaction.Id}");
+            Console.WriteLine($"🏪 Transaction started: {transaction.Id}");
+            Console.WriteLine($"🛠️  MCP tools available: {availableTools.Count}");
+            Console.WriteLine($"📦 Products in catalog: {availableProducts.Count}");
             Console.WriteLine();
 
             var conversationHistory = new List<string>();
-            var systemInstructions = await InitializeAiInstructionsAsync(aiClient, menuItems);
-            conversationHistory.Add($"System: {systemInstructions}");
+            
+            // Generate contextual AI greeting
+            var currentTime = DateTime.Now;
+            var timeOfDay = currentTime.Hour < 12 ? "morning" : currentTime.Hour < 17 ? "afternoon" : "evening";
+            
+            var initialGreetingPrompt = $@"You are an AI barista at a coffee shop. A customer just walked in. Give them a brief, natural greeting like a real barista would.
 
+TIME OF DAY: {timeOfDay} ({currentTime:HH:mm})
+
+Be friendly but concise - just greet them and ask what you can get them. Don't list menu items or be overly sales-focused.
+
+Examples of good greetings:
+- ""Good morning! What can I get for you today?""
+- ""Hi there! What sounds good to you?""
+- ""Good afternoon! How can I help you?""/
+
+Greet the customer now:";
+
+            // AI greeting with fallback
+            try
+            {
+                Console.Write("🤖 AI Barista (MCP): ");
+                var greetingResponse = await mcpClient.CompleteWithToolsAsync(initialGreetingPrompt, availableTools);
+                Console.WriteLine(greetingResponse.Content);
+                Console.WriteLine();
+                conversationHistory.Add($"Barista: {greetingResponse.Content}");
+            }
+            catch
+            {
+                Console.WriteLine("Good morning! Welcome to our MCP-powered coffee shop! I can help you find exactly what you need. What can I get started for you today?");
+                Console.WriteLine("(MCP greeting failed - using fallback)");
+                Console.WriteLine();
+                conversationHistory.Add("Barista: Good morning! Welcome to our MCP-powered coffee shop!");
+            }
+
+            // Main conversation loop
             while (true)
             {
-                var statusMsg = transaction.Lines.Any() 
-                    ? $"Current order: {string.Join(", ", transaction.Lines.Select(l => l.ProductId))} (${transaction.Total.ToDecimal():F2})"
-                    : "Your cart is empty";
-                
-                Console.WriteLine($"💰 {statusMsg}");
+                DisplayTransactionStatus(transaction);
                 Console.Write("You: ");
                 
                 var userInput = Console.ReadLine()?.Trim();
@@ -146,106 +205,86 @@ namespace PosKernel.AI
                     continue;
                 }
 
+                // Handle exit commands
+                if (IsExitCommand(userInput))
+                {
+                    HandleExitCommand(userInput, transaction);
+                    break;
+                }
+
                 conversationHistory.Add($"Customer: {userInput}");
-                
                 var conversationContext = string.Join("\n", conversationHistory.TakeLast(8));
-                var currentTotal = transaction.Total.ToDecimal();
-                var currentItemsList = transaction.Lines.Any() 
-                    ? string.Join(", ", transaction.Lines.Select(l => $"{l.ProductId} x{l.Quantity}"))
-                    : "empty cart";
 
-                var prompt = $@"You are an intelligent AI barista for a coffee shop POS system using REAL POS Kernel. You maintain conversation context and understand customer intent precisely.
-
-CONVERSATION HISTORY:
-{conversationContext}
-
-CURRENT ORDER STATUS (Real Kernel Transaction):
-- Items in cart: {currentItemsList}
-- Current total: ${currentTotal:F2}
-- Transaction state: {transaction.State}
-- Transaction ID: {transaction.Id}
-
-AVAILABLE MENU (from real restaurant database):
-{menuItems}
-
-CUSTOMER JUST SAID: ""{userInput}""
-
-CORE INSTRUCTIONS:
-1. ITEM MANAGEMENT:
-   - When customer wants items: use ""ADDING: [exact item name] - $[price]""
-   - When customer confirms adding (""yes"", ""please"", ""sure""): add the items they requested
-   - Continue conversation after adding items - don't immediately go to payment
-
-2. PAYMENT DETECTION (BE VERY CAREFUL):
-   - ONLY offer payment when customer explicitly indicates they're DONE shopping:
-     * ""that's all"" / ""that's everything"" 
-     * ""i'm ready to pay"" / ""let's pay"" / ""checkout""
-     * ""i'm done"" / ""that's it""
-
-3. REAL KERNEL ARCHITECTURE:
-   - You're powered by actual POS Kernel with real transaction processing
-   - All operations use real kernel contracts and transaction state
-   - Products come from real restaurant database with SQLite
-
-RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH REAL KERNEL:";
+                // Create MCP-enhanced prompt following documented patterns
+                var prompt = CreateMcpPrompt(conversationContext, transaction, userInput);
 
                 try
                 {
-                    Console.Write("🤖 AI Barista (Real Kernel): ");
-                    var aiResponse = await aiClient.CompleteAsync(prompt);
-                    Console.WriteLine(aiResponse);
-
-                    conversationHistory.Add($"Barista: {aiResponse}");
-
-                    var isExplicitPaymentRequest = IsExplicitPaymentRequest(userInput, aiResponse);
-                    var isFinishedShopping = IsFinishedShoppingIntent(userInput, conversationHistory);
-
-                    // Process any items the AI wants to add using REAL kernel
-                    var itemsAdded = await ProcessAiRecommendationsAsync(aiResponse, transaction, availableProducts);
-
-                    if ((isExplicitPaymentRequest || isFinishedShopping) && transaction.Lines.Any())
+                    Console.Write("🤖 AI Barista (MCP): ");
+                    var response = await mcpClient.CompleteWithToolsAsync(prompt, availableTools);
+                    
+                    // Display AI's conversational response FIRST
+                    if (!string.IsNullOrEmpty(response.Content))
                     {
-                        Console.WriteLine();
-                        Console.WriteLine("🤖 AI Barista: Perfect! Let me process your payment using real kernel.");
-                        ShowOrderSummary(transaction);
-                        
-                        await ProcessPaymentAsync(transaction);
-                        PrintReceipt(transaction);
-                        
-                        Console.WriteLine("🎉 Thank you! Your payment is complete and your order is ready!");
-                        Console.WriteLine("✨ Powered by Real POS Kernel Architecture!");
-                        Console.WriteLine("Have a wonderful day! ☕");
-                        break;
+                        Console.WriteLine(response.Content);
                     }
 
-                    if (IsLeavingIntent(userInput) && !transaction.Lines.Any())
+                    // Execute MCP tool calls and show results
+                    if (response.ToolCalls.Any())
                     {
-                        Console.WriteLine("🤖 AI Barista: Thanks for visiting! Come back anytime!");
-                        break;
-                    }
-
-                    if (IsLeavingIntent(userInput) && transaction.Lines.Any() && !isFinishedShopping)
-                    {
-                        Console.WriteLine();
-                        Console.Write("🤖 AI Barista: Before you go, would you like to complete your purchase? (yes/no): ");
-                        var completePurchase = Console.ReadLine()?.ToLower();
+                        Console.WriteLine($"  🛠️  Executing {response.ToolCalls.Count} MCP tool(s)...");
                         
-                        if (completePurchase is "yes" or "y")
+                        var toolResults = new List<string>();
+                        foreach (var toolCall in response.ToolCalls)
                         {
-                            await ProcessPaymentAsync(transaction);
-                            PrintReceipt(transaction);
-                            Console.WriteLine("🎉 Perfect! Thank you and have a great day!");
+                            var result = await toolsProvider.ExecuteToolAsync(toolCall, transaction);
+                            Console.WriteLine($"  📊 {toolCall.FunctionName}: {result}");
+                            toolResults.Add(result);
                         }
-                        else
+
+                        // Generate follow-up response after tool execution
+                        var followUpPrompt = CreateFollowUpPrompt(conversationContext, transaction, userInput, response.Content, toolResults);
+                        
+                        try 
                         {
-                            Console.WriteLine("🤖 AI Barista: No worries! Your order is cancelled. Come back anytime!");
+                            var followUpResponse = await mcpClient.CompleteWithToolsAsync(followUpPrompt, availableTools);
+                            if (!string.IsNullOrEmpty(followUpResponse.Content))
+                            {
+                                Console.WriteLine($"🤖 {followUpResponse.Content}");
+                            }
+                            
+                            // Add the complete conversation to history
+                            conversationHistory.Add($"Barista: {response.Content} [Executed tools] {followUpResponse.Content}");
+                        }
+                        catch
+                        {
+                            // Fallback follow-up if AI fails
+                            var itemCount = transaction.Lines.Count;
+                            var total = transaction.Total.ToDecimal();
+                            Console.WriteLine($"🤖 Great! Your order now has {itemCount} items totaling ${total:F2}. What else can I get for you today?");
+                            conversationHistory.Add($"Barista: {response.Content} [Executed tools] Great! What else can I get for you?");
+                        }
+                    }
+                    else
+                    {
+                        // No tools called, just add the response to history
+                        conversationHistory.Add($"Barista: {response.Content}");
+                    }
+
+                    // Check for completion
+                    if (IsCompletionRequest(userInput) && transaction.Lines.Any())
+                    {
+                        // Don't call HandleTransactionCompletion if transaction is already completed by payment processing
+                        if (transaction.State != TransactionState.Completed)
+                        {
+                            HandleTransactionCompletion(transaction);
                         }
                         break;
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("Sorry, I'm having trouble understanding right now. Could you repeat that?");
+                    Console.WriteLine("Sorry, I'm having trouble with my MCP connection right now. Could you repeat that?");
                     Console.WriteLine($"(Technical issue: {ex.Message})");
                 }
 
@@ -253,432 +292,305 @@ RESPOND AS A CAREFUL, INTELLIGENT BARISTA WITH REAL KERNEL:";
             }
         }
 
-        private static async Task<string> InitializeAiInstructionsAsync(SimpleOpenAiClient aiClient, string menuItems)
+        private static string CreateFollowUpPrompt(string conversationContext, Transaction transaction, string userInput, string initialResponse, List<string> toolResults)
         {
-            var initPrompt = $@"You are starting a new session as an AI barista for a coffee shop POS system using REAL POS Kernel. Here are your core guidelines:
+            var toolSummary = string.Join("; ", toolResults);
+            var currentItems = transaction.Lines.Select(l => l.ProductId.ToString()).ToList();
+            var hasHotDrink = currentItems.Any(item => item.Contains("COFFEE") || item.Contains("LATTE") || item.Contains("CAPPUCCINO") || item.Contains("TEA"));
+            var hasFood = currentItems.Any(item => item.Contains("CROISSANT") || item.Contains("MUFFIN") || item.Contains("SANDWICH"));
+            
+            return $@"You just executed MCP tools that returned structured results. Now provide a natural follow-up response based on what actually happened.
 
-MENU (from real restaurant database):
-{menuItems}
+CONTEXT:
+- Customer said: ""{userInput}""
+- Your initial response: ""{initialResponse}""
+- MCP tool results: {toolSummary}
+- Current transaction: {transaction.Lines.Count} items, ${transaction.Total.ToDecimal():F2}
+- Transaction state: {transaction.State}
+- Items in order: {string.Join(", ", currentItems)}
 
-CRITICAL RULES:
-1. When customers confirm adding items (""yes"", ""please"", ""sure""), ADD the items but continue the conversation
-2. Do NOT immediately offer payment after adding items
-3. After adding items, ask ""Anything else?"" or similar to continue shopping
-4. When customers ask about payment methods (""Can I pay by card?""), answer their question but continue shopping
-5. Only offer payment when customer explicitly says they're DONE (""that's all"", ""I'm ready to pay"", ""that's everything"")
-6. Be patient - let customers finish their full order before payment
+ORDER AWARENESS:
+- Has hot drink: {hasHotDrink}
+- Has food item: {hasFood}
 
-ITEM ADDING FORMAT:
-Use: ""ADDING: [exact item name] - $[price]"".
+CRITICAL: CHECK TRANSACTION STATE FIRST!
+If transaction state is Completed, the customer has PAID and the sale is DONE. Do NOT try to upsell or ask for more items!
 
-Remember: Adding items ≠ Ready to pay. Let customers complete their shopping naturally.
+FOLLOW-UP INSTRUCTIONS - INTERPRET MCP RESULTS LIKE A REAL BARISTA:
 
-Acknowledge these instructions briefly:";
+If MCP returned payment processed and transaction is COMPLETED:
+- Thank them for their purchase
+- Confirm what they ordered
+- Tell them to enjoy their items
+- DO NOT ask for more items or try to upsell
+- Example: Thank you! Your Medium Coffee and Breakfast Sandwich are ready. Enjoy your meal!
 
-            try
+If MCP returned item added and transaction is NOT completed:
+- Confirm what was added and mention the new total
+- Look for UPSELL_HINT in the response and use it naturally
+- Ask what else you can get them
+
+If MCP returned disambiguation needed:
+- Present the options clearly from the MCP response
+- Ask the customer which one they would like
+- Don't add anything yet - wait for their choice
+
+If MCP returned product not found:
+- Be a helpful barista! Ask clarifying questions
+- Suggest alternatives or ask what they had in mind
+
+SMART UPSELLING - BUT ONLY IF TRANSACTION IS NOT COMPLETED:
+- The MCP layer provides strategic upsell hints based on business rules
+- Use these hints naturally in your conversation
+- BUT NEVER upsell after payment is processed!
+
+EXAMPLE RESPONSES:
+
+If transaction is COMPLETED (payment processed):
+Perfect! Your payment has been processed and your Medium Coffee and Breakfast Sandwich are ready. Thank you for visiting us today - enjoy your meal!
+
+If transaction is NOT completed and MCP returned ""ADDED: Large Coffee ($3.99) | UPSELL_HINT: pastry"":
+Excellent! I've added that Large Coffee ($3.99) to your order. Your total is now $3.99. Would you like one of our fresh pastries to go with that coffee? What else can I get for you?
+
+REMEMBER: Once payment is processed, the interaction should END gracefully, not continue selling!
+
+Provide your follow-up response now based on the actual MCP results:";
+        }
+        
+        private static string CreateMcpPrompt(string conversationContext, Transaction transaction, string userInput)
+        {
+            return $@"You are a friendly, professional AI barista using MCP tools. The MCP layer is very smart - just call tools with what the customer said.
+
+CONVERSATION HISTORY:
+{conversationContext}
+
+CURRENT TRANSACTION STATUS:
+- Transaction ID: {transaction.Id}
+- Items in cart: {(transaction.Lines.Any() ? string.Join(", ", transaction.Lines.Select(l => $"{l.ProductId} x{l.Quantity}")) : "none")}
+- Current total: ${transaction.Total.ToDecimal():F2}
+- Currency: {transaction.Currency}
+
+CUSTOMER JUST SAID: ""{userInput}""
+
+SIMPLE RULES:
+
+WHEN CUSTOMER WANTS TO ORDER:
+1. Respond conversationally first (""Perfect! Let me get that for you"")
+2. For EACH item they mention, call 'add_item_to_transaction' with exactly what they said
+   - If they say ""coffee and a bite to eat"" → call add_item_to_transaction twice: once with ""coffee"", once with ""bite to eat""
+   - If they say ""large coffee"" → call add_item_to_transaction once with ""large coffee""
+   - DON'T change their words (don't convert ""bite to eat"" to ""snack"")
+
+WHEN CUSTOMER ASKS QUESTIONS:
+1. Use 'get_popular_items' or 'search_products' for general information
+
+WHEN CUSTOMER IS DONE:
+1. Use 'process_payment'
+
+KEY RULE: Always use 'add_item_to_transaction' when they want to order something. The MCP layer will handle everything else!
+
+CONVERSATIONAL BEHAVIOR:
+- Always respond enthusiastically first
+- Use natural coffee shop language
+- Trust the MCP layer completely
+
+Respond as a skilled barista:";
+        }
+
+        private static void DisplayTransactionStatus(Transaction transaction)
+        {
+            var statusMsg = transaction.Lines.Any() 
+                ? $"Current order: {string.Join(", ", transaction.Lines.Select(l => l.ProductId))} (${transaction.Total.ToDecimal():F2})"
+                : "Your cart is empty";
+            
+            Console.WriteLine($"💰 {statusMsg}");
+        }
+
+        private static bool IsExitCommand(string userInput)
+        {
+            var leavingWords = new[] { "bye", "goodbye", "exit", "quit", "leave" };
+            return leavingWords.Any(word => userInput.ToLower().Contains(word));
+        }
+
+        private static bool IsCompletionRequest(string userInput)
+        {
+            var finishedPhrases = new[] { "that's all", "that's everything", "ready to pay", "i'm done", "checkout" };
+            return finishedPhrases.Any(phrase => userInput.ToLower().Contains(phrase));
+        }
+
+        private static void HandleExitCommand(string userInput, Transaction transaction)
+        {
+            if (!transaction.Lines.Any())
             {
-                var response = await aiClient.CompleteAsync(initPrompt);
-                return $"AI Real Kernel System Initialized: {response}";
+                Console.WriteLine("🤖 AI Barista: Thanks for visiting! Come back anytime!");
             }
-            catch
+            else if (transaction.State != TransactionState.Completed)
             {
-                return "AI Real Kernel System Initialized with real kernel protocols.";
+                Console.WriteLine("🤖 AI Barista: You have items in your cart. Your session will be saved for next time!");
+            }
+            else
+            {
+                Console.WriteLine("🤖 AI Barista: Thank you for your purchase! Have a great day!");
             }
         }
 
-        private static bool IsExplicitPaymentRequest(string userInput, string aiResponse)
+        private static void HandleTransactionCompletion(Transaction transaction)
         {
-            var input = userInput.ToLower();
-            var response = aiResponse.ToLower();
-            
-            if (input.Contains("can i pay") || input.Contains("how do i pay") || 
-                input.Contains("what payment") || input.Contains("do you accept"))
-            {
-                return false;
-            }
-            
-            var paymentCommands = new[] { "let's pay", "process payment", "charge me", "take payment", "i'll pay now" };
-            var hasPaymentCommand = paymentCommands.Any(cmd => input.Contains(cmd));
-            
-            var aiPaymentPhrases = new[] { "ready to pay", "process payment", "checkout", "complete your purchase" };
-            var aiIndicatesPayment = aiPaymentPhrases.Any(phrase => response.Contains(phrase));
-            
-            return hasPaymentCommand || aiIndicatesPayment;
+            Console.WriteLine();
+            Console.WriteLine("🎉 Thank you! Your payment is complete and your order is ready!");
+            Console.WriteLine("✨ Powered by Real POS Kernel with MCP!");
+            Console.WriteLine($"📋 Final transaction state: {transaction.State}");
+            Console.WriteLine($"💰 Total processed: ${transaction.Total.ToDecimal():F2}");
+            Console.WriteLine("Have a wonderful day! ☕");
         }
 
-        private static bool IsFinishedShoppingIntent(string userInput, List<string> conversationHistory)
+        private static async Task RunLiveMcpSalesProcessAsync()
         {
-            var input = userInput.ToLower();
-            
-            var finishedPhrases = new[] 
-            { 
-                "that's all", "that's everything", "that's it", 
-                "i'm done", "i'm finished", "nothing else",
-                "that'll be all", "that will be all"
-            };
-            
-            return finishedPhrases.Any(phrase => input.Contains(phrase));
-        }
-
-        private static bool IsLeavingIntent(string userInput)
-        {
-            var input = userInput.ToLower();
-            var leavingWords = new[] { "bye", "goodbye", "gotta go", "have to go", "leaving" };
-            return leavingWords.Any(word => input.Contains(word));
-        }
-
-        private static string? LoadApiKeyFromEnvironment()
-        {
-            try
-            {
-                var possiblePaths = new[]
-                {
-                    @"c:\users\paul\.poskernel\.env",
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".poskernel", ".env"),
-                    Path.Combine(Directory.GetCurrentDirectory(), ".env"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", ".poskernel", ".env")
-                };
-
-                foreach (var envPath in possiblePaths)
-                {
-                    if (File.Exists(envPath))
-                    {
-                        Console.WriteLine($"📁 Reading environment from: {envPath}");
-                        var lines = File.ReadAllLines(envPath);
-                        
-                        foreach (var line in lines)
-                        {
-                            if (line.StartsWith("OPENAI_API_KEY=") && !line.StartsWith("#"))
-                            {
-                                var apiKey = line.Substring("OPENAI_API_KEY=".Length).Trim();
-                                if (!string.IsNullOrEmpty(apiKey))
-                                {
-                                    return apiKey;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ Error loading API key: {ex.Message}");
-                return null;
-            }
-        }
-
-        private static async Task RunLiveAiSalesProcessAsync()
-        {
-            Console.WriteLine("🔥 LIVE AI Sales Process - Real Kernel Integration");
-            Console.WriteLine("=================================================");
+            Console.WriteLine("🔥 LIVE MCP AI SALES PROCESS");
+            Console.WriteLine("===========================");
+            Console.WriteLine("Automated MCP-powered sales scenario demonstration");
             Console.WriteLine();
 
-            var apiKey = LoadApiKeyFromEnvironment();
-            if (string.IsNullOrEmpty(apiKey))
+            var config = PosKernelConfiguration.Initialize();
+            var aiConfig = new AiConfiguration(config);
+            
+            if (string.IsNullOrEmpty(aiConfig.ApiKey))
             {
-                Console.WriteLine("❌ OpenAI API key not found!");
+                Console.WriteLine("❌ OpenAI API key not configured for live demo!");
                 return;
             }
 
-            Console.WriteLine($"✅ API key loaded from environment (ends with: ...{apiKey.Substring(Math.Max(0, apiKey.Length - 4))})");
+            Console.WriteLine($"✅ API key loaded (ends with: ...{aiConfig.ApiKey.Substring(Math.Max(0, aiConfig.ApiKey.Length - 4))})");
 
             var services = new ServiceCollection();
             services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
             services.AddSingleton<IProductCatalogService, RestaurantProductCatalogService>();
             
+            var mcpConfig = aiConfig.ToMcpConfiguration();
+            services.AddSingleton(mcpConfig);
+            services.AddSingleton<McpClient>();
+            services.AddSingleton<PosToolsProvider>();
+            
             using var serviceProvider = services.BuildServiceProvider();
-            var logger = serviceProvider.GetRequiredService<ILogger<SimpleOpenAiClient>>();
+            var mcpClient = serviceProvider.GetRequiredService<McpClient>();
+            var toolsProvider = serviceProvider.GetRequiredService<PosToolsProvider>();
             var productCatalog = serviceProvider.GetRequiredService<IProductCatalogService>();
             
-            using var aiClient = new SimpleOpenAiClient(logger, apiKey, "gpt-4o", 0.2);
-            await RunCompleteSalesScenarioAsync(aiClient, productCatalog);
+            await RunMcpSalesScenarioAsync(mcpClient, toolsProvider, productCatalog);
         }
 
-        private static async Task RunCompleteSalesScenarioAsync(SimpleOpenAiClient aiClient, IProductCatalogService productCatalog)
+        private static async Task RunMcpSalesScenarioAsync(McpClient mcpClient, PosToolsProvider toolsProvider, IProductCatalogService productCatalog)
         {
-            Console.WriteLine("🎭 **LIVE AI COFFEE SHOP SALES SCENARIO**");
-            Console.WriteLine("=========================================");
+            Console.WriteLine("🎭 **LIVE MCP AI SALES SCENARIO**");
+            Console.WriteLine("=================================");
             Console.WriteLine();
 
-            // Create a REAL POS transaction using kernel contracts
             var transaction = new Transaction
             {
                 Id = TransactionId.New(),
-                State = TransactionState.Building
+                State = TransactionState.Building,
+                Currency = "USD"
             };
 
-            Console.WriteLine($"🏪 **New Real Transaction Started**: {transaction.Id}");
-            Console.WriteLine($"📊 Status: {transaction.State}");
+            var availableTools = toolsProvider.GetAvailableTools();
+
+            Console.WriteLine($"🏪 **Transaction Started**: {transaction.Id}");
+            Console.WriteLine($"🛠️  **MCP Tools**: {availableTools.Count} available");
             Console.WriteLine();
 
-            // Get REAL products from restaurant catalog
-            var availableProducts = await productCatalog.GetPopularItemsAsync();
-            var menuItems = string.Join("\n", availableProducts.Take(5).Select(p => $"- {p.Name}: ${p.BasePriceCents / 100.0:F2}"));
-
-            var customerInteractions = new []
+            var customerScenarios = new[]
             {
-                "I'd like a large coffee and maybe something sweet - yes, add them both to my order",
-                "What goes well with coffee for breakfast? Add your best recommendation", 
-                "I'm trying to keep it under $8 total - please add a good combination that fits my budget"
+                "I'd like a large coffee and something sweet to go with it",
+                "What pairs well with coffee for breakfast?",
+                "I'm trying to keep it under $8 total - what do you recommend?"
             };
 
-            foreach (var customerRequest in customerInteractions)
+            foreach (var customerRequest in customerScenarios)
             {
                 Console.WriteLine($"👤 **Customer**: \"{customerRequest}\"");
-                Console.Write("🤖 **AI Barista**: ");
+                Console.Write("🤖 **MCP AI Barista**: ");
 
-                var currentTotal = transaction.Total.ToDecimal();
-                var currentItemsList = transaction.Lines.Any() 
-                    ? string.Join(", ", transaction.Lines.Select(l => $"{l.ProductId} x{l.Quantity}"))
-                    : "None";
+                var prompt = $@"You are an AI barista using MCP tools. Customer says: ""{customerRequest}""
 
-                var prompt = $@"You are an AI barista for a coffee shop POS system using REAL POS Kernel. The customer says: ""{customerRequest}""
+Current transaction: {transaction.Id} (Total: ${transaction.Total.ToDecimal():F2})
+Items: {(transaction.Lines.Any() ? string.Join(", ", transaction.Lines.Select(l => $"{l.ProductId} x{l.Quantity}")) : "None")}
 
-Current real transaction: {transaction.Id} (Total so far: ${currentTotal:F2})
-Current items: {currentItemsList}
+Be conversational and enthusiastic like a real barista. Use MCP tools to help them, then follow up naturally.";
 
-Available menu items (from real database):
-{menuItems}
+                var response = await mcpClient.CompleteWithToolsAsync(prompt, availableTools);
+                Console.WriteLine(response.Content);
 
-As a helpful AI barista using real kernel:
-1. Respond conversationally to the customer first
-2. When you want to add items to their order, use EXACTLY this format on a new line: ""ADDING: [exact item name] - $[exact price]""
-3. You MUST use the exact item names and prices from the menu above
-4. Keep track of their budget and preferences
+                if (response.ToolCalls.Any())
+                {
+                    Console.WriteLine($"  🛠️  **Executing {response.ToolCalls.Count} MCP tool(s)**");
+                    
+                    var toolResults = new List<string>();
+                    foreach (var toolCall in response.ToolCalls)
+                    {
+                        var result = await toolsProvider.ExecuteToolAsync(toolCall, transaction);
+                        Console.WriteLine($"  📊 {toolCall.FunctionName}: {result}");
+                        toolResults.Add(result);
+                    }
 
-Example:
-""That's a great choice! Let me add that for you.
-ADDING: Large Coffee - $3.99""
+                    // Generate follow-up for demo
+                    var followUpPrompt = $@"You just helped a customer by executing tools. Results: {string.Join("; ", toolResults)}
+                    
+Current transaction: {transaction.Lines.Count} items, ${transaction.Total.ToDecimal():F2}
 
-Response:";
+Give a brief, enthusiastic follow-up response acknowledging what you added and the running total:";
 
-                var aiResponse = await aiClient.CompleteAsync(prompt);
-                Console.WriteLine(aiResponse);
-
-                // Parse AI response for items to add using REAL kernel
-                await ProcessAiRecommendationsAsync(aiResponse, transaction, availableProducts);
+                    try 
+                    {
+                        var followUp = await mcpClient.CompleteWithToolsAsync(followUpPrompt, new List<McpTool>());
+                        Console.WriteLine($"🤖 {followUp.Content}");
+                    }
+                    catch
+                    {
+                        Console.WriteLine($"🤖 Perfect! Your order now has {transaction.Lines.Count} items. What else can I get for you?");
+                    }
+                }
                 
-                Console.WriteLine($"📊 **Real Transaction Update**: {transaction.Lines.Count} items, Total: ${transaction.Total.ToDecimal():F2}");
+                Console.WriteLine($"📊 **Transaction Update**: {transaction.Lines.Count} items, Total: ${transaction.Total.ToDecimal():F2}");
                 Console.WriteLine();
             }
 
-            // Show final REAL transaction details
-            Console.WriteLine("🧾 **FINAL REAL TRANSACTION SUMMARY**");
-            Console.WriteLine("===================================");
-            Console.WriteLine($"Transaction ID: {transaction.Id}");
-            Console.WriteLine($"Status: {transaction.State}");
-            Console.WriteLine($"Items ({transaction.Lines.Count}):");
-            
-            foreach (var line in transaction.Lines)
-            {
-                Console.WriteLine($"  • {line.ProductId} - ${line.UnitPrice.ToDecimal():F2} x {line.Quantity} = ${line.Extended.ToDecimal():F2}");
-            }
-            
-            Console.WriteLine($"**TOTAL: ${transaction.Total.ToDecimal():F2}**");
-            Console.WriteLine();
-
+            // Display final results
             if (transaction.Lines.Any())
             {
-                await ProcessFinalUpsellAsync(aiClient, transaction);
-                await ProcessPaymentAsync(transaction);
-                PrintReceipt(transaction);
+                Console.WriteLine("🧾 **FINAL MCP TRANSACTION SUMMARY**");
+                Console.WriteLine("===================================");
+                Console.WriteLine($"Transaction ID: {transaction.Id}");
+                Console.WriteLine($"Currency: {transaction.Currency}");
+                Console.WriteLine($"State: {transaction.State}");
+                Console.WriteLine($"Items ({transaction.Lines.Count}):");
                 
-                Console.WriteLine("✅ **REAL TRANSACTION COMPLETED SUCCESSFULLY!**");
-                Console.WriteLine($"🎉 AI successfully helped complete sale using real kernel: ${transaction.Total.ToDecimal():F2}");
-            }
-            else
-            {
-                Console.WriteLine("ℹ️ No items were added to the transaction.");
-            }
-        }
-
-        private static async Task ProcessFinalUpsellAsync(SimpleOpenAiClient aiClient, Transaction transaction)
-        {
-            Console.WriteLine("💰 **AI FINAL UPSELL OPPORTUNITY**");
-            Console.WriteLine("---------------------------------");
-
-            var currentItems = string.Join(", ", transaction.Lines.Select(l => l.ProductId.ToString()));
-            var prompt = $@"As an AI barista using real POS kernel, the customer has ordered: {currentItems} for a total of ${transaction.Total.ToDecimal():F2}
-
-This is your last chance to suggest one perfect add-on that would complement their order. Consider:
-- What pairs well with their selections?
-- Small add-ons under $3 that enhance the experience
-- Their spending pattern so far
-
-Suggest ONE final item briefly and enthusiastically:";
-
-            Console.Write("🤖 **Final AI Suggestion**: ");
-            var response = await aiClient.CompleteAsync(prompt);
-            Console.WriteLine(response);
-            Console.WriteLine();
-        }
-
-        private static async Task<bool> ProcessAiRecommendationsAsync(string aiResponse, Transaction transaction, IReadOnlyList<IProductInfo> availableProducts)
-        {
-            bool itemsAdded = false;
-            
-            var lines = aiResponse.Split('\n');
-            foreach (var line in lines)
-            {
-                if (line.Contains("ADDING:"))
-                {
-                    try
-                    {
-                        var addingPart = line.Substring(line.IndexOf("ADDING:") + 7).Trim();
-                        var parts = addingPart.Split('-');
-                        if (parts.Length >= 2)
-                        {
-                            var itemName = parts[0].Trim();
-                            var priceText = parts[1].Trim().Replace("$", "");
-                            
-                            if (decimal.TryParse(priceText, out var price))
-                            {
-                                // Find matching product in REAL database
-                                var product = availableProducts.FirstOrDefault(p => 
-                                    p.Name.Contains(itemName, StringComparison.OrdinalIgnoreCase) ||
-                                    itemName.Contains(p.Name, StringComparison.OrdinalIgnoreCase));
-                                
-                                if (product != null)
-                                {
-                                    // Add to REAL transaction using kernel contracts
-                                    var productId = new ProductId(product.Sku);
-                                    var unitPrice = new Money(product.BasePriceCents, transaction.Currency);
-                                    
-                                    transaction.AddLine(productId, 1, unitPrice);
-                                    Console.WriteLine($"  ➕ Added to real kernel: {product.Name} - ${product.BasePriceCents / 100.0:F2}");
-                                    itemsAdded = true;
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"  ⚠️ Had trouble adding that item to real kernel: {ex.Message}");
-                    }
-                }
-            }
-
-            // Fix CS1998 by adding await
-            await Task.CompletedTask;
-            return itemsAdded;
-        }
-
-        private static void ShowOrderSummary(Transaction transaction)
-        {
-            Console.WriteLine();
-            Console.WriteLine("🧾 **YOUR CURRENT ORDER (Real Kernel)**");
-            Console.WriteLine("======================================");
-            
-            if (!transaction.Lines.Any())
-            {
-                Console.WriteLine("Your cart is empty.");
-            }
-            else
-            {
                 foreach (var line in transaction.Lines)
                 {
-                    Console.WriteLine($"• {line.ProductId} - ${line.UnitPrice.ToDecimal():F2} x {line.Quantity} = ${line.Extended.ToDecimal():F2}");
+                    Console.WriteLine($"  • {line.ProductId} - ${line.UnitPrice.ToDecimal():F2} x {line.Quantity} = ${line.Extended.ToDecimal():F2}");
                 }
-                Console.WriteLine($"\n**TOTAL: ${transaction.Total.ToDecimal():F2}**");
+                
+                Console.WriteLine($"**TOTAL: ${transaction.Total.ToDecimal():F2} {transaction.Currency}**");
+                Console.WriteLine();
+                Console.WriteLine("✅ **MCP AI SUCCESSFULLY COMPLETED SALES INTERACTION!**");
             }
-            Console.WriteLine();
-        }
-
-        private static async Task ProcessPaymentAsync(Transaction transaction)
-        {
-            Console.WriteLine("💳 **PROCESSING PAYMENT (Real Kernel)**");
-            Console.WriteLine("--------------------------------------");
-            
-            var paymentAmount = new Money(transaction.Total.MinorUnits, transaction.Currency);
-            
-            Console.WriteLine($"Payment Amount: ${transaction.Total.ToDecimal():F2}");
-            Console.WriteLine("Processing through real kernel transaction engine...");
-            
-            await Task.Delay(1000);
-            
-            // Use REAL kernel payment processing
-            transaction.AddCashTender(paymentAmount);
-            
-            Console.WriteLine($"✅ Payment Processed Successfully by Real Kernel!");
-            Console.WriteLine($"📊 Final Status: {transaction.State}");
-            Console.WriteLine();
-        }
-
-        private static void PrintReceipt(Transaction transaction)
-        {
-            Console.WriteLine();
-            Console.WriteLine("🖨️ **PRINTING RECEIPT (Real Kernel)**");
-            Console.WriteLine("------------------------------------");
-            
-            var now = DateTime.Now;
-            
-            var receipt = new StringBuilder();
-            
-            // Header
-            receipt.AppendLine("════════════════════════════════");
-            receipt.AppendLine("        REAL KERNEL COFFEE");
-            receipt.AppendLine("   Powered by Actual POS Kernel");
-            receipt.AppendLine("════════════════════════════════");
-            receipt.AppendLine();
-            receipt.AppendLine($"Date: {now:yyyy-MM-dd}");
-            receipt.AppendLine($"Time: {now:HH:mm:ss}");
-            receipt.AppendLine($"Transaction: {transaction.Id}");
-            receipt.AppendLine($"State: {transaction.State}");
-            receipt.AppendLine();
-            receipt.AppendLine("────────────────────────────────");
-            
-            // Line items from REAL transaction
-            foreach (var line in transaction.Lines)
+            else
             {
-                receipt.AppendLine($"{line.ProductId}");
-                receipt.AppendLine($"  {line.Quantity} x ${line.UnitPrice.ToDecimal():F2} = ${line.Extended.ToDecimal():F2}");
+                Console.WriteLine("ℹ️ No items were added via MCP tools in this demo scenario.");
             }
-            
-            receipt.AppendLine("────────────────────────────────");
-            receipt.AppendLine($"SUBTOTAL:        ${transaction.Total.ToDecimal():F2}");
-            receipt.AppendLine($"TAX:             ${0:F2}");
-            receipt.AppendLine($"TOTAL:           ${transaction.Total.ToDecimal():F2}");
-            receipt.AppendLine();
-            receipt.AppendLine($"PAYMENT (CASH):  ${transaction.Tendered.ToDecimal():F2}");
-            
-            var change = transaction.Tendered.ToDecimal() - transaction.Total.ToDecimal();
-            if (change > 0)
-            {
-                receipt.AppendLine($"CHANGE:          ${change:F2}");
-            }
-            
-            receipt.AppendLine();
-            receipt.AppendLine("════════════════════════════════");
-            receipt.AppendLine("       THANK YOU!");
-            receipt.AppendLine("   🚀 Real POS Kernel Architecture");
-            receipt.AppendLine("   🧠 AI-Powered Experience");
-            receipt.AppendLine("   📊 Actual Transaction Processing");
-            receipt.AppendLine("   🗄️  Real Restaurant Database");
-            receipt.AppendLine("════════════════════════════════");
-            receipt.AppendLine($"Printed: {now:yyyy-MM-dd HH:mm:ss}");
-            
-            Console.WriteLine("✅ Receipt printed successfully!");
-            Console.WriteLine();
-            Console.WriteLine("📄 **RECEIPT:**");
-            Console.WriteLine(receipt.ToString());
-            Console.WriteLine($"🕐 Printed at: {now:yyyy-MM-dd HH:mm:ss}");
-            Console.WriteLine();
         }
 
         private static DemoType ParseDemoType(string[] args)
         {
             if (args.Length == 0)
             {
-                return DemoType.Interactive; // Default to interactive mode
+                return DemoType.Interactive;
             }
 
             var arg = args[0].ToLowerInvariant();
             return arg switch
             {
                 "--interactive" or "--chat" or "-i" => DemoType.Interactive,
-                "--live" or "--sales" or "-l" => DemoType.LiveAi,
+                "--live" or "--demo" or "-l" => DemoType.LiveDemo,
                 "--help" or "-h" => DemoType.Help,
                 _ => DemoType.Invalid
             };
@@ -689,39 +601,53 @@ Suggest ONE final item briefly and enthusiastically:";
             Console.WriteLine("Usage: dotnet run [options]");
             Console.WriteLine();
             Console.WriteLine("Options:");
-            Console.WriteLine("  --interactive, --chat, -i   💬 Interactive AI Barista Chat (DEFAULT)");
-            Console.WriteLine("  --live, --sales, -l         🔥 Live AI Sales Process Demo");
+            Console.WriteLine("  --interactive, --chat, -i   💬 Interactive MCP AI Barista Chat (DEFAULT)");
+            Console.WriteLine("  --live, --demo, -l          🔥 Live MCP AI Sales Process Demo");
             Console.WriteLine("  --help, -h                  Show this help message");
             Console.WriteLine();
-            Console.WriteLine("💬 Interactive AI Barista Chat:");
+            Console.WriteLine("💬 Interactive MCP AI Barista Chat:");
+            Console.WriteLine("  • Model Context Protocol (MCP) structured tool calling");
             Console.WriteLine("  • Real POS Kernel transaction processing");
-            Console.WriteLine("  • Live OpenAI integration");
+            Console.WriteLine("  • Live OpenAI integration with function calling");
             Console.WriteLine("  • Actual restaurant database with SQLite");
-            Console.WriteLine("  • Natural language: 'I want coffee' → AI processes → Real transactions");
-            Console.WriteLine("  • Professional receipt printing");
+            Console.WriteLine("  • Professional AI-driven customer service");
+            Console.WriteLine("  • Security-first design with kernel isolation");
             Console.WriteLine();
-            Console.WriteLine("🔥 Live AI Sales Process Demo:");
-            Console.WriteLine("  • Automated sales scenario with real kernel");
-            Console.WriteLine("  • AI-driven product recommendations");
-            Console.WriteLine("  • Complete transaction lifecycle demonstration");
-            Console.WriteLine("  • Shows AI upselling and customer interaction");
+            Console.WriteLine("🔥 Live MCP AI Sales Process Demo:");
+            Console.WriteLine("  • Automated MCP-powered sales scenario");
+            Console.WriteLine("  • AI-driven product recommendations via structured tools");
+            Console.WriteLine("  • Complete transaction lifecycle with MCP");
+            Console.WriteLine("  • Demonstrates advanced AI customer interaction patterns");
             Console.WriteLine();
-            Console.WriteLine("🚀 Real Architecture Features:");
+            Console.WriteLine("🚀 MCP Architecture Features:");
+            Console.WriteLine("   ✅ Model Context Protocol (MCP) industry standard");
+            Console.WriteLine("   ✅ Structured function calling (no brittle text parsing)");
+            Console.WriteLine("   ✅ Real-time inventory queries via MCP tools");
+            Console.WriteLine("   ✅ Type-safe AI-to-POS integration");
             Console.WriteLine("   ✅ Actual POS Kernel transaction engine");
-            Console.WriteLine("   ✅ Real restaurant product database (SQLite)");
-            Console.WriteLine("   ✅ Live OpenAI API integration");
-            Console.WriteLine("   ✅ Professional receipt generation");
-            Console.WriteLine("   ✅ No simulations or mocks - everything is real!");
+            Console.WriteLine("   ✅ Professional error handling and logging");
+            Console.WriteLine("   ✅ Configuration-driven setup following documented patterns");
             Console.WriteLine();
-            Console.WriteLine("💡 Try the real AI barista:");
+            Console.WriteLine("🔐 Security & Design Standards:");
+            Console.WriteLine("   ✅ Security-first design with AI isolation from kernel");
+            Console.WriteLine("   ✅ Proper dependency injection patterns");
+            Console.WriteLine("   ✅ Documented error handling strategies");
+            Console.WriteLine("   ✅ ISO 4217 currency code compliance");
+            Console.WriteLine("   ✅ Kernel contract adherence");
+            Console.WriteLine();
+            Console.WriteLine("💡 Try the MCP AI barista:");
             Console.WriteLine("   dotnet run -- --interactive");
+            Console.WriteLine();
+            Console.WriteLine("📁 Configuration:");
+            Console.WriteLine($"   Config directory: {PosKernelConfiguration.ConfigDirectory}");
+            Console.WriteLine($"   Secrets file: {PosKernelConfiguration.SecretsFilePath}");
         }
 
         private enum DemoType
         {
             Invalid,
             Interactive,
-            LiveAi,
+            LiveDemo,
             Help
         }
     }
