@@ -1,0 +1,154 @@
+//
+// Copyright 2025 Paul Moore Parks and contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
+using PosKernel.Abstractions;
+
+namespace PosKernel.AI.Models
+{
+    /// <summary>
+    /// Represents a line item in a receipt.
+    /// </summary>
+    public class ReceiptLineItem
+    {
+        /// <summary>
+        /// Gets or sets the product name.
+        /// </summary>
+        public string ProductName { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the quantity.
+        /// </summary>
+        public int Quantity { get; set; } = 1;
+        
+        /// <summary>
+        /// Gets or sets the unit price.
+        /// </summary>
+        public decimal UnitPrice { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the line total.
+        /// </summary>
+        public decimal LineTotal => UnitPrice * Quantity;
+        
+        /// <summary>
+        /// Gets or sets preparation notes.
+        /// </summary>
+        public string PreparationNotes { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the transaction line ID.
+        /// </summary>
+        public string? LineId { get; set; }
+    }
+    
+    /// <summary>
+    /// Represents a complete receipt/transaction.
+    /// </summary>
+    public class Receipt
+    {
+        /// <summary>
+        /// Gets or sets the store information.
+        /// </summary>
+        public StoreInfo Store { get; set; } = new();
+        
+        /// <summary>
+        /// Gets or sets the transaction ID.
+        /// </summary>
+        public string TransactionId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the line items.
+        /// </summary>
+        public List<ReceiptLineItem> Items { get; set; } = new();
+        
+        /// <summary>
+        /// Gets the subtotal of all items.
+        /// </summary>
+        public decimal Subtotal => Items.Sum(i => i.LineTotal);
+        
+        /// <summary>
+        /// Gets or sets the tax amount.
+        /// </summary>
+        public decimal Tax { get; set; } = 0;
+        
+        /// <summary>
+        /// Gets the total amount.
+        /// </summary>
+        public decimal Total => Subtotal + Tax;
+        
+        /// <summary>
+        /// Gets or sets the payment status.
+        /// </summary>
+        public PaymentStatus Status { get; set; } = PaymentStatus.Building;
+        
+        /// <summary>
+        /// Gets or sets the timestamp.
+        /// </summary>
+        public DateTime Timestamp { get; set; } = DateTime.Now;
+    }
+    
+    /// <summary>
+    /// Store information for receipt display.
+    /// </summary>
+    public class StoreInfo
+    {
+        /// <summary>
+        /// Gets or sets the store name.
+        /// </summary>
+        public string Name { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the currency code.
+        /// </summary>
+        public string Currency { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the store type.
+        /// </summary>
+        public string StoreType { get; set; } = "";
+    }
+    
+    /// <summary>
+    /// Payment status enumeration.
+    /// </summary>
+    public enum PaymentStatus
+    {
+        /// <summary>
+        /// Order is being built.
+        /// </summary>
+        Building,
+        
+        /// <summary>
+        /// Order is ready for payment.
+        /// </summary>
+        ReadyForPayment,
+        
+        /// <summary>
+        /// Payment is being processed.
+        /// </summary>
+        Processing,
+        
+        /// <summary>
+        /// Payment completed successfully.
+        /// </summary>
+        Completed,
+        
+        /// <summary>
+        /// Order was cancelled.
+        /// </summary>
+        Cancelled
+    }
+}
