@@ -1,0 +1,502 @@
+# Coffee Shop Product Catalog
+# XferLang format - human readable, structured, and efficient
+# This replaces the hard-coded ProductCatalog.cs with proper data-driven configuration
+
+{
+    # Catalog metadata
+    Catalog {
+        Metadata {
+            Version "1.0"
+            StoreId "DEMO_COFFEE_SHOP_001"
+            BusinessDomain "restaurant"
+            Currency "USD"
+            LastUpdated "2025-01-13T12:00:00Z"
+            UpdatedBy "catalog-manager"
+            SchemaVersion "poskernel-catalog-v1"
+        }
+
+        # Product categories with business rules
+        Categories {
+            hot_beverages {
+                Name "Hot Beverages"
+                Description "Coffee, tea, and hot drinks"
+                TaxCategory "BEVERAGE"
+                RequiresPreparation true
+                AveragePreparationTime "PT3M"  # ISO 8601 duration
+                TemperatureRange [65, 85]  # Celsius
+                ServingRecommendations ["ceramic_mug", "paper_cup_hot"]
+            }
+            
+            cold_beverages {
+                Name "Cold Beverages"
+                Description "Iced drinks, sodas, and juices"
+                TaxCategory "BEVERAGE"
+                RequiresPreparation false
+                ServingRecommendations ["plastic_cup", "glass"]
+                RefrigerationRequired true
+            }
+            
+            bakery {
+                Name "Bakery Items"
+                Description "Fresh baked goods and pastries"
+                TaxCategory "FOOD"
+                RequiresPreparation false
+                ShelfLife "P2D"  # 2 days
+                AllergenLabeling true
+                NutritionalInfo true
+            }
+            
+            breakfast {
+                Name "Breakfast"
+                Description "Morning meals and breakfast items"
+                TaxCategory "FOOD"
+                RequiresPreparation true
+                AveragePreparationTime "PT5M"
+                AvailableHours {
+                    Start "06:00"
+                    End "11:30"
+                }
+                ServingRecommendations ["plate", "container_hot"]
+            }
+            
+            lunch {
+                Name "Lunch"
+                Description "Sandwiches, salads, and lunch items"
+                TaxCategory "FOOD"
+                RequiresPreparation true
+                AveragePreparationTime "PT7M"
+                AvailableHours {
+                    Start "11:00"
+                    End "16:00"
+                }
+            }
+            
+            snacks {
+                Name "Snacks & Treats"
+                Description "Cookies, chips, and quick snacks"
+                TaxCategory "FOOD"
+                RequiresPreparation false
+                ImpulseItem true
+            }
+            
+            retail {
+                Name "Retail Items"
+                Description "Coffee beans, mugs, and merchandise"
+                TaxCategory "RETAIL"
+                RequiresPreparation false
+                InventoryTracking true
+                VendorRequired true
+            }
+            
+            gift_cards {
+                Name "Gift Cards"
+                Description "Electronic and physical gift cards"
+                TaxCategory "EXEMPT"
+                RequiresPreparation false
+                ExpirationTracking true
+                ActivationRequired true
+            }
+        }
+
+        # Product definitions
+        Products {
+            # Hot Beverages
+            COFFEE_SM {
+                Name "Small Coffee"
+                Description "Classic drip coffee, 8oz"
+                Category "hot_beverages"
+                BasePrice 2.99
+                IsActive true
+                Identifiers {
+                    SKU "COFFEE_SM"
+                    Barcode "123456789012"
+                    InternalCode "HOT_001"
+                }
+                Specifications {
+                    Size "8oz"
+                    CaffeineContent "medium"  # 95mg
+                    Temperature "hot"
+                    Calories 5
+                }
+                Allergens []
+                Nutritional {
+                    Calories 5
+                    Fat 0.0
+                    Carbohydrates 1.0
+                    Protein 0.3
+                    Sodium 5
+                }
+                PreparationNotes "Use house blend, medium grind"
+                PopularityRank 1
+            }
+            
+            COFFEE_MD {
+                Name "Medium Coffee"
+                Description "Classic drip coffee, 12oz"
+                Category "hot_beverages"
+                BasePrice 3.49
+                IsActive true
+                Identifiers {
+                    SKU "COFFEE_MD"
+                    Barcode "123456789013"
+                    InternalCode "HOT_002"
+                }
+                Specifications {
+                    Size "12oz"
+                    CaffeineContent "medium"  # 142mg
+                    Temperature "hot"
+                    Calories 8
+                }
+                Allergens []
+                PopularityRank 3
+            }
+            
+            COFFEE_LG {
+                Name "Large Coffee"
+                Description "Classic drip coffee, 16oz"
+                Category "hot_beverages"
+                BasePrice 3.99
+                IsActive true
+                Identifiers {
+                    SKU "COFFEE_LG"
+                    Barcode "123456789014"
+                    InternalCode "HOT_003"
+                }
+                Specifications {
+                    Size "16oz"
+                    CaffeineContent "high"  # 190mg
+                    Temperature "hot"
+                    Calories 10
+                }
+                Allergens []
+                PopularityRank 1  # Most popular item
+                UpsellSuggestions ["MUFFIN_BLUEBERRY", "CROISSANT_PLAIN"]
+            }
+            
+            LATTE {
+                Name "Caffe Latte"
+                Description "Espresso with steamed milk"
+                Category "hot_beverages"
+                BasePrice 4.99
+                IsActive true
+                Identifiers {
+                    SKU "LATTE"
+                    Barcode "123456789015"
+                    InternalCode "HOT_010"
+                }
+                Specifications {
+                    Size "12oz"
+                    CaffeineContent "medium"  # 75mg
+                    Temperature "hot"
+                    Calories 150
+                }
+                Allergens ["dairy"]
+                Customizations {
+                    MilkOptions ["whole", "2%", "skim", "oat", "almond", "soy"]
+                    SyrupOptions ["vanilla", "caramel", "hazelnut"]
+                    ExtraShots true
+                }
+                PopularityRank 2
+                UpsellSuggestions ["COOKIE_CHOC", "BISCOTTI"]
+            }
+            
+            CAPPUCCINO {
+                Name "Cappuccino"
+                Description "Espresso with steamed milk and foam"
+                Category "hot_beverages" 
+                BasePrice 4.49
+                IsActive true
+                Identifiers {
+                    SKU "CAPPUCCINO"
+                    Barcode "123456789016"
+                    InternalCode "HOT_011"
+                }
+                Specifications {
+                    Size "8oz"
+                    CaffeineContent "medium"  # 75mg
+                    Temperature "hot"
+                    Calories 120
+                }
+                Allergens ["dairy"]
+                PopularityRank 8
+            }
+            
+            # Bakery Items  
+            MUFFIN_BLUEBERRY {
+                Name "Blueberry Muffin"
+                Description "Fresh blueberry muffin with Maine blueberries"
+                Category "bakery"
+                BasePrice 2.49
+                IsActive true
+                Identifiers {
+                    SKU "MUFFIN_BLUEBERRY"
+                    Barcode "123456789020"
+                    InternalCode "BAK_001"
+                }
+                Specifications {
+                    Weight "120g"
+                    FreshBaked true
+                    VegetarianFriendly true
+                }
+                Allergens ["gluten", "eggs", "dairy"]
+                Nutritional {
+                    Calories 420
+                    Fat 18.0
+                    Carbohydrates 61.0
+                    Protein 6.0
+                    Fiber 2.0
+                }
+                PopularityRank 3
+                PairingRecommendations ["COFFEE_LG", "TEA_GREEN", "LATTE"]
+                ShelfLife "P2D"  # 2 days
+            }
+            
+            CROISSANT_PLAIN {
+                Name "Plain Croissant"
+                Description "Buttery French croissant, baked fresh daily"
+                Category "bakery"
+                BasePrice 2.99
+                IsActive true
+                Identifiers {
+                    SKU "CROISSANT_PLAIN"
+                    Barcode "123456789021"
+                    InternalCode "BAK_010"
+                }
+                Specifications {
+                    Weight "65g"
+                    FreshBaked true
+                    Origin "French_style"
+                }
+                Allergens ["gluten", "dairy", "eggs"]
+                PopularityRank 7
+                HeatingRecommended true
+            }
+            
+            # Breakfast Items
+            BREAKFAST_SANDWICH {
+                Name "Breakfast Sandwich"
+                Description "Egg, aged cheddar, and Canadian bacon on English muffin"
+                Category "breakfast"
+                BasePrice 6.49
+                IsActive true
+                Identifiers {
+                    SKU "BREAKFAST_SANDWICH"
+                    Barcode "123456789030"
+                    InternalCode "BRK_001"
+                }
+                Specifications {
+                    Weight "180g"
+                    ServedHot true
+                    Protein "high"
+                }
+                Allergens ["gluten", "eggs", "dairy"]
+                Nutritional {
+                    Calories 450
+                    Fat 24.0
+                    Carbohydrates 32.0
+                    Protein 28.0
+                }
+                PopularityRank 4
+                PreparationTime "PT3M"
+                Customizations {
+                    EggOptions ["scrambled", "over_easy"]
+                    MeatOptions ["canadian_bacon", "sausage", "turkey_sausage"]
+                    CheeseOptions ["cheddar", "swiss", "pepper_jack"]
+                }
+            }
+            
+            TOAST_AVOCADO {
+                Name "Avocado Toast" 
+                Description "Smashed avocado on artisan multigrain with lime and sea salt"
+                Category "breakfast"
+                BasePrice 8.99
+                IsActive true
+                Identifiers {
+                    SKU "TOAST_AVOCADO"
+                    Barcode "123456789031"
+                    InternalCode "BRK_010"
+                }
+                Specifications {
+                    Vegan true
+                    Organic true
+                    HealthyOption true
+                }
+                Allergens ["gluten"]
+                Nutritional {
+                    Calories 320
+                    Fat 22.0
+                    Carbohydrates 28.0
+                    Protein 8.0
+                    Fiber 12.0
+                }
+                Seasonality {
+                    AvocadoSeason ["spring", "summer", "fall"]
+                    PriceFluctuation true
+                }
+            }
+            
+            # Lunch Items
+            SANDWICH_TURKEY {
+                Name "Turkey Club Sandwich"
+                Description "Roasted turkey, applewood bacon, lettuce, tomato on sourdough"
+                Category "lunch"
+                BasePrice 9.99
+                IsActive true
+                Identifiers {
+                    SKU "SANDWICH_TURKEY"
+                    Barcode "123456789040"
+                    InternalCode "LUN_001"
+                }
+                Specifications {
+                    Weight "280g"
+                    ServedCold false
+                    Protein "high"
+                }
+                Allergens ["gluten", "dairy"]
+                PopularityRank 5
+                Customizations {
+                    BreadOptions ["sourdough", "whole_wheat", "rye", "gluten_free"]
+                    SauceOptions ["mayo", "mustard", "avocado_spread"]
+                    AddOns ["extra_bacon", "cheese", "avocado"]
+                }
+                SideSuggestions ["CHIPS_KETTLE", "SOUP_TOMATO"]
+            }
+            
+            # Retail Items
+            COFFEE_BEANS_1LB {
+                Name "House Blend Coffee Beans"
+                Description "Medium roast blend, 1lb bag"
+                Category "retail"
+                BasePrice 12.99
+                IsActive true
+                Identifiers {
+                    SKU "COFFEE_BEANS_1LB"
+                    Barcode "123456789050"
+                    UPC "012345678905"
+                    InternalCode "RTL_001"
+                }
+                Specifications {
+                    Weight "1lb"  # 454g
+                    RoastLevel "medium"
+                    Origin "Colombia/Brazil_blend"
+                    Organic false
+                }
+                PackagingInfo {
+                    PackageType "valve_bag"
+                    SealedFresh true
+                    ExpirationMonths 12
+                }
+                WholesaleCost 6.50  # For margin calculation
+                Vendor {
+                    Name "Local Coffee Roasters Inc"
+                    ContactEmail "orders@localroasters.com"
+                    ReorderLevel 10
+                }
+            }
+            
+            # Gift Cards
+            GIFT_CARD_25 {
+                Name "$25 Gift Card"
+                Description "Electronic gift card worth $25"
+                Category "gift_cards"
+                BasePrice 25.00
+                IsActive true
+                Identifiers {
+                    SKU "GIFT_CARD_25"
+                    InternalCode "GFT_025"
+                }
+                Specifications {
+                    Value 25.00
+                    Digital true
+                    Reloadable true
+                }
+                ExpirationPolicy {
+                    ExpiresAfter "P24M"  # 24 months
+                    SendReminders true
+                    ReminderSchedule ["P18M", "P22M", "P23M"]
+                }
+                RedemptionRules {
+                    PartialRedemption true
+                    CashBackThreshold 5.00
+                    CombineWithPromotions true
+                }
+            }
+        }
+
+        # Dynamic pricing rules (time-based, volume-based, etc.)
+        PricingRules {
+            happy_hour_coffee {
+                Name "Happy Hour Coffee Discount"
+                Description "15% off all coffee drinks 2-4 PM weekdays"
+                RuleType "time_based_discount"
+                AppliesTo {
+                    Categories ["hot_beverages"]
+                    ProductFilter "coffee"  # Products containing "coffee" in name/description
+                }
+                Discount {
+                    Type "percentage"
+                    Value 15.0
+                }
+                Schedule {
+                    Days ["monday", "tuesday", "wednesday", "thursday", "friday"]
+                    StartTime "14:00"
+                    EndTime "16:00"
+                    TimeZone "store_local"
+                }
+                IsActive true
+                ValidFrom "2025-01-01"
+                ValidUntil "2025-12-31"
+            }
+            
+            bulk_coffee_discount {
+                Name "Bulk Coffee Bean Discount"
+                Description "10% off when buying 3 or more bags"
+                RuleType "quantity_discount"
+                AppliesTo {
+                    Products ["COFFEE_BEANS_1LB", "COFFEE_BEANS_ESPRESSO"]
+                }
+                Discount {
+                    Type "percentage"
+                    Value 10.0
+                }
+                Conditions {
+                    MinimumQuantity 3
+                    SameProduct false  # Can mix different coffee products
+                }
+                IsActive true
+            }
+        }
+
+        # Business intelligence data for AI and analytics
+        Analytics {
+            # Sales velocity (items per day average)
+            SalesVelocity {
+                COFFEE_LG 47
+                LATTE 32
+                MUFFIN_BLUEBERRY 28
+                BREAKFAST_SANDWICH 23
+                SANDWICH_TURKEY 19
+            }
+            
+            # Peak selling times
+            PeakHours {
+                COFFEE_LG ["07:00-09:00", "14:00-16:00"]
+                BREAKFAST_SANDWICH ["07:00-10:00"]
+                SANDWICH_TURKEY ["11:30-14:00"]
+            }
+            
+            # Customer preferences and pairing data
+            CustomerPairings {
+                COFFEE_LG ["MUFFIN_BLUEBERRY", "CROISSANT_PLAIN", "BREAKFAST_SANDWICH"]
+                LATTE ["COOKIE_CHOC", "SCONE_VANILLA", "DANISH_CHEESE"]
+            }
+            
+            # Seasonal trends
+            SeasonalTrends {
+                Winter ["HOT_CHOC", "SOUP_TOMATO", "CHAI_LATTE"]
+                Summer ["ICED_COFFEE", "COLD_BREW", "SMOOTHIE_BERRY"]
+                Holiday ["GIFT_CARD_25", "COFFEE_BEANS_1LB"]
+            }
+        }
+    }
+}

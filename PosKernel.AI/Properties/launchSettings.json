@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "PosKernel.AI": {
+      "commandName": "Project",
+      "commandLineArgs": "--kopitiam"
+    }
+  }
+}

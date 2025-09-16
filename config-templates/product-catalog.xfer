@@ -1,0 +1,182 @@
+</ Product Catalog CAL Provider Configuration />
+</ XferLang format for maximum flexibility and human readability />
+
+{
+    </ Provider Registry - Multiple providers can be active simultaneously />
+    ProductCatalog {
+        Providers {
+            </ Coffee Shop Demo Provider (built-in for demonstrations) />
+            demo_coffee_shop {
+                Provider "PosKernel.Providers.Demo.CoffeeShopCatalogProvider"
+                BusinessDomain "restaurant"
+                Priority 10
+                Configuration {
+                    DataSource "xfer://data/catalog/coffee-shop-products.xfer"
+                    CacheTimeToLive "PT15M"  </ ISO 8601 duration: 15 minutes />
+                    SupportedFormats ["sku", "barcode"]
+                }
+            }
+            
+            </ SQL Server Enterprise Catalog (for large retailers) />
+            sql_enterprise {
+                Provider "PosKernel.Providers.SqlServer.EnterpriseCatalogProvider"
+                BusinessDomain "retail"
+                Priority 20
+                Configuration {
+                    ConnectionString '<|SQL_CATALOG_CONNECTION|>'
+                    Schema "catalog"
+                    ProductTable "products"
+                    CacheTimeToLive "PT5M"
+                    SupportedFormats ["sku", "upc", "gtin", "isbn"]
+                    EnableRealTimeSync true
+                }
+            }
+            
+            </ Pharmacy-specific provider (NDC codes, controlled substances) />
+            pharmacy_ndc {
+                Provider "PosKernel.Providers.Pharmacy.NdcCatalogProvider"
+                BusinessDomain "pharmacy"
+                Priority 15
+                Configuration {
+                    NdcDatabasePath '<|POSKERNEL_DATA_DIR|>/pharmacy/ndc_database.sqlite'
+                    ControlledSubstanceVerification true
+                    SupportedFormats ["ndc", "sku", "upc"]
+                    RegulatoryCompliance ["dea", "fda"]
+                }
+            }
+            
+            </ External REST API provider (for cloud-based catalogs) />
+            cloud_api {
+                Provider "PosKernel.Providers.RestApi.CloudCatalogProvider"
+                BusinessDomain "general"
+                Priority 5
+                Configuration {
+                    BaseUrl "https://api.your-catalog-service.com"
+                    ApiKey '<|CATALOG_API_KEY|>'
+                    Timeout "PT30S"
+                    RateLimitPerMinute 1000
+                    SupportedFormats ["sku", "gtin", "custom"]
+                }
+            }
+            
+            </ File-based provider (for small businesses) />
+            file_catalog {
+                Provider "PosKernel.Providers.File.XferCatalogProvider"
+                BusinessDomain "general"
+                Priority 1  </ Lowest priority - fallback />
+                Configuration {
+                    CatalogFile "xfer://data/catalog/products.xfer"
+                    WatchForChanges true
+                    SupportedFormats ["sku"]
+                }
+            }
+        }
+
+        </ Store-specific provider mappings />
+        StoreProviders {
+            </ Demo coffee shop uses the built-in provider />
+            STORE_COFFEE_001 {
+                ActiveProviders ["demo_coffee_shop", "file_catalog"]
+                DefaultCurrency "USD"
+                PricingProvider "demo_coffee_shop"
+            }
+            
+            </ Large retail chain uses enterprise SQL + cloud backup />
+            "STORE_RETAIL_*" {  </ Wildcard pattern for all retail stores />
+                ActiveProviders ["sql_enterprise", "cloud_api", "file_catalog"]
+                DefaultCurrency "USD"
+                PricingProvider "sql_enterprise"
+                InventoryTracking true
+            }
+            
+            </ Pharmacy stores require NDC provider />
+            "STORE_PHARMACY_*" {
+                ActiveProviders ["pharmacy_ndc", "sql_enterprise", "file_catalog"]
+                DefaultCurrency "USD"
+                PricingProvider "pharmacy_ndc"
+                RequireControlledSubstanceVerification true
+            }
+        }
+
+        </ Global catalog settings />
+        Settings {
+            </ Caching configuration />
+            Cache {
+                DefaultTimeToLive "PT10M"
+                MaxCacheSize 10000
+                EnableDistributedCache false
+                CacheProvider "memory"  </ Options: memory, redis, sql />
+            }
+            
+            </ Search configuration />
+            Search {
+                DefaultMaxResults 50
+                EnableFuzzySearch true
+                FuzzySearchThreshold 0.8
+                SearchTimeout "PT5S"
+            }
+            
+            </ Audit and compliance />
+            Audit {
+                LogAllLookups false  </ Set true for regulated industries />
+                LogFailedLookups true
+                RetentionDays 90
+                AuditProvider "file"  </ Options: file, database, syslog />
+            }
+            
+            </ Performance monitoring />
+            Monitoring {
+                EnablePerformanceMetrics true
+                SlowQueryThreshold "PT2S"
+                AlertOnProviderFailures true
+            }
+        }
+
+        </ Provider-specific business rules />
+        BusinessRules {
+            </ Retail business rules />
+            retail {
+                RequireGtinValidation true
+                AllowBackorders true
+                PriceVerificationRequired false
+                InventoryCheckRequired true
+            }
+            
+            </ Restaurant business rules />
+            restaurant {
+                RequirePreparationTime true
+                AllowModifications true
+                AllergenTrackingRequired true
+                MenuSeasonality true
+            }
+            
+            </ Pharmacy business rules />
+            pharmacy {
+                RequireNdcValidation true
+                ControlledSubstanceVerification true
+                PrescriptionRequired ["schedule_ii", "schedule_iii"]
+                InsuranceVerification true
+            }
+        }
+
+        </ Fallback and error handling />
+        ErrorHandling {
+            </ When primary provider fails />
+            FallbackBehavior "next_provider"  </ Options: fail, next_provider, cache_only />
+            
+            </ When all providers fail />
+            AllProviderFailureBehavior "allow_manual_entry"  </ Options: block_sale, allow_manual_entry, cache_only />
+            
+            </ Cache behavior during outages />
+            ExtendCacheOnFailure true
+            MaxCacheExtension "PT1H"
+            
+            </ Error reporting />
+            ErrorNotification {
+                Enabled true
+                NotifyAfterFailures 3
+                Recipients ["store-manager@company.com", "it-support@company.com"]
+            }
+        }
+    }
+}

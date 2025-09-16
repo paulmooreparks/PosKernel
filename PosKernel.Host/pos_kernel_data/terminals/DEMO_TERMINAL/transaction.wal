@@ -1,0 +1,8 @@
+1,1757732102204334600,1,TransactionBegin { store: "Store-DEMO_TERMINAL", currency: "USD" },store:Store-DEMO_TERMINAL;currency:USD,3390
+2,1757732102205252700,1,LineAdd { sku: "COFFEE", qty: 1, unit_minor: 399 },sku:COFFEE;qty:1;unit_minor:399,2681
+3,1757732102205497500,1,TenderAdd { amount_minor: 500 },amount_minor:500,1511
+4,1757732102205529200,1,TransactionCommit { final_state: "total:399,tendered:500,change:101,lines:1" },committed_at:SystemTime { intervals: 134022057022055273 },4708
+5,1757732102215570100,2,TransactionBegin { store: "Store-Japan-DEMO_TERMINAL", currency: "JPY" },store:Store-Japan-DEMO_TERMINAL;currency:JPY,3932
+6,1757732102221708100,2,LineAdd { sku: "RAMEN", qty: 1, unit_minor: 800 },sku:RAMEN;qty:1;unit_minor:800,2615
+7,1757732102221731300,2,TenderAdd { amount_minor: 1000 },amount_minor:1000,1555
+8,1757732102221741300,2,TransactionCommit { final_state: "total:800,tendered:1000,change:200,lines:1" },committed_at:SystemTime { intervals: 134022057022217395 },4713

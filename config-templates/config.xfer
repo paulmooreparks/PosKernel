@@ -1,0 +1,31 @@
+# PosKernel Configuration (XferLang Format)
+# This file uses a simplified XferLang syntax for now
+# TODO: Implement full XferLang parser
+
+# Core PosKernel Settings
+PosKernel:LogLevel = "Information"
+PosKernel:CultureCode = "en-US" 
+PosKernel:DefaultCurrency = "USD"
+PosKernel:EnableThreading = true
+PosKernel:MaxConcurrentTransactions = 100
+
+# Performance Settings
+Performance:CacheEnabled = true
+Performance:CacheExpiryMinutes = 60
+Performance:EnableMetrics = true
+
+# Security Settings
+Security:EnableAuditLogging = true
+Security:LogLevel = "High"
+Security:RequireAuthentication = true
+Security:SessionTimeoutMinutes = 30
+
+# Regional Settings
+Regional:DateFormat = "yyyy-MM-dd"
+Regional:TimeFormat = "HH:mm:ss"
+Regional:DecimalPlaces = 2
+
+# Extensions
+Extensions:EnablePluginSystem = true
+Extensions:PluginDirectory = "./plugins"
+Extensions:AutoLoadPlugins = true
