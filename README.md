@@ -1,19 +1,19 @@
 # POS Kernel
 
-**The World's Most Culturally-Aware Point-of-Sale Architecture**
+**A High-Performance, Culturally-Aware Point-of-Sale Architecture**
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen)](#)
 [![Language](https://img.shields.io/badge/Rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](#)
 [![Language](https://img.shields.io/badge/.NET%209-512BD4?style=flat&logo=.net&logoColor=white)](#)
 
-**Latest Achievement**: 🌟 **Universal Product Modifications + Multi-Language Support** with live Singapore kopitiam deployment
+**Latest Achievement**: Universal Product Modifications with Multi-Language Support
 
-> **High-performance, culture-aware POS kernel designed for global deployment with universal product modifications, multi-language support, and AI-powered cultural intelligence.**
+> High-performance POS kernel designed for global deployment with universal product modifications, multi-language support, and AI-powered cultural intelligence.
 
-## 🎯 **What Makes POS Kernel Different**
+## What Makes POS Kernel Different
 
-### ✅ **Live Cultural Implementation**
+### Live Cultural Implementation
 ```
 Customer: "kopi si kosong"  
 AI: Identifies base="Kopi C", modification="no_sugar"
@@ -21,48 +21,48 @@ Receipt: "Kopi C (无糖) $1.40" [Chinese localization]
 Performance: Sub-10ms database operations
 ```
 
-### ✅ **Universal Business Support**
-- 🏪 **Traditional Kopitiam**: Free recipe modifications (kosong, gao, poh)
-- ☕ **Western Coffee Shops**: Premium upcharges (+$0.65 oat milk)
-- 🛒 **Grocery Stores**: Substitutions (organic +$0.50, half portion -$1.00)
-- 🥐 **Bakeries**: Custom orders (extra filling, sugar-free options)
+### Universal Business Support
+- **Traditional Kopitiam**: Free recipe modifications (kosong, gao, poh)
+- **Western Coffee Shops**: Premium upcharges (+$0.65 oat milk)
+- **Grocery Stores**: Substitutions (organic +$0.50, half portion -$1.00)
+- **Bakeries**: Custom orders (extra filling, sugar-free options)
 
-### ✅ **True Internationalization**
-- 🌍 **Multi-Language**: BCP 47 compliance with 4-language Singapore deployment
-- 🧠 **Cultural AI**: Intelligent parsing without hard-coded rules
-- 💰 **Any Currency**: DECIMAL(15,6) precision supports all world currencies
-- 🛡️ **Compliance Ready**: GDPR, tax regulations, audit trails
+### True Internationalization
+- **Multi-Language**: BCP 47 compliance with 4-language Singapore deployment
+- **Cultural AI**: Intelligent parsing without hard-coded rules
+- **Any Currency**: DECIMAL(15,6) precision supports all world currencies
+- **Compliance Ready**: GDPR, tax regulations, audit trails
 
-## 🏗️ **Architecture Highlights**
+## Architecture Overview
 
-### **Pure Kernel + Rich Extensions**
+### Pure Kernel + Rich Extensions
 ```
 ┌─────────────────────────────────────────────┐
 │          AI Cultural Intelligence           │
-│  • Natural Language Parsing                │
-│  • Cultural Context Awareness             │
-│  • Multi-Language Response Generation      │
+│  • Natural Language Parsing                 │
+│  • Cultural Context Awareness               │
+│  • Multi-Language Response Generation       │
 └─────────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────────┐
 │         Domain Extensions Layer             │
-│  • Restaurant/Kopitiam Extension           │
-│  • Universal Modifications Framework       │
-│  • Multi-Language Localization            │
-│  • Business Rule Management               │
+│  • Restaurant/Kopitiam Extension            │
+│  • Universal Modifications Framework        │
+│  • Multi-Language Localization              │
+│  • Business Rule Management                 │
 └─────────────────────────────────────────────┘
                     ↓
 ┌─────────────────────────────────────────────┐
 │            Pure POS Kernel                  │
-│  • ACID Transaction Processing             │
-│  • Multi-Process Isolation                │
-│  • Sub-millisecond Operations             │
-│  • Culture-Neutral Core                   │
+│  • ACID Transaction Processing              │
+│  • Multi-Process Isolation                  │
+│  • Sub-millisecond Operations               │
+│  • Culture-Neutral Core                     │
 └─────────────────────────────────────────────┘
 ```
 
-### **Zero-Kernel-Change Modifications**
-The kernel elegantly supports modifications through existing metadata:
+### Zero-Kernel-Change Modifications
+The kernel supports modifications through existing metadata:
 ```protobuf
 message AddLineItemRequest {
   string product_id = 3;          // "KOPI_C"
@@ -71,9 +71,9 @@ message AddLineItemRequest {
 }
 ```
 
-## 🚀 **Quick Start**
+## Quick Start
 
-### **1. Try the AI Demo**
+### 1. Try the AI Demo
 ```bash
 # Set up OpenAI API key
 cp config-templates/.env .poskernel/.env
@@ -86,7 +86,7 @@ dotnet run
 # Try: "kopi si kosong satu"
 ```
 
-### **2. Explore the Architecture**
+### 2. Explore the Architecture
 ```bash
 # View comprehensive documentation
 cd docs
@@ -94,7 +94,7 @@ cd docs
 # Latest feature: product-modifications-localization-architecture.md
 ```
 
-### **3. Build from Source**
+### 3. Build from Source
 ```bash
 # Build Rust kernel
 cd pos-kernel-rs
@@ -104,9 +104,9 @@ cargo build --release
 dotnet build
 ```
 
-## 📊 **Performance Benchmarks**
+## Performance Benchmarks
 
-**✅ Production-Verified Performance**:
+**Production-Verified Performance**:
 - **Transaction Latency**: < 1ms P95
 - **Database Operations**: < 10ms (including modifications)
 - **AI Cultural Parsing**: < 100ms average
@@ -114,23 +114,23 @@ dotnet build
 - **Throughput**: 1000+ TPS per terminal
 - **Memory Usage**: < 50MB per terminal process
 
-## 🌍 **Global Deployment Ready**
+## Global Deployment Ready
 
-### **✅ Live Implementations**
+### Live Implementations
 - **Singapore Kopitiam**: 4-language support (English, Chinese, Malay, Tamil)
 - **Traditional Ordering**: Natural "kopi si kosong" processing
 - **Cultural Intelligence**: AI without hard-coded rules
 - **Multi-Language Receipts**: Automatic localization
 
-### **🚧 Ready for Expansion**
+### Ready for Expansion
 - **US Coffee Shops**: Premium modification pricing
 - **European Bakeries**: Custom order management
 - **Grocery Chains**: Substitution workflows
 - **Any Business Type**: Universal framework
 
-## 🧠 **AI-Powered Cultural Intelligence**
+## AI-Powered Cultural Intelligence
 
-### **Smart Without Hard-Coding**
+### Smart Without Hard-Coding
 ```csharp
 // AI handles cultural context intelligently
 var result = await aiService.ParseOrder("kopi si kosong", "kopitiam-context");
@@ -140,16 +140,16 @@ var result = await aiService.ParseOrder("kopi si kosong", "kopitiam-context");
 // Localized response in customer's preferred language
 ```
 
-### **Cultural Examples**
+### Cultural Examples
 - **Singapore**: "kopi si kosong" → Kopi C with no sugar
 - **US**: "large oat milk latte" → Large Latte + oat milk ($0.65)
 - **Future**: Any culture, any language, any business type
 
-## 🔧 **Universal Modifications System**
+## Universal Modifications System
 
-### **Database Schema (Live)**
+### Database Schema (Live)
 ```sql
--- ✅ IMPLEMENTED: Universal modifications framework
+-- IMPLEMENTED: Universal modifications framework
 CREATE TABLE modifications (
     id VARCHAR(50) PRIMARY KEY,              -- 'no_sugar', 'oat_milk'
     name TEXT NOT NULL,                      -- 'No Sugar', 'Oat Milk'
@@ -158,7 +158,7 @@ CREATE TABLE modifications (
     tax_treatment TEXT DEFAULT 'inherit'     -- Tax compliance
 );
 
--- ✅ IMPLEMENTED: Multi-language localization
+-- IMPLEMENTED: Multi-language localization
 CREATE TABLE localizations (
     localization_key VARCHAR(100) NOT NULL,  -- 'mod.no_sugar'
     locale_code VARCHAR(35) NOT NULL,        -- 'zh-Hans-SG'
@@ -167,30 +167,30 @@ CREATE TABLE localizations (
 );
 ```
 
-### **Real Data Examples**
+### Real Data Examples
 ```sql
--- ✅ LIVE: Singapore kopitiam modifications
+-- LIVE: Singapore kopitiam modifications
 INSERT INTO modifications VALUES 
     ('no_sugar', 'No Sugar', 'sweetness', 0.00, 'inherit'),
     ('extra_strong', 'Extra Strong', 'strength', 0.00, 'inherit');
 
--- ✅ LIVE: 4-language localization
+-- LIVE: 4-language localization
 INSERT INTO localizations VALUES 
     ('mod.no_sugar', 'zh-Hans-SG', '无糖'),      -- Chinese
     ('mod.no_sugar', 'ms-SG', 'Tiada Gula'),    -- Malay  
     ('mod.no_sugar', 'ta-SG', 'சர்க்கரை இல்லை'); -- Tamil
 ```
 
-## ⚖️ **Legal & Compliance**
+## Legal & Compliance
 
-### **Enhanced Compliance**
-- ✅ **ACID Transactions**: Full atomicity with modification support
-- ✅ **Multi-Jurisdiction Tax**: Flexible tax treatment per modification
-- ✅ **GDPR Ready**: Personal dietary preferences handling
-- ✅ **Audit Trails**: Complete modification history for compliance
-- ✅ **Cultural Privacy**: Localization without exposing personal data
+### Enhanced Compliance
+- **ACID Transactions**: Full atomicity with modification support
+- **Multi-Jurisdiction Tax**: Flexible tax treatment per modification
+- **GDPR Ready**: Personal dietary preferences handling
+- **Audit Trails**: Complete modification history for compliance
+- **Cultural Privacy**: Localization without exposing personal data
 
-### **Tax Treatment Examples**
+### Tax Treatment Examples
 ```sql
 -- Singapore: GST applies to modifications that inherit base product tax
 UPDATE modifications SET tax_treatment = 'inherit' WHERE category = 'preparation';
@@ -202,9 +202,9 @@ UPDATE modifications SET tax_treatment = 'standard' WHERE price_adjustment > 0;
 UPDATE modifications SET tax_treatment = 'exempt' WHERE category = 'medical';
 ```
 
-## 🎨 **Multi-Language Receipts**
+## Multi-Language Receipts
 
-### **Singapore Receipt Example**
+### Singapore Receipt Example
 ```
 ===================
 UNCLE'S KOPITIAM
@@ -224,71 +224,71 @@ Thank you!
 ===================
 ```
 
-## 📚 **Comprehensive Documentation**
+## Documentation
 
-- 🎯 **[Architecture Index](docs/ARCHITECTURE_INDEX.md)** - Complete documentation overview
-- 🏪 **[Product Modifications](docs/product-modifications-localization-architecture.md)** - Universal modifications + localization
-- 🌍 **[Internationalization](docs/internationalization-strategy.md)** - Multi-cultural deployment strategy
-- 🧠 **[AI Integration](docs/ai-integration-architecture.md)** - Cultural intelligence architecture
-- 🏗️ **[Domain Extensions](docs/domain-extension-architecture.md)** - Extension pattern (Restaurant success)
-- 🔧 **[Build Rules](docs/BUILD_RULES.md)** - Development guidelines
+- [Architecture Index](docs/ARCHITECTURE_INDEX.md) - Complete documentation overview
+- [Product Modifications](docs/product-modifications-localization-architecture.md) - Universal modifications + localization
+- [Internationalization](docs/internationalization-strategy.md) - Multi-cultural deployment strategy
+- [AI Integration](docs/ai-integration-architecture.md) - Cultural intelligence architecture
+- [Domain Extensions](docs/domain-extension-architecture.md) - Extension pattern (Restaurant success)
+- [Build Rules](docs/BUILD_RULES.md) - Development guidelines
 
-## 🚀 **Development Roadmap**
+## Development Roadmap
 
-### **✅ Phase 1 Complete**: Universal Modifications Foundation
+### ✅ Phase 1 Complete: Universal Modifications Foundation
 - ✅ Universal modifications framework
 - ✅ Singapore kopitiam live implementation
 - ✅ Multi-language localization (4 languages)  
 - ✅ AI cultural intelligence integration
 
-### **🚧 Phase 2 Active**: Store Type Expansion
-- ☕ US Coffee Shop with premium modifications
-- 🥐 European Bakery with custom orders
-- 🛒 Grocery Store with substitutions
+### Phase 2 Active: Store Type Expansion
+- US Coffee Shop with premium modifications
+- European Bakery with custom orders
+- Grocery Store with substitutions
 
-### **📋 Phase 3 Planned**: Service Architecture
-- 🌐 Multi-client service transformation
-- 📡 API gateway and service discovery  
-- 📊 Advanced analytics and reporting
-- 🏢 Enterprise multi-tenant support
+### Phase 3 Planned: Service Architecture
+- Multi-client service transformation
+- API gateway and service discovery  
+- Advanced analytics and reporting
+- Enterprise multi-tenant support
 
-## 🤝 **Contributing**
+## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Key Areas for Contribution**:
-- 🌍 Additional language localizations
-- 🏪 New store type implementations  
-- 🧠 AI cultural intelligence enhancements
-- 📊 Performance optimizations
+- Additional language localizations
+- New store type implementations  
+- AI cultural intelligence enhancements
+- Performance optimizations
 
-## 📞 **Support & Community**
+## Support & Community
 
-- **🐛 Issues**: [GitHub Issues](https://github.com/paulmooreparks/PosKernel/issues)
-- **💬 Discussions**: [GitHub Discussions](https://github.com/paulmooreparks/PosKernel/discussions)
-- **📚 Documentation**: [Complete Architecture Docs](docs/ARCHITECTURE_INDEX.md)
-- **🎯 Quick Start**: [AI Setup Guide](docs/ai-setup-guide.md)
+- **Issues**: [GitHub Issues](https://github.com/paulmooreparks/PosKernel/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/paulmooreparks/PosKernel/discussions)
+- **Documentation**: [Complete Architecture Docs](docs/ARCHITECTURE_INDEX.md)
+- **Quick Start**: [AI Setup Guide](docs/ai-setup-guide.md)
 
-## ⚖️ **License**
+## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
 
-## 👨‍💻 **Contributors**
+## Contributors
 
 - **Paul Moore Parks** - Original author and architecture lead
 - **Community Contributors** - See [Contributors](../../contributors)
 
 ---
 
-## 🌟 **Why POS Kernel Matters**
+## Why POS Kernel Matters
 
-**The World's First Truly Cultural POS System**:
+**Comprehensive Cultural POS System**:
 
-- 🌍 **Truly Global**: Works seamlessly across cultures (Singapore proven)
-- 🏪 **Multi-Business**: Supports any store type (kopitiam to grocery)
-- 🧠 **AI-Enhanced**: Cultural intelligence without hard-coding
-- ⚡ **High-Performance**: Sub-10ms operations with full feature set
-- 🛡️ **Compliance-Ready**: Multi-jurisdiction tax and privacy support
-- 🔧 **Developer-Friendly**: Clean abstractions and extension patterns
+- **Truly Global**: Works seamlessly across cultures (Singapore proven)
+- **Multi-Business**: Supports any store type (kopitiam to grocery)
+- **AI-Enhanced**: Cultural intelligence without hard-coding
+- **High-Performance**: Sub-10ms operations with full feature set
+- **Compliance-Ready**: Multi-jurisdiction tax and privacy support
+- **Developer-Friendly**: Clean abstractions and extension patterns
 
-**Built for the global point-of-sale ecosystem with cultural authenticity, technical excellence, and business intelligence at its core.** 🚀
+Built for the global point-of-sale ecosystem with cultural authenticity, technical excellence, and business intelligence at its core.
