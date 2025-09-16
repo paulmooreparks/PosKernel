@@ -397,9 +397,32 @@ namespace PosKernel.Extensions.Restaurant.Client
         /// </summary>
         public void Dispose()
         {
-            _reader?.Dispose();
-            _writer?.Dispose();
-            _client?.Dispose();
+            try
+            {
+                _reader?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Error disposing reader");
+            }
+            
+            try
+            {
+                _writer?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Error disposing writer");
+            }
+            
+            try
+            {
+                _client?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "Error disposing client");
+            }
         }
     }
 

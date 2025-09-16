@@ -364,6 +364,7 @@ namespace PosKernel.AI
             var greetingPrompt = CreatePersonalizedGreetingPrompt(personality, timeOfDay, currentTime);
 
             // AI greeting with real kernel context loading
+            string menuContext = "";
             try
             {
                 Console.Write($"🤖 {personality.StaffTitle} (REAL KERNEL): ");
@@ -380,28 +381,35 @@ namespace PosKernel.AI
                 };
                 
                 Console.WriteLine("Loading real menu from restaurant extension...");
-                var menuContext = await kernelToolsProvider.ExecuteToolAsync(menuContextCall);
+                menuContext = await kernelToolsProvider.ExecuteToolAsync(menuContextCall);
                 
                 // Create enhanced greeting prompt with FULL MENU INTELLIGENCE
-                var enhancedGreetingPrompt = greetingPrompt + $@"
+                var enhancedGreetingPrompt = $@"You are Uncle at {storeConfig.StoreName}, a traditional kopitiam in Singapore.
 
-CRITICAL: You now have COMPLETE menu knowledge loaded. Use this intelligence!
-
+COMPLETE MENU INTELLIGENCE LOADED:
 {menuContext}
 
-Store Context:
-- Store: {storeConfig.StoreName}
-- Type: {storeConfig.StoreType}  
-- Currency: {storeConfig.Currency}
+CRITICAL INSTRUCTIONS:
+=====================
+1. You now KNOW your complete menu - use this knowledge to greet customers intelligently
+2. Instead of generic greetings, mention ACTUAL items from your menu
+3. Be specific about what you serve based on your REAL menu above
+4. If you see 'Kaya Toast' in your menu, mention kaya toast specifically
+5. If you have 'Teh C', 'Kopi C', mention these traditional drinks
+6. Use your actual menu items in your greeting to show you know what you serve
 
-IMPORTANT RULES:
-1. You KNOW the full menu - suggest ONLY items that exist
-2. When customer says 'kaya toast' and you see 'Kaya Toast' in menu → high confidence (0.9)
-3. Cultural translations: Use your menu knowledge to translate intelligently
-4. If item doesn't exist in menu → inform customer immediately, suggest alternatives
-5. Only use MCP tools for CONFIRMED menu items with high confidence
+GREETING TASK:
+============ =
+Greet the customer in Uncle's style but mention SPECIFIC items from your actual menu above.
+Don't say generic things like 'drinks, toast, and local food' - mention the ACTUAL products you serve.
 
-Now greet the customer with your full menu knowledge!";
+Examples of good greetings:
+- 'Afternoon lah! Want kaya toast? Got fresh kopi, teh c, also got mee goreng!'
+- 'Welcome uncle! Today got good kaya toast, soft boiled eggs, and all the kopi varieties!'
+
+Store Context: {storeConfig.StoreName} | Currency: {storeConfig.Currency} | Time: {timeOfDay}
+
+Now greet the customer using your ACTUAL MENU KNOWLEDGE!";
                 
                 var greetingResponse = await mcpClient.CompleteWithToolsAsync(enhancedGreetingPrompt, availableTools);
                 Console.WriteLine(greetingResponse.Content);
@@ -413,6 +421,7 @@ Now greet the customer with your full menu knowledge!";
                 var fallbackGreeting = GetFallbackGreeting(personality, timeOfDay);
                 Console.WriteLine(fallbackGreeting);
                 Console.WriteLine($"(Real kernel greeting failed: {ex.Message})");
+                Console.WriteLine($"(Menu context result was: {(string.IsNullOrEmpty(menuContext) ? "EMPTY" : "LOADED")})");
                 Console.WriteLine();
                 conversationHistory.Add($"{personality.StaffTitle}: {fallbackGreeting}");
             }

@@ -127,7 +127,7 @@ namespace PosKernel.AI.Services
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     Category = reader.GetString(9),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePrice = reader.GetInt64(4) / 100m, // Convert cents to decimal
                     IsActive = reader.GetBoolean(5),
                     Attributes = new Dictionary<string, object>
                     {
@@ -196,26 +196,15 @@ namespace PosKernel.AI.Services
                 
                 while (await reader.ReadAsync(cancellationToken))
                 {
-                    var product = new RestaurantProductInfo
+                    products.Add(new RestaurantProductInfo
                     {
                         Sku = reader.GetString(0),
                         Name = reader.GetString(1),
                         Description = reader.GetString(2),
-                        Category = reader.GetString(9),
-                        BasePriceCents = reader.GetInt64(4),
-                        IsActive = reader.GetBoolean(5),
-                        Attributes = new Dictionary<string, object>
-                        {
-                            ["category_id"] = reader.GetString(3),
-                            ["requires_preparation"] = reader.GetBoolean(6),
-                            ["preparation_time_minutes"] = reader.GetInt32(7),
-                            ["popularity_rank"] = reader.GetInt32(8),
-                            ["tax_category"] = reader.GetString(10)
-                        }
-                    };
-                    
-                    await LoadProductAttributesAsync(product, cancellationToken);
-                    products.Add(product);
+                        Category = reader.GetString(3),
+                        BasePrice = reader.GetInt64(4) / 100m, // Convert cents to decimal
+                        IsActive = reader.GetBoolean(5)
+                    });
                 }
 
                 return products;
@@ -262,7 +251,7 @@ namespace PosKernel.AI.Services
                         Name = reader.GetString(1),
                         Description = reader.GetString(2),
                         Category = reader.GetString(9),
-                        BasePriceCents = reader.GetInt64(4),
+                        BasePrice = reader.GetInt64(4) / 100m, // Convert cents to decimal
                         IsActive = reader.GetBoolean(5),
                         Attributes = new Dictionary<string, object>
                         {
@@ -325,7 +314,7 @@ namespace PosKernel.AI.Services
                         Name = reader.GetString(1),
                         Description = reader.GetString(2),
                         Category = reader.GetString(9),
-                        BasePriceCents = reader.GetInt64(4),
+                        BasePrice = reader.GetInt64(4) / 100m, // Convert cents to decimal
                         IsActive = reader.GetBoolean(5),
                         Attributes = new Dictionary<string, object>
                         {
@@ -386,6 +375,26 @@ namespace PosKernel.AI.Services
             }
         }
 
+        /// <summary>
+        /// Gets localized product name for display.
+        /// </summary>
+        public async Task<string> GetLocalizedProductNameAsync(string productId, string localeCode, CancellationToken cancellationToken = default)
+        {
+            // For demo purposes, just return the product name (no localization)
+            var validation = await ValidateProductAsync(productId, new ProductLookupContext(), cancellationToken);
+            return validation.Product?.Name ?? productId;
+        }
+
+        /// <summary>
+        /// Gets localized product description.
+        /// </summary>
+        public async Task<string> GetLocalizedProductDescriptionAsync(string productId, string localeCode, CancellationToken cancellationToken = default)
+        {
+            // For demo purposes, just return the product description (no localization)
+            var validation = await ValidateProductAsync(productId, new ProductLookupContext(), cancellationToken);
+            return validation.Product?.Description ?? "";
+        }
+
         private async Task LoadProductAttributesAsync(RestaurantProductInfo product, CancellationToken cancellationToken)
         {
             // Load allergens
@@ -403,7 +412,8 @@ namespace PosKernel.AI.Services
             {
                 allergens.Add(allergenReader.GetString(0));
             }
-            product.Attributes["allergens"] = allergens;
+            product.MutableAttributes["allergens"] = allergens;
+            product.Attributes = product.MutableAttributes;
 
             // Load specifications
             using var specCommand = _database.CreateCommand();
@@ -428,7 +438,8 @@ namespace PosKernel.AI.Services
                     _ => value
                 };
             }
-            product.Attributes["specifications"] = specifications;
+            product.MutableAttributes["specifications"] = specifications;
+            product.Attributes = product.MutableAttributes;
 
             // Load upsell suggestions
             using var upsellCommand = _database.CreateCommand();
@@ -446,7 +457,8 @@ namespace PosKernel.AI.Services
             {
                 upsells.Add(upsellReader.GetString(0));
             }
-            product.Attributes["upsell_suggestions"] = upsells;
+            product.MutableAttributes["upsell_suggestions"] = upsells;
+            product.Attributes = product.MutableAttributes;
         }
 
         private void ThrowIfDisposed()
@@ -471,45 +483,74 @@ namespace PosKernel.AI.Services
     }
 
     /// <summary>
-    /// Product information from the restaurant extension database.
+    /// Restaurant-specific product information for AI demonstrations.
+    /// Enhanced with modifications and localization support.
     /// </summary>
     public class RestaurantProductInfo : IProductInfo
     {
         /// <summary>
-        /// Gets or sets the product SKU (stock keeping unit).
+        /// Gets or sets the product SKU.
         /// </summary>
-        public string Sku { get; set; } = "";
-        
+        public string Sku { get; set; } = "" ;
+
         /// <summary>
-        /// Gets or sets the product display name.
+        /// Gets or sets the product name.
         /// </summary>
-        public string Name { get; set; } = "";
-        
+        public string Name { get; set; } = "" ;
+
         /// <summary>
         /// Gets or sets the product description.
         /// </summary>
-        public string Description { get; set; } = "";
-        
+        public string Description { get; set; } = "" ;
+
         /// <summary>
-        /// Gets or sets the product category name.
+        /// Gets or sets the product category.
         /// </summary>
-        public string Category { get; set; } = "";
-        
+        public string Category { get; set; } = "" ;
+
         /// <summary>
-        /// Gets or sets the base price in cents.
+        /// Gets or sets the base price as decimal.
         /// </summary>
-        public long BasePriceCents { get; set; }
-        
+        public decimal BasePrice { get; set; }
+
         /// <summary>
-        /// Gets or sets whether the product is currently active and available for sale.
+        /// Gets the base price in cents (legacy support).
         /// </summary>
-        public bool IsActive { get; set; }
-        
+        public long BasePriceCents => (long)(BasePrice * 100);
+
         /// <summary>
-        /// Gets or sets additional product attributes specific to the restaurant domain.
+        /// Gets or sets whether the product is active.
         /// </summary>
-        public Dictionary<string, object> Attributes { get; set; } = new();
-        
-        IReadOnlyDictionary<string, object> IProductInfo.Attributes => Attributes;
+        public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets whether this product requires preparation.
+        /// </summary>
+        public bool RequiresPreparation { get; set; } = false;
+
+        /// <summary>
+        /// Gets or sets the preparation time in minutes.
+        /// </summary>
+        public int PreparationTimeMinutes { get; set; } = 0;
+
+        /// <summary>
+        /// Gets or sets the localization key for the product name.
+        /// </summary>
+        public string? NameLocalizationKey { get; set; }
+
+        /// <summary>
+        /// Gets or sets the localization key for the product description.
+        /// </summary>
+        public string? DescriptionLocalizationKey { get; set; }
+
+        /// <summary>
+        /// Gets or sets additional attributes.
+        /// </summary>
+        public IReadOnlyDictionary<string, object> Attributes { get; set; } = new Dictionary<string, object>();
+
+        /// <summary>
+        /// Internal mutable attributes for building the product.
+        /// </summary>
+        internal Dictionary<string, object> MutableAttributes { get; } = new Dictionary<string, object>();
     }
 }

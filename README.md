@@ -1,294 +1,216 @@
 # POS Kernel
 
-**A High-Performance, Culturally-Aware Point-of-Sale Architecture**
+**A high-performance, legally-compliant point-of-sale transaction kernel with global extensibility**
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen)](#)
-[![Language](https://img.shields.io/badge/Rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](#)
-[![Language](https://img.shields.io/badge/.NET%209-512BD4?style=flat&logo=.net&logoColor=white)](#)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Build Status](https://img.shields.io/badge/Build-Passing-green.svg)](#)
+[![Version](https://img.shields.io/badge/Version-v0.4.0--threading-orange.svg)](#)
 
-**Latest Achievement**: Universal Product Modifications with Multi-Language Support
+## 🎯 **Overview**
 
-> High-performance POS kernel designed for global deployment with universal product modifications, multi-language support, and AI-powered cultural intelligence.
+POS Kernel is a culture-neutral, legally-compliant transaction processing kernel designed for global deployment. Built with Rust for security and performance, it provides a Win32-style C ABI that can be consumed by any programming language.
 
-## What Makes POS Kernel Different
+### **Key Features**
 
-### Live Cultural Implementation
+- **🔐 Security-First Design**: ACID-compliant transactions with tamper-proof logging
+- **🌍 Global Ready**: Culture-neutral kernel with user-space localization
+- **⚖️ Legal Compliance**: Built-in audit trails and regulatory compliance features
+- **🚀 High Performance**: Multi-process architecture with sub-millisecond transaction processing
+- **🔌 Extensible**: Plugin architecture for regional customization (v0.5.0)
+- **📊 Enterprise Grade**: Handle-based API design for robust resource management
+
+## 🏗️ **Architecture**
+
 ```
-Customer: "kopi si kosong"  
-AI: Identifies base="Kopi C", modification="no_sugar"
-Receipt: "Kopi C (无糖) $1.40" [Chinese localization]
-Performance: Sub-10ms database operations
-```
-
-### Universal Business Support
-- **Traditional Kopitiam**: Free recipe modifications (kosong, gao, poh)
-- **Western Coffee Shops**: Premium upcharges (+$0.65 oat milk)
-- **Grocery Stores**: Substitutions (organic +$0.50, half portion -$1.00)
-- **Bakeries**: Custom orders (extra filling, sugar-free options)
-
-### True Internationalization
-- **Multi-Language**: BCP 47 compliance with 4-language Singapore deployment
-- **Cultural AI**: Intelligent parsing without hard-coded rules
-- **Any Currency**: DECIMAL(15,6) precision supports all world currencies
-- **Compliance Ready**: GDPR, tax regulations, audit trails
-
-## Architecture Overview
-
-### Pure Kernel + Rich Extensions
-```
-┌─────────────────────────────────────────────┐
-│          AI Cultural Intelligence           │
-│  • Natural Language Parsing                 │
-│  • Cultural Context Awareness               │
-│  • Multi-Language Response Generation       │
-└─────────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────────┐
-│         Domain Extensions Layer             │
-│  • Restaurant/Kopitiam Extension            │
-│  • Universal Modifications Framework        │
-│  • Multi-Language Localization              │
-│  • Business Rule Management                 │
-└─────────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────────┐
-│            Pure POS Kernel                  │
-│  • ACID Transaction Processing              │
-│  • Multi-Process Isolation                  │
-│  • Sub-millisecond Operations               │
-│  • Culture-Neutral Core                     │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│               Application Layer                         │
+│  • Business Logic        • UI/UX Components            │
+│  • Regional Workflows    • Device Integration          │
+└─────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────┐
+│                .NET Host Layer                          │
+│  • High-level C# API     • Resource Management         │
+│  • Exception Translation • Object-Oriented Interface   │
+└─────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────┐
+│                 FFI Boundary                            │
+│  • Win32-style C ABI     • Handle-Based Operations     │
+│  • Memory Safety         • Cross-Language Support      │
+└─────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────┐
+│                Rust Kernel Core                         │
+│  • ACID Transactions     • Write-Ahead Logging         │
+│  • Multi-Process Safe    • Culture-Neutral Processing  │
+│  • Exception Safety      • High-Performance Operations │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Zero-Kernel-Change Modifications
-The kernel supports modifications through existing metadata:
-```protobuf
-message AddLineItemRequest {
-  string product_id = 3;          // "KOPI_C"
-  int64 unit_price_minor = 5;     // 140 (for $1.40)
-  map<string, string> metadata = 6; // ← Modifications stored here
-}
+## 🚀 **Quick Start**
+
+### **Prerequisites**
+- Rust 1.70+ (for kernel development)
+- .NET 9 (for host applications)
+- C++ compiler supporting C++14 (for C/C++ integration)
+
+### **Basic Usage (.NET)**
+
+```csharp
+using PosKernel.Host;
+
+// Initialize terminal (v0.4.0+)
+RustNative.InitializeTerminal("REGISTER_01");
+
+// Create and process transaction
+using var tx = Pos.CreateTransaction("MyStore", "USD");
+
+// Add items
+tx.AddItem("COFFEE", 3.99m);
+tx.AddItem("MUFFIN", 2.49m);
+
+// Process payment
+tx.AddCashTender(10.00m);
+
+// Get results
+var totals = tx.Totals;
+Console.WriteLine($"Total: {totals.Total:C}, Change: {totals.Change:C}");
 ```
 
-## Quick Start
+### **Basic Usage (C)**
 
-### 1. Try the AI Demo
+```c
+#include "pos_kernel.h"
+
+// Initialize terminal
+pk_initialize_terminal("REGISTER_01", 11);
+
+// Create transaction
+uint64_t handle;
+pk_begin_transaction("MyStore", 7, "USD", 3, &handle);
+
+// Add items and process payment
+pk_add_line(handle, "COFFEE", 6, 1, 399); // $3.99
+pk_add_cash_tender(handle, 1000); // $10.00
+
+// Get totals
+int64_t total, tendered, change;
+int32_t state;
+pk_get_totals(handle, &total, &tendered, &change, &state);
+
+pk_close_transaction(handle);
+```
+
+## 📊 **Performance**
+
+- **Transaction Latency**: < 1ms P95
+- **Throughput**: 1000+ TPS per terminal
+- **Memory Usage**: < 50MB per terminal process
+- **Startup Time**: < 100ms cold start
+
+## ⚖️ **Legal Compliance**
+
+POS Kernel is designed for strict regulatory compliance:
+
+- **ACID Transactions**: Full atomicity, consistency, isolation, durability
+- **Tamper-Proof Logging**: Write-ahead logs with checksums and sequence numbers
+- **Audit Trails**: Complete transaction history for legal admissibility
+- **Multi-Process Isolation**: Terminal crash cannot affect other terminals
+- **Data Classification**: Built-in support for GDPR, PCI-DSS, and other regulations
+
+## 🌍 **Global Deployment**
+
+### **Culture-Neutral Design**
+- Kernel never handles localized content
+- All formatting and localization in user-space
+- UTF-8 strings throughout
+- ISO 4217 currency codes
+
+### **Regional Support (Planned v0.5.0)**
+- **Turkish Market**: KDV tax calculation, Turkish Lira handling
+- **German Market**: Fiscal compliance, TSE integration
+- **US Market**: Multi-jurisdiction sales tax
+- **Asian Markets**: Chinese, Japanese, Korean localization
+- **Indian Subcontinent**: GST calculation, multi-script support
+
+## 🔧 **Development**
+
+### **Build from Source**
+
 ```bash
-# Set up OpenAI API key
-cp config-templates/.env .poskernel/.env
-# Edit .poskernel/.env with your OpenAI key
+# Clone repository
+git clone https://github.com/paulmooreparks/PosKernel.git
+cd PosKernel
 
-# Run Singapore kopitiam demo
-cd PosKernel.AI
-dotnet run
-# Select: Kopitiam experience
-# Try: "kopi si kosong satu"
-```
-
-### 2. Explore the Architecture
-```bash
-# View comprehensive documentation
-cd docs
-# Start with: ARCHITECTURE_INDEX.md
-# Latest feature: product-modifications-localization-architecture.md
-```
-
-### 3. Build from Source
-```bash
 # Build Rust kernel
 cd pos-kernel-rs
 cargo build --release
 
-# Build .NET components
+# Build .NET host
+cd ../PosKernel.Host
 dotnet build
 ```
 
-## Performance Benchmarks
+### **Run Examples**
 
-**Production-Verified Performance**:
-- **Transaction Latency**: < 1ms P95
-- **Database Operations**: < 10ms (including modifications)
-- **AI Cultural Parsing**: < 100ms average
-- **Multi-Language Receipt**: < 200ms generation
-- **Throughput**: 1000+ TPS per terminal
-- **Memory Usage**: < 50MB per terminal process
+```bash
+# .NET example
+dotnet run --project PosKernel.Host
 
-## Global Deployment Ready
-
-### Live Implementations
-- **Singapore Kopitiam**: 4-language support (English, Chinese, Malay, Tamil)
-- **Traditional Ordering**: Natural "kopi si kosong" processing
-- **Cultural Intelligence**: AI without hard-coded rules
-- **Multi-Language Receipts**: Automatic localization
-
-### Ready for Expansion
-- **US Coffee Shops**: Premium modification pricing
-- **European Bakeries**: Custom order management
-- **Grocery Chains**: Substitution workflows
-- **Any Business Type**: Universal framework
-
-## AI-Powered Cultural Intelligence
-
-### Smart Without Hard-Coding
-```csharp
-// AI handles cultural context intelligently
-var result = await aiService.ParseOrder("kopi si kosong", "kopitiam-context");
-// No hard-coded dictionaries - AI learns cultural patterns
-
-// Result: base="Kopi C", modifications=["no_sugar"]
-// Localized response in customer's preferred language
+# C example (requires compiled kernel)
+cd docs/examples/basic
+gcc c-basic.c -L../../../pos-kernel-rs/target/release -lpos_kernel_rs
 ```
 
-### Cultural Examples
-- **Singapore**: "kopi si kosong" → Kopi C with no sugar
-- **US**: "large oat milk latte" → Large Latte + oat milk ($0.65)
-- **Future**: Any culture, any language, any business type
+## 📚 **Documentation**
 
-## Universal Modifications System
+- [**Architecture Overview**](docs/architecture-harmonization-plan.md)
+- [**API Reference**](docs/c-abi/README.md)
+- [**Legal Compliance**](docs/legal-compliance.md)
+- [**Multi-Process Architecture**](docs/multi-process-architecture.md)
+- [**Exception Handling**](docs/exception-handling-report.md)
+- [**Examples**](docs/examples/README.md)
 
-### Database Schema (Live)
-```sql
--- IMPLEMENTED: Universal modifications framework
-CREATE TABLE modifications (
-    id VARCHAR(50) PRIMARY KEY,              -- 'no_sugar', 'oat_milk'
-    name TEXT NOT NULL,                      -- 'No Sugar', 'Oat Milk'
-    category VARCHAR(50),                    -- 'sweetness', 'milk_type'
-    price_adjustment DECIMAL(15,6) DEFAULT 0, -- Free or premium pricing
-    tax_treatment TEXT DEFAULT 'inherit'     -- Tax compliance
-);
+## 🔌 **Extensibility (v0.5.0 Roadmap)**
 
--- IMPLEMENTED: Multi-language localization
-CREATE TABLE localizations (
-    localization_key VARCHAR(100) NOT NULL,  -- 'mod.no_sugar'
-    locale_code VARCHAR(35) NOT NULL,        -- 'zh-Hans-SG'
-    text_value TEXT NOT NULL,                -- '无糖'
-    PRIMARY KEY (localization_key, locale_code)
-);
-```
+Planned extension system with:
+- **Signed Plugins**: OS-style code signing for security
+- **Regional Providers**: Tax, currency, compliance customization
+- **Customization Abstraction Layer (CAL)**: Hardware abstraction layer for business logic
+- **Plugin Marketplace**: Ecosystem for third-party extensions
 
-### Real Data Examples
-```sql
--- LIVE: Singapore kopitiam modifications
-INSERT INTO modifications VALUES 
-    ('no_sugar', 'No Sugar', 'sweetness', 0.00, 'inherit'),
-    ('extra_strong', 'Extra Strong', 'strength', 0.00, 'inherit');
-
--- LIVE: 4-language localization
-INSERT INTO localizations VALUES 
-    ('mod.no_sugar', 'zh-Hans-SG', '无糖'),      -- Chinese
-    ('mod.no_sugar', 'ms-SG', 'Tiada Gula'),    -- Malay  
-    ('mod.no_sugar', 'ta-SG', 'சர்க்கரை இல்லை'); -- Tamil
-```
-
-## Legal & Compliance
-
-### Enhanced Compliance
-- **ACID Transactions**: Full atomicity with modification support
-- **Multi-Jurisdiction Tax**: Flexible tax treatment per modification
-- **GDPR Ready**: Personal dietary preferences handling
-- **Audit Trails**: Complete modification history for compliance
-- **Cultural Privacy**: Localization without exposing personal data
-
-### Tax Treatment Examples
-```sql
--- Singapore: GST applies to modifications that inherit base product tax
-UPDATE modifications SET tax_treatment = 'inherit' WHERE category = 'preparation';
-
--- US: Premium modifications at full tax rate  
-UPDATE modifications SET tax_treatment = 'standard' WHERE price_adjustment > 0;
-
--- Medical dietary: Tax-exempt modifications
-UPDATE modifications SET tax_treatment = 'exempt' WHERE category = 'medical';
-```
-
-## Multi-Language Receipts
-
-### Singapore Receipt Example
-```
-===================
-UNCLE'S KOPITIAM
-===================
-Kopi C            $1.40
-咖啡C
-  (无糖)
-
-Kaya Toast        $1.80
-椰浆土司
-
-TOTAL            $3.20
-总计
-
-Thank you!
-谢谢！
-===================
-```
-
-## Documentation
-
-- [Architecture Index](docs/ARCHITECTURE_INDEX.md) - Complete documentation overview
-- [Product Modifications](docs/product-modifications-localization-architecture.md) - Universal modifications + localization
-- [Internationalization](docs/internationalization-strategy.md) - Multi-cultural deployment strategy
-- [AI Integration](docs/ai-integration-architecture.md) - Cultural intelligence architecture
-- [Domain Extensions](docs/domain-extension-architecture.md) - Extension pattern (Restaurant success)
-- [Build Rules](docs/BUILD_RULES.md) - Development guidelines
-
-## Development Roadmap
-
-### ✅ Phase 1 Complete: Universal Modifications Foundation
-- ✅ Universal modifications framework
-- ✅ Singapore kopitiam live implementation
-- ✅ Multi-language localization (4 languages)  
-- ✅ AI cultural intelligence integration
-
-### Phase 2 Active: Store Type Expansion
-- US Coffee Shop with premium modifications
-- European Bakery with custom orders
-- Grocery Store with substitutions
-
-### Phase 3 Planned: Service Architecture
-- Multi-client service transformation
-- API gateway and service discovery  
-- Advanced analytics and reporting
-- Enterprise multi-tenant support
-
-## Contributing
+## 🤝 **Contributing**
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-**Key Areas for Contribution**:
-- Additional language localizations
-- New store type implementations  
-- AI cultural intelligence enhancements
-- Performance optimizations
-
-## Support & Community
-
-- **Issues**: [GitHub Issues](https://github.com/paulmooreparks/PosKernel/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/paulmooreparks/PosKernel/discussions)
-- **Documentation**: [Complete Architecture Docs](docs/ARCHITECTURE_INDEX.md)
-- **Quick Start**: [AI Setup Guide](docs/ai-setup-guide.md)
-
-## License
+### **License**
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
 
-## Contributors
+### **Contributors**
+- **Paul Moore Parks** - Original author and primary developer
 
-- **Paul Moore Parks** - Original author and architecture lead
-- **Community Contributors** - See [Contributors](../../contributors)
+## 🎯 **Roadmap**
+
+### **v0.5.0-extensible (Q1 2025)**
+- Plugin architecture with signed extensions
+- Regional customization system
+- Enhanced transaction management
+- Turkish, German, US market implementations
+
+### **v1.0.0-enterprise (Q2 2025)**
+- Production deployment ready
+- Full compliance validation
+- Performance optimizations
+- Enterprise support features
+
+## 📞 **Support**
+
+- **Issues**: [GitHub Issues](https://github.com/paulmooreparks/PosKernel/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/paulmooreparks/PosKernel/discussions)
+- **Email**: [contact information]
 
 ---
 
-## Why POS Kernel Matters
-
-**Comprehensive Cultural POS System**:
-
-- **Truly Global**: Works seamlessly across cultures (Singapore proven)
-- **Multi-Business**: Supports any store type (kopitiam to grocery)
-- **AI-Enhanced**: Cultural intelligence without hard-coding
-- **High-Performance**: Sub-10ms operations with full feature set
-- **Compliance-Ready**: Multi-jurisdiction tax and privacy support
-- **Developer-Friendly**: Clean abstractions and extension patterns
-
-Built for the global point-of-sale ecosystem with cultural authenticity, technical excellence, and business intelligence at its core.
+**POS Kernel**: Built for the global point-of-sale ecosystem with security, performance, and compliance at its core. 🚀

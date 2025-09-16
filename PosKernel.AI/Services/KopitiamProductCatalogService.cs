@@ -126,6 +126,26 @@ namespace PosKernel.AI.Services
             return results;
         }
 
+        /// <summary>
+        /// Gets localized product name for display.
+        /// </summary>
+        public async Task<string> GetLocalizedProductNameAsync(string productId, string localeCode, CancellationToken cancellationToken = default)
+        {
+            // For demo purposes, just return the product name (no localization)
+            var validation = await ValidateProductAsync(productId, new ProductLookupContext(), cancellationToken);
+            return validation.Product?.Name ?? productId;
+        }
+
+        /// <summary>
+        /// Gets localized product description.
+        /// </summary>
+        public async Task<string> GetLocalizedProductDescriptionAsync(string productId, string localeCode, CancellationToken cancellationToken = default)
+        {
+            // For demo purposes, just return the product description (no localization)
+            var validation = await ValidateProductAsync(productId, new ProductLookupContext(), cancellationToken);
+            return validation.Product?.Description ?? "";
+        }
+
         private bool MatchesKopitiamTerminology(IProductInfo product, string searchTerm)
         {
             // Handle common kopitiam terminology mapping
@@ -172,21 +192,21 @@ namespace PosKernel.AI.Services
             return new List<IProductInfo>
             {
                 // BASE Kopi (Coffee) Products - simple base products only
-                new KopitiamProductInfo("KOPI", "Kopi", "Traditional local coffee with condensed milk", "Beverages", 180, true),
-                new KopitiamProductInfo("KOPI_C", "Kopi C", "Local coffee with evaporated milk and sugar", "Beverages", 180, true),
-                new KopitiamProductInfo("KOPI_O", "Kopi O", "Black local coffee with sugar only", "Beverages", 160, true),
+                new KopitiamProductInfo { Sku = "KOPI", Name = "Kopi", Description = "Traditional local coffee with condensed milk", Category = "Beverages", BasePrice = 1.80m, IsActive = true },
+                new KopitiamProductInfo { Sku = "KOPI_C", Name = "Kopi C", Description = "Local coffee with evaporated milk and sugar", Category = "Beverages", BasePrice = 1.80m, IsActive = true },
+                new KopitiamProductInfo { Sku = "KOPI_O", Name = "Kopi O", Description = "Black local coffee with sugar only", Category = "Beverages", BasePrice = 1.60m, IsActive = true },
 
-                // BASE Teh (Tea) Products  
-                new KopitiamProductInfo("TEH", "Teh", "Local tea with condensed milk", "Beverages", 160, true),
-                new KopitiamProductInfo("TEH_C", "Teh C", "Local tea with evaporated milk and sugar", "Beverages", 160, true),
-                new KopitiamProductInfo("TEH_O", "Teh O", "Black local tea with sugar only", "Beverages", 140, true),
+                // Teh variations
+                new KopitiamProductInfo { Sku = "TEH", Name = "Teh", Description = "Local tea with condensed milk", Category = "Beverages", BasePrice = 1.60m, IsActive = true },
+                new KopitiamProductInfo { Sku = "TEH_C", Name = "Teh C", Description = "Local tea with evaporated milk and sugar", Category = "Beverages", BasePrice = 1.60m, IsActive = true },
+                new KopitiamProductInfo { Sku = "TEH_O", Name = "Teh O", Description = "Black local tea with sugar only", Category = "Beverages", BasePrice = 1.40m, IsActive = true },
 
-                // Traditional Breakfast Items
-                new KopitiamProductInfo("KAYA_TOAST", "Kaya Toast", "Toasted bread with kaya and butter", "Food", 280, true),
-                new KopitiamProductInfo("KAYA_BUTTER_TOAST", "Kaya Butter Toast", "Toasted bread with kaya and extra butter", "Food", 300, true),
-                new KopitiamProductInfo("KAYA_TOAST_SET", "Kaya Toast Set", "Kaya toast with soft boiled eggs and kopi/teh", "Food", 480, true),
-                new KopitiamProductInfo("SOFT_BOILED_EGG", "Soft Boiled Egg", "Traditional soft boiled eggs with soy sauce", "Food", 120, true),
-                new KopitiamProductInfo("FRENCH_TOAST", "French Toast", "Thick toast with kaya filling", "Food", 350, true)
+                // Food
+                new KopitiamProductInfo { Sku = "KAYA_TOAST", Name = "Kaya Toast", Description = "Toasted bread with kaya and butter", Category = "Food", BasePrice = 2.80m, IsActive = true },
+                new KopitiamProductInfo { Sku = "KAYA_BUTTER_TOAST", Name = "Kaya Butter Toast", Description = "Toasted bread with kaya and extra butter", Category = "Food", BasePrice = 3.00m, IsActive = true },
+                new KopitiamProductInfo { Sku = "KAYA_TOAST_SET", Name = "Kaya Toast Set", Description = "Kaya toast with soft boiled eggs and kopi/teh", Category = "Food", BasePrice = 4.80m, IsActive = true },
+                new KopitiamProductInfo { Sku = "SOFT_BOILED_EGG", Name = "Soft Boiled Egg", Description = "Traditional soft boiled eggs with soy sauce", Category = "Food", BasePrice = 1.20m, IsActive = true },
+                new KopitiamProductInfo { Sku = "FRENCH_TOAST", Name = "French Toast", Description = "Thick toast with kaya filling", Category = "Food", BasePrice = 3.50m, IsActive = true }
             };
         }
     }
@@ -197,63 +217,63 @@ namespace PosKernel.AI.Services
     public class KopitiamProductInfo : IProductInfo
     {
         /// <summary>
-        /// Gets the product SKU (stock keeping unit).
+        /// Gets or sets the product SKU.
         /// </summary>
-        public string Sku { get; }
-        
-        /// <summary>
-        /// Gets the product display name.
-        /// </summary>
-        public string Name { get; }
-        
-        /// <summary>
-        /// Gets the product description.
-        /// </summary>
-        public string Description { get; }
-        
-        /// <summary>
-        /// Gets the product category name.
-        /// </summary>
-        public string Category { get; }
-        
-        /// <summary>
-        /// Gets the base price in cents (Singapore cents).
-        /// </summary>
-        public long BasePriceCents { get; }
-        
-        /// <summary>
-        /// Gets whether the product is currently active and available for sale.
-        /// </summary>
-        public bool IsActive { get; }
-        
-        /// <summary>
-        /// Gets additional product attributes specific to kopitiam items.
-        /// </summary>
-        public IReadOnlyDictionary<string, object> Attributes { get; }
+        public string Sku { get; set; } = "";
 
         /// <summary>
-        /// Initializes a new instance of the KopitiamProductInfo.
+        /// Gets or sets the product name.
         /// </summary>
-        /// <param name="sku">The product SKU.</param>
-        /// <param name="name">The product name.</param>
-        /// <param name="description">The product description.</param>
-        /// <param name="category">The product category.</param>
-        /// <param name="basePriceCents">The base price in Singapore cents.</param>
-        /// <param name="isActive">Whether the product is active.</param>
-        public KopitiamProductInfo(string sku, string name, string description, string category, long basePriceCents, bool isActive)
-        {
-            Sku = sku;
-            Name = name;
-            Description = description;
-            Category = category;
-            BasePriceCents = basePriceCents;
-            IsActive = isActive;
-            Attributes = new Dictionary<string, object>
-            {
-                ["is_traditional"] = true,
-                ["origin"] = "Singapore",
-                ["currency"] = "SGD"
-            };
-        }
+        public string Name { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product description.
+        /// </summary>
+        public string Description { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product category.
+        /// </summary>
+        public string Category { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the base price as decimal.
+        /// </summary>
+        public decimal BasePrice { get; set; }
+
+        /// <summary>
+        /// Gets the base price in cents (legacy support).
+        /// </summary>
+        public long BasePriceCents => (long)(BasePrice * 100);
+
+        /// <summary>
+        /// Gets or sets whether the product is active.
+        /// </summary>
+        public bool IsActive { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets whether this product requires preparation.
+        /// </summary>
+        public bool RequiresPreparation { get; set; } = false;
+
+        /// <summary>
+        /// Gets or sets the preparation time in minutes.
+        /// </summary>
+        public int PreparationTimeMinutes { get; set; } = 0;
+
+        /// <summary>
+        /// Gets or sets the localization key for the product name.
+        /// </summary>
+        public string? NameLocalizationKey { get; set; }
+
+        /// <summary>
+        /// Gets or sets the localization key for the product description.
+        /// </summary>
+        public string? DescriptionLocalizationKey { get; set; }
+
+        /// <summary>
+        /// Gets or sets additional attributes.
+        /// </summary>
+        public IReadOnlyDictionary<string, object> Attributes { get; set; } = new Dictionary<string, object>();
     }
 }

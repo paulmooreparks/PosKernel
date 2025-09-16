@@ -103,8 +103,13 @@ namespace PosKernel.Extensions.Restaurant
         public string Name => _productInfo.Name;
         public string Description => _productInfo.Description;
         public string Category => _productInfo.CategoryName;
+        public decimal BasePrice => _productInfo.BasePriceCents / 100m;
         public long BasePriceCents => _productInfo.BasePriceCents;
         public bool IsActive => _productInfo.IsActive;
+        public bool RequiresPreparation => false; // Default for legacy compatibility
+        public int PreparationTimeMinutes => 0; // Default for legacy compatibility
+        public string? NameLocalizationKey => null; // Default for legacy compatibility
+        public string? DescriptionLocalizationKey => null; // Default for legacy compatibility
         public IReadOnlyDictionary<string, object> Attributes => new Dictionary<string, object>
         {
             ["CategoryName"] = _productInfo.CategoryName,
