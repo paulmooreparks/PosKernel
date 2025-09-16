@@ -23,6 +23,7 @@ using PosKernel.AI.Services;
 using PosKernel.Client;
 using PosKernel.Extensions.Restaurant.Client;
 using RestaurantProductInfo = PosKernel.Extensions.Restaurant.ProductInfo;
+using Microsoft.Extensions.Configuration;
 
 namespace PosKernel.AI.Tools
 {
@@ -45,21 +46,51 @@ namespace PosKernel.AI.Tools
 
         /// <summary>
         /// Initializes a new instance of the KernelPosToolsProvider with real kernel integration.
+        /// Uses the factory to auto-detect and connect to the best available kernel (Rust preferred).
         /// </summary>
-        /// <param name="kernelClient">The POS kernel client for transaction operations.</param>
         /// <param name="restaurantClient">The restaurant extension client for product catalog operations.</param>
         /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="configuration">Application configuration for kernel selection.</param>
         /// <param name="customizationService">Service for parsing product customizations.</param>
         public KernelPosToolsProvider(
-            IPosKernelClient kernelClient,
             RestaurantExtensionClient restaurantClient,
             ILogger<KernelPosToolsProvider> logger,
+            IConfiguration? configuration = null,
             ProductCustomizationService? customizationService = null)
         {
-            _kernelClient = kernelClient ?? throw new ArgumentNullException(nameof(kernelClient));
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _customizationService = customizationService ?? new ProductCustomizationService();
+            
+            // Use factory to create the best available kernel client
+            _kernelClient = PosKernelClientFactory.CreateClient(_logger, configuration);
+            
+            _logger.LogInformation("🚀 KernelPosToolsProvider initialized with kernel auto-detection");
+        }
+
+        /// <summary>
+        /// Alternative constructor for when you want to specify the kernel type explicitly.
+        /// </summary>
+        /// <param name="restaurantClient">The restaurant extension client for product catalog operations.</param>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="kernelType">Specific kernel type to use.</param>
+        /// <param name="configuration">Application configuration for kernel settings.</param>
+        /// <param name="customizationService">Service for parsing product customizations.</param>
+        public KernelPosToolsProvider(
+            RestaurantExtensionClient restaurantClient,
+            ILogger<KernelPosToolsProvider> logger,
+            PosKernelClientFactory.KernelType kernelType,
+            IConfiguration? configuration = null,
+            ProductCustomizationService? customizationService = null)
+        {
+            _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _customizationService = customizationService ?? new ProductCustomizationService();
+            
+            // Use factory to create specific kernel type
+            _kernelClient = PosKernelClientFactory.CreateClient(_logger, kernelType, configuration);
+            
+            _logger.LogInformation("🚀 KernelPosToolsProvider initialized with {KernelType} kernel", kernelType);
         }
 
         /// <summary>
@@ -172,7 +203,7 @@ namespace PosKernel.AI.Tools
             return new McpTool
             {
                 Name = "add_item_to_transaction",
-                Description = "Adds an item to the current transaction using the real POS kernel",
+                Description = "Adds an item to the current transaction using the real POS kernel. For items with recipe modifications (like 'kopi si kosong'), add the base product with preparation notes.",
                 Parameters = new
                 {
                     type = "object",
@@ -181,13 +212,19 @@ namespace PosKernel.AI.Tools
                         item_description = new
                         {
                             type = "string",
-                            description = "What the customer said they want (e.g., 'large coffee', 'kaya toast', 'teh si kosong')"
+                            description = "Base product name (e.g., 'Kopi C' not 'Kopi C Kosong')"
                         },
                         quantity = new
                         {
                             type = "integer",
                             description = "Number of items requested",
                             @default = 1
+                        },
+                        preparation_notes = new
+                        {
+                            type = "string",
+                            description = "Recipe modifications like 'no sugar', 'extra strong', 'iced', etc.",
+                            @default = ""
                         },
                         confidence = new
                         {
@@ -213,11 +250,12 @@ namespace PosKernel.AI.Tools
         {
             var itemDescription = toolCall.Arguments["item_description"].GetString() ?? "";
             var quantity = toolCall.Arguments.ContainsKey("quantity") ? toolCall.Arguments["quantity"].GetInt32() : 1;
+            var preparationNotes = toolCall.Arguments.ContainsKey("preparation_notes") ? toolCall.Arguments["preparation_notes"].GetString() ?? "" : "";
             var confidence = toolCall.Arguments.ContainsKey("confidence") ? toolCall.Arguments["confidence"].GetDouble() : 0.3;
             var context = toolCall.Arguments.ContainsKey("context") ? toolCall.Arguments["context"].GetString() : "initial_order";
 
-            _logger.LogInformation("Adding item to kernel: '{Item}' x{Qty}, Confidence: {Confidence}, Context: {Context}", 
-                itemDescription, quantity, confidence, context ?? "initial_order");
+            _logger.LogInformation("Adding item to kernel: '{Item}' x{Qty} (prep: '{Prep}'), Confidence: {Confidence}, Context: {Context}", 
+                itemDescription, quantity, preparationNotes, confidence, context ?? "initial_order");
 
             if (string.IsNullOrWhiteSpace(itemDescription))
             {
@@ -226,57 +264,57 @@ namespace PosKernel.AI.Tools
 
             try
             {
-                // First, try cultural translation for kopitiam terms
-                var translatedTerm = ApplyKopitiamCulturalTranslation(itemDescription);
-                
-                // Search for products using the restaurant extension
-                var searchResults = await _restaurantClient.SearchProductsAsync(translatedTerm, 10, cancellationToken);
+                // Search for BASE PRODUCT only - no recipe modifications in the search
+                var searchResults = await _restaurantClient.SearchProductsAsync(itemDescription, 10, cancellationToken);
 
                 if (!searchResults.Any())
                 {
-                    // Try broader search
-                    var broadSearchResults = await GetBroaderSearchResults(translatedTerm, cancellationToken);
+                    // Try broader search only if exact search fails
+                    var broadSearchResults = await GetBroaderSearchResults(itemDescription, cancellationToken);
                     if (!broadSearchResults.Any())
                     {
-                        return $"PRODUCT_NOT_FOUND: I don't recognize '{itemDescription}'. Could you try describing it differently?";
+                        return $"PRODUCT_NOT_FOUND: No products found matching '{itemDescription}'";
                     }
                     searchResults = broadSearchResults;
                 }
 
                 // Apply confidence-based disambiguation logic
-                var exactMatches = searchResults.Where(p => IsExactMatch(translatedTerm, p)).ToList();
-                var specificMatches = searchResults.Where(p => IsSpecificProductMatch(translatedTerm, p)).ToList();
+                var exactMatches = searchResults.Where(p => IsExactMatch(itemDescription, p)).ToList();
+                var specificMatches = searchResults.Where(p => IsSpecificProductMatch(itemDescription, p)).ToList();
 
-                // FIXED DECISION LOGIC - Proper confidence handling  
+                // Simple decision logic - let AI handle cultural intelligence
                 if (context == "clarification_response")
                 {
-                    // Customer is clarifying after disambiguation - use best match
                     var bestMatch = exactMatches.FirstOrDefault() ?? specificMatches.FirstOrDefault() ?? searchResults.First();
-                    return await AddProductToTransactionAsync(bestMatch, quantity, cancellationToken);
+                    return await AddProductToTransactionAsync(bestMatch, quantity, preparationNotes, cancellationToken);
                 }
                 else if (exactMatches.Count == 1 && searchResults.Count == 1)
                 {
-                    // Single exact match AND only one search result - always auto-add regardless of confidence
-                    return await AddProductToTransactionAsync(exactMatches.First(), quantity, cancellationToken);
+                    return await AddProductToTransactionAsync(exactMatches.First(), quantity, preparationNotes, cancellationToken);
                 }
                 else if (exactMatches.Count == 1 && confidence >= 0.8)
                 {
-                    // Single exact match with HIGH confidence - auto-add even if other results exist
-                    return await AddProductToTransactionAsync(exactMatches.First(), quantity, cancellationToken);
+                    return await AddProductToTransactionAsync(exactMatches.First(), quantity, preparationNotes, cancellationToken);
                 }
                 else if (confidence >= 0.9)
                 {
-                    // Very high confidence - pick best available match even with multiple options
                     var bestMatch = exactMatches.FirstOrDefault() ?? specificMatches.FirstOrDefault() ?? searchResults.First();
-                    return await AddProductToTransactionAsync(bestMatch, quantity, cancellationToken);
+                    return await AddProductToTransactionAsync(bestMatch, quantity, preparationNotes, cancellationToken);
                 }
                 else
                 {
-                    // Low/Medium confidence OR multiple valid options - require disambiguation
-                    var disambiguationOptions = searchResults.Take(3).ToList(); // Limit to 3 options
-                    var optionsList = string.Join(", ", disambiguationOptions.Select(p => $"{p.Name} (${p.BasePriceCents / 100.0:F2})"));
+                    // Return options and let AI decide how to present them
+                    var relevantOptions = GetRelevantDisambiguationOptions(itemDescription, searchResults).Take(3).ToList();
                     
-                    return $"DISAMBIGUATION_NEEDED: Found {disambiguationOptions.Count} options for '{itemDescription}': {optionsList}";
+                    if (relevantOptions.Any())
+                    {
+                        var optionsList = string.Join(", ", relevantOptions.Select(p => $"{p.Name} (${p.BasePriceCents / 100.0:F2})"));
+                        return $"DISAMBIGUATION_NEEDED: Found {relevantOptions.Count} options for '{itemDescription}': {optionsList}";
+                    }
+                    else
+                    {
+                        return $"PRODUCT_NOT_FOUND: No suitable products found for '{itemDescription}'";
+                    }
                 }
             }
             catch (Exception ex)
@@ -286,12 +324,11 @@ namespace PosKernel.AI.Tools
             }
         }
 
-        private async Task<string> AddProductToTransactionAsync(RestaurantProductInfo product, int quantity, CancellationToken cancellationToken)
+        private async Task<string> AddProductToTransactionAsync(RestaurantProductInfo product, int quantity, string preparationNotes, CancellationToken cancellationToken)
         {
             var transactionId = await EnsureTransactionAsync(cancellationToken);
-            var unitPrice = product.BasePriceCents / 100.0m; // Convert cents to dollars
+            var unitPrice = product.BasePriceCents / 100.0m;
             
-            // Add item to the real kernel transaction
             var result = await _kernelClient.AddLineItemAsync(_sessionId!, transactionId, product.Sku, quantity, unitPrice, cancellationToken);
             
             if (!result.Success)
@@ -300,7 +337,8 @@ namespace PosKernel.AI.Tools
             }
             
             var totalPrice = unitPrice * quantity;
-            return $"ADDED: {product.Name} x{quantity} @ ${unitPrice:F2} each = ${totalPrice:F2}";
+            var prepNote = !string.IsNullOrEmpty(preparationNotes) ? $" (prep: {preparationNotes})" : "";
+            return $"ADDED: {product.Name}{prepNote} x{quantity} @ ${unitPrice:F2} each = ${totalPrice:F2}";
         }
 
         private async Task<string> ExecuteCalculateTotalAsync(CancellationToken cancellationToken)
@@ -479,17 +517,24 @@ namespace PosKernel.AI.Tools
                     }
                 }
 
-                menuContext.AppendLine("\nCULTURAL TRANSLATIONS Uncle Should Know:");
-                menuContext.AppendLine("• roti kaya → Kaya Toast");
-                menuContext.AppendLine("• teh si → Teh C (tea with evaporated milk)");
-                menuContext.AppendLine("• kopi si → Kopi C (coffee with evaporated milk)");
-                menuContext.AppendLine("• kosong → no sugar (for drinks), plain (for food)");
-                menuContext.AppendLine("• siew dai → less sugar");
-                menuContext.AppendLine("• gao → strong/thick");
-                menuContext.AppendLine("• poh → weak/diluted");
-                menuContext.AppendLine("• peng → iced");
-                
-                menuContext.AppendLine("\nUncle now has complete menu knowledge for intelligent order processing!");
+                menuContext.AppendLine("\n🧠 AI INTELLIGENCE GUIDANCE:");
+                menuContext.AppendLine("=========================");
+                menuContext.AppendLine("You are Uncle at a traditional kopitiam. You KNOW your complete menu.");
+                menuContext.AppendLine("");
+                menuContext.AppendLine("INTELLIGENT ORDER PROCESSING:");
+                menuContext.AppendLine("1. When customer uses cultural terms → translate using YOUR menu knowledge");
+                menuContext.AppendLine("2. When you KNOW the exact item exists → use high confidence (0.8-0.9)");
+                menuContext.AppendLine("3. When customer says 'kaya toast' and you see 'Kaya Toast' above → confidence=0.9");
+                menuContext.AppendLine("4. When customer wants traditional items but your menu is Western → BE HONEST!");
+                menuContext.AppendLine("5. NEVER suggest items not in your menu above");
+                menuContext.AppendLine("6. ALWAYS check: Does customer's request match what you actually have?");
+                menuContext.AppendLine("");
+                menuContext.AppendLine("MISMATCH INTELLIGENCE:");
+                menuContext.AppendLine("• If customer wants 'kaya toast' but your menu has 'Avocado Toast' → TELL THEM");
+                menuContext.AppendLine("• If customer wants 'teh si' but your menu has 'Caffe Latte' → EXPLAIN THE DIFFERENCE");
+                menuContext.AppendLine("• Uncle would say: 'Aiyah, no kaya toast lah. Got avocado toast, want or not?'");
+                menuContext.AppendLine("");
+                menuContext.AppendLine("You now have complete menu knowledge and can serve customers intelligently!");
                 
                 return menuContext.ToString();
             }
@@ -500,44 +545,28 @@ namespace PosKernel.AI.Tools
             }
         }
 
-        // Helper methods (cultural translation, exact matching, etc.)
-        private string ApplyKopitiamCulturalTranslation(string input)
-        {
-            if (string.IsNullOrWhiteSpace(input))
-            {
-                return input;
-            }
-            
-            var translated = input.ToLowerInvariant().Trim();
-            
-            // Core translations: "si" means evaporated milk (C)
-            translated = translated.Replace("teh si", "teh c");
-            translated = translated.Replace("kopi si", "kopi c"); 
-            translated = translated.Replace("roti kaya", "kaya toast");
-            translated = translated.Replace("roti", "toast");
-            
-            return translated;
-        }
-
+        // Helper methods (exact matching, broader search, etc.)
         private async Task<List<RestaurantProductInfo>> GetBroaderSearchResults(string searchTerm, CancellationToken cancellationToken)
         {
             var broaderTerms = new List<string>();
             
-            if (searchTerm.Contains("kaya"))
+            // Extract key product categories for broader search
+            if (searchTerm.ToLowerInvariant().Contains("coffee") || searchTerm.ToLowerInvariant().Contains("kopi"))
             {
-                broaderTerms.Add("kaya");
-            }
-            
-            if (searchTerm.Contains("teh") || searchTerm.Contains("tea"))
-            {
-                broaderTerms.Add("teh");
-                broaderTerms.Add("tea");
-            }
-            
-            if (searchTerm.Contains("kopi") || searchTerm.Contains("coffee"))
-            {
-                broaderTerms.Add("kopi");
                 broaderTerms.Add("coffee");
+                broaderTerms.Add("kopi");
+            }
+            
+            if (searchTerm.ToLowerInvariant().Contains("tea") || searchTerm.ToLowerInvariant().Contains("teh"))
+            {
+                broaderTerms.Add("tea");
+                broaderTerms.Add("teh");
+            }
+            
+            if (searchTerm.ToLowerInvariant().Contains("toast") || searchTerm.ToLowerInvariant().Contains("bread"))
+            {
+                broaderTerms.Add("toast");
+                broaderTerms.Add("bread");
             }
 
             foreach (var term in broaderTerms)
@@ -557,37 +586,19 @@ namespace PosKernel.AI.Tools
             var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
             var normalizedProductName = product.Name.ToLowerInvariant().Trim();
             
-            // Remove preparation instructions from SEARCH TERM only
-            var baseSearchTerm = RemovePreparationInstructions(normalizedSearch);
-            
             // Direct exact matches (SKU or full name match)
             if (normalizedSearch == normalizedProductName || normalizedSearch == product.Sku.ToLowerInvariant())
             {
                 return true;
             }
             
-            // BASE PRODUCT MATCH: "teh c kosong" → matches "teh c" 
-            if (baseSearchTerm == normalizedProductName)
+            // Partial name match for compound products
+            if (normalizedProductName.Contains(normalizedSearch) && normalizedSearch.Length > 3)
             {
                 return true;
             }
             
             return false;
-        }
-        
-        private string RemovePreparationInstructions(string term)
-        {
-            var baseTerm = term;
-            
-            // Remove preparation modifiers to get base product
-            var modifiers = new[] { "kosong", "siew dai", "gao", "poh", "peng" };
-            
-            foreach (var modifier in modifiers)
-            {
-                baseTerm = baseTerm.Replace($" {modifier}", "").Replace($"{modifier} ", "");
-            }
-            
-            return baseTerm.Trim();
         }
 
         private bool IsSpecificProductMatch(string searchTerm, RestaurantProductInfo product)
@@ -601,20 +612,10 @@ namespace PosKernel.AI.Tools
                 return true;
             }
             
-            // Handle specific kopitiam terms
-            var specificKopitiamTerms = new Dictionary<string, string[]>
+            // Strong partial matches for longer search terms
+            if (normalizedSearch.Length > 4 && normalizedProductName.Contains(normalizedSearch))
             {
-                { "kaya toast", new[] { "kaya toast" } },
-                { "teh c kosong", new[] { "teh c kosong" } },
-                { "teh kosong", new[] { "teh kosong" } },
-                { "kopi c", new[] { "kopi c" } },
-                { "kopi", new[] { "kopi" } },
-                { "teh c", new[] { "teh c" } }
-            };
-            
-            if (specificKopitiamTerms.TryGetValue(normalizedSearch, out var matches))
-            {
-                return matches.Any(match => normalizedProductName.Contains(match));
+                return true;
             }
             
             return false;
@@ -703,6 +704,87 @@ namespace PosKernel.AI.Tools
                 properties = new { include_categories = new { type = "boolean", description = "Whether to include category information (default: true)", @default = true } }
             }
         };
+
+        private List<RestaurantProductInfo> GetRelevantDisambiguationOptions(string searchTerm, IEnumerable<RestaurantProductInfo> allResults)
+        {
+            var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
+            var relevantProducts = new List<RestaurantProductInfo>();
+            
+            // For each product, check if it's actually relevant to what the customer asked for
+            foreach (var product in allResults)
+            {
+                var normalizedProductName = product.Name.ToLowerInvariant();
+                var normalizedCategory = product.CategoryName.ToLowerInvariant();
+                
+                // Strict relevance matching - customer asks for X, we only show products that are actually X
+                if (IsProductRelevantToSearch(normalizedSearch, normalizedProductName, normalizedCategory))
+                {
+                    relevantProducts.Add(product);
+                }
+            }
+            
+            // If no strictly relevant products, fall back to broader category matching
+            if (!relevantProducts.Any())
+            {
+                foreach (var product in allResults)
+                {
+                    var normalizedCategory = product.CategoryName.ToLowerInvariant();
+                    
+                    if (IsCategoryRelevantToSearch(normalizedSearch, normalizedCategory))
+                    {
+                        relevantProducts.Add(product);
+                    }
+                }
+            }
+            
+            return relevantProducts.OrderBy(p => p.Name).ToList();
+        }
+        
+        private bool IsProductRelevantToSearch(string searchTerm, string productName, string categoryName)
+        {
+            // Direct name matches
+            if (productName.Contains(searchTerm) || searchTerm.Contains(productName))
+            {
+                return true;
+            }
+            
+            // Specific product type matches
+            var productTypeMatches = new Dictionary<string, string[]>
+            {
+                { "muffin", new[] { "muffin" } },
+                { "coffee", new[] { "coffee", "kopi", "cappuccino", "latte", "espresso" } },
+                { "tea", new[] { "tea", "teh" } },
+                { "toast", new[] { "toast", "bread" } },
+                { "egg", new[] { "egg", "boiled" } },
+                { "sandwich", new[] { "sandwich", "roti john" } }
+            };
+            
+            if (productTypeMatches.TryGetValue(searchTerm, out var validTypes))
+            {
+                return validTypes.Any(type => productName.Contains(type));
+            }
+            
+            return false;
+        }
+        
+        private bool IsCategoryRelevantToSearch(string searchTerm, string categoryName)
+        {
+            var categoryRelevance = new Dictionary<string, string[]>
+            {
+                { "muffin", new[] { "pastry", "bakery", "dessert", "snack" } },
+                { "coffee", new[] { "hot drinks", "kopi", "hot beverages", "coffee" } },
+                { "tea", new[] { "hot drinks", "teh", "hot tea", "tea" } },
+                { "toast", new[] { "toast", "bread", "food" } },
+                { "food", new[] { "food", "local food", "meal" } }
+            };
+            
+            if (categoryRelevance.TryGetValue(searchTerm, out var validCategories))
+            {
+                return validCategories.Any(cat => categoryName.Contains(cat));
+            }
+            
+            return false;
+        }
 
         /// <summary>
         /// Cleans up kernel session and disposes resources.

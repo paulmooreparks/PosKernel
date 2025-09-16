@@ -17,6 +17,7 @@
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using PosKernel.Abstractions;
 using PosKernel.Abstractions.Services;
 using PosKernel.AI.Services;
@@ -214,11 +215,33 @@ namespace PosKernel.AI
                 builder.AddConsole()
                        .SetMinimumLevel(LogLevel.Information));
             
-            // Register real kernel client and restaurant extension
-            services.AddSingleton<PosKernelClientOptions>();
-            services.AddSingleton<IPosKernelClient, PosKernelClient>();
+            // Build configuration to access appsettings.json
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(Directory.GetCurrentDirectory())
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddEnvironmentVariables()
+                .Build();
+            
+            // Register configuration
+            services.AddSingleton<IConfiguration>(configuration);
+            
+            // Register restaurant extension client first
             services.AddSingleton<RestaurantExtensionClient>();
-            services.AddSingleton<KernelPosToolsProvider>();
+            
+            // Register KernelPosToolsProvider with explicit Rust service type
+            services.AddSingleton<KernelPosToolsProvider>(serviceProvider =>
+            {
+                var restaurantClient = serviceProvider.GetRequiredService<RestaurantExtensionClient>();
+                var logger = serviceProvider.GetRequiredService<ILogger<KernelPosToolsProvider>>();
+                var config = serviceProvider.GetRequiredService<IConfiguration>();
+                
+                // Force Rust service type explicitly  
+                return new KernelPosToolsProvider(
+                    restaurantClient,
+                    logger,
+                    PosKernelClientFactory.KernelType.RustService,
+                    config);
+            });
             
             // Register MCP services
             var mcpConfig = aiConfig.ToMcpConfiguration();
@@ -229,15 +252,13 @@ namespace PosKernel.AI
             
             try 
             {
-                var kernelClient = serviceProvider.GetRequiredService<IPosKernelClient>();
                 var restaurantClient = serviceProvider.GetRequiredService<RestaurantExtensionClient>();
                 var kernelToolsProvider = serviceProvider.GetRequiredService<KernelPosToolsProvider>();
                 var mcpClient = serviceProvider.GetRequiredService<McpClient>();
 
-                // Test connectivity
+                // Test connectivity - the kernel client is now inside KernelPosToolsProvider
                 Console.WriteLine("📡 Testing kernel connectivity...");
-                await kernelClient.ConnectAsync();
-                Console.WriteLine("✅ Connected to POS Kernel");
+                await Task.Delay(100); // Give services a moment to initialize
                 
                 Console.WriteLine("🍽️ Testing restaurant extension connectivity...");
                 var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
@@ -347,7 +368,7 @@ namespace PosKernel.AI
             {
                 Console.Write($"🤖 {personality.StaffTitle} (REAL KERNEL): ");
                 
-                // Load menu context from real restaurant extension
+                // Load menu context from real restaurant extension BEFORE any customer interaction
                 var menuContextCall = new McpToolCall
                 {
                     Id = "kernel-startup-" + Guid.NewGuid().ToString()[..8],
@@ -361,9 +382,11 @@ namespace PosKernel.AI
                 Console.WriteLine("Loading real menu from restaurant extension...");
                 var menuContext = await kernelToolsProvider.ExecuteToolAsync(menuContextCall);
                 
-                // Create enhanced greeting prompt with real menu context
+                // Create enhanced greeting prompt with FULL MENU INTELLIGENCE
                 var enhancedGreetingPrompt = greetingPrompt + $@"
-REAL MENU KNOWLEDGE (loaded from restaurant extension):
+
+CRITICAL: You now have COMPLETE menu knowledge loaded. Use this intelligence!
+
 {menuContext}
 
 Store Context:
@@ -371,7 +394,14 @@ Store Context:
 - Type: {storeConfig.StoreType}  
 - Currency: {storeConfig.Currency}
 
-Now greet the customer - you're connected to the REAL kernel!";
+IMPORTANT RULES:
+1. You KNOW the full menu - suggest ONLY items that exist
+2. When customer says 'kaya toast' and you see 'Kaya Toast' in menu → high confidence (0.9)
+3. Cultural translations: Use your menu knowledge to translate intelligently
+4. If item doesn't exist in menu → inform customer immediately, suggest alternatives
+5. Only use MCP tools for CONFIRMED menu items with high confidence
+
+Now greet the customer with your full menu knowledge!";
                 
                 var greetingResponse = await mcpClient.CompleteWithToolsAsync(enhancedGreetingPrompt, availableTools);
                 Console.WriteLine(greetingResponse.Content);
@@ -409,8 +439,8 @@ Now greet the customer - you're connected to the REAL kernel!";
                 conversationHistory.Add($"Customer: {userInput}");
                 var conversationContext = string.Join("\n", conversationHistory.TakeLast(8));
 
-                // Create generalized MCP prompt
-                var prompt = CreateGeneralizedMcpPrompt(personality, storeConfig, conversationContext, userInput);
+                // Create generalized MCP prompt with MENU INTELLIGENCE
+                var prompt = CreateMenuIntelligentMcpPrompt(personality, storeConfig, conversationContext, userInput);
 
                 try
                 {
@@ -436,7 +466,7 @@ Now greet the customer - you're connected to the REAL kernel!";
                         }
 
                         // Generate follow-up response
-                        var followUpPrompt = CreateGeneralizedFollowUpPrompt(personality, storeConfig, conversationContext, userInput, response.Content, toolResults);
+                        var followUpPrompt = CreateIntelligentFollowUpPrompt(personality, storeConfig, conversationContext, userInput, response.Content, toolResults);
                         
                         try 
                         {
@@ -628,6 +658,41 @@ Now greet the customer - you're connected to the REAL kernel!";
             }
         }
 
+        private static string CreateIntelligentFollowUpPrompt(AiPersonalityConfig personality, StoreConfig storeConfig, string conversationContext, string userInput, string initialResponse, List<string> toolResults)
+        {
+            var toolSummary = string.Join("; ", toolResults);
+            
+            return $@"You are a {personality.StaffTitle} at {storeConfig.StoreName}.
+
+SITUATION ANALYSIS:
+==================
+Customer said: '{userInput}'
+Your initial response: '{initialResponse}'
+System operations performed: {toolSummary}
+
+INTELLIGENT REVIEW PROCESS:
+==========================
+
+1. VERIFY ACCURACY:
+   - Did the system add what the customer actually asked for?
+   - If customer said 'kopi si kosong', did system add 'Kopi C Kosong' or something else?
+   - If there's a mismatch, acknowledge it and explain what happened
+
+2. CHECK CONVERSATION FLOW:
+   - Was this a completion request ('that's all', 'finish', 'complete')?
+   - If yes, don't add more items - just summarize and ask about payment
+   - If no, continue normal service
+
+3. RESPOND APPROPRIATELY:
+   - If everything is correct: Confirm what was added, give total, ask what else they need
+   - If there was an error: Acknowledge the mistake and offer to fix it
+   - If they're finishing: Provide order summary and ask how they want to pay
+
+Store: {storeConfig.StoreName} | Currency: {storeConfig.Currency}
+
+Be honest about what actually happened and respond appropriately to where the customer is in their ordering process.";
+        }
+
         // Helper methods
         private static string CreatePersonalizedGreetingPrompt(AiPersonalityConfig personality, string timeOfDay, DateTime currentTime)
         {
@@ -641,6 +706,64 @@ Now greet the customer - you're connected to the REAL kernel!";
             return personality.CommonPhrases.TryGetValue($"greeting_{timeOfDay}", out var greeting) 
                 ? greeting 
                 : $"Welcome to our {personality.VenueTitle}! How can I help you?";
+        }
+
+        private static string CreateMenuIntelligentMcpPrompt(AiPersonalityConfig personality, StoreConfig storeConfig, string conversationContext, string userInput)
+        {
+            var template = personality.OrderingTemplate
+                .Replace("{conversationContext}", conversationContext)
+                .Replace("{cartItems}", "checking with real kernel...")
+                .Replace("{currentTotal}", "checking with real kernel...")
+                .Replace("{currency}", storeConfig.Currency)
+                .Replace("{userInput}", userInput);
+
+            return template + $@"
+STORE CONTEXT:
+- Store: {storeConfig.StoreName}
+- Type: {storeConfig.StoreType}
+- Currency: {storeConfig.Currency}
+- Culture: {storeConfig.CultureCode}
+
+You are connected to the REAL POS KERNEL! Use MCP tools to help customers efficiently.
+
+INTELLIGENT REASONING PROCESS:
+=============================
+
+STEP 1 - ANALYZE CUSTOMER REQUEST:
+Customer just said: '{userInput}'
+
+Ask yourself:
+- What exactly is the customer asking for?
+- Are they adding new items, asking questions, or finishing their order?
+- Do they use any cultural/local terms that need translation?
+
+STEP 2 - APPLY CULTURAL INTELLIGENCE WITH RECIPE PARSING:
+If customer uses local terms, parse base product + modifications:
+- 'kopi si kosong' = base: 'Kopi C' + modification: 'no sugar'
+- 'teh si kosong' = base: 'Teh C' + modification: 'no sugar'  
+- 'kopi gao' = base: 'Kopi' + modification: 'extra strong'
+
+Recipe modifications (NOT separate products):
+- 'kosong' = no sugar
+- 'gao' = extra strong  
+- 'poh' = less strong
+- 'siew dai' = less sugar
+- 'peng' = iced
+
+Search for BASE PRODUCT ONLY, then add preparation notes for modifications.
+
+STEP 3 - CHECK CONVERSATION FLOW:
+- Is this a NEW request or are they responding to something I asked?
+- Are they saying they're done ('that's all', 'complete', 'finish')?
+- Should I add items or just respond to their question?
+
+STEP 4 - DECIDE ACTION:
+- If adding items: Use high confidence (0.8-0.9) for exact menu matches
+- If answering questions: Don't add items, just provide information
+- If they're finishing: Don't add more items, proceed to completion
+
+STEP 5 - VERIFY YOUR LOGIC:
+Before using tools, ask: Does my intended action match what the customer actually wants?";
         }
 
         private static string CreateGeneralizedMcpPrompt(AiPersonalityConfig personality, StoreConfig storeConfig, string conversationContext, string userInput)
@@ -685,37 +808,6 @@ STORE CONTEXT:
 Use MCP tools to help customers with their orders!";
         }
 
-        private static string CreateGeneralizedFollowUpPrompt(AiPersonalityConfig personality, StoreConfig storeConfig, string conversationContext, string userInput, string initialResponse, List<string> toolResults)
-        {
-            var toolSummary = string.Join("; ", toolResults);
-            
-            return $@"You are a {personality.StaffTitle} at {storeConfig.StoreName} connected to the REAL POS KERNEL. 
-
-The real kernel operations returned: {toolSummary}
-
-Customer said: '{userInput}'
-
-REAL KERNEL FOLLOW-UP (adapt to your personality):
-
-If kernel returned DISAMBIGUATION_NEEDED:
-- Present options clearly in your cultural style
-
-If kernel returned ADDED (real transaction updated):  
-- Acknowledge in your personality style
-- Confirm what was added from kernel result
-- Ask what else they need
-
-If kernel returned payment processed:
-- Confirm completion in your style
-- Thank them appropriately for your culture
-
-If kernel returned error:
-- Handle gracefully in your personality
-
-Store: {storeConfig.StoreName} | Currency: {storeConfig.Currency}
-Maintain your {personality.StaffTitle} personality while handling real kernel results!";
-        }
-
         private static string CreateMockFollowUpPrompt(AiPersonalityConfig personality, StoreConfig storeConfig, string conversationContext, string userInput, string initialResponse, List<string> toolResults)
         {
             var toolSummary = string.Join("; ", toolResults);
@@ -726,45 +818,17 @@ The system operations returned: {toolSummary}
 
 Customer said: '{userInput}'
 
-FOLLOW-UP (adapt to your personality):
-
-If system returned DISAMBIGUATION_NEEDED:
-- Present options clearly in your cultural style
-
-If system returned ADDED:  
-- Acknowledge in your personality style
-- Ask what else they need
-
-If system returned payment processed:
-- Confirm completion in your style
-
-Maintain your {personality.StaffTitle} personality!";
+Review what happened and respond appropriately as a {personality.StaffTitle}.";
         }
 
         private static string GetPersonalityFallback(AiPersonalityConfig personality, StoreConfig storeConfig)
         {
-            return personality.Type switch
-            {
-                PersonalityType.SingaporeanKopitiamUncle => "Can! What else?",
-                PersonalityType.FrenchBoulanger => "Parfait! What else can I get for you?",
-                PersonalityType.JapaneseConbiniClerk => "Arigatou gozaimasu! How else can I help?",
-                PersonalityType.IndianChaiWala => "Bas! Aur kya chahiye?",
-                PersonalityType.AmericanBarista => "Perfect! What else can I get you?",
-                _ => "Great! What else can I help you with?"
-            };
+            return $"Great! What else can I help you with?";
         }
 
         private static string GetPersonalityErrorResponse(AiPersonalityConfig personality)
         {
-            return personality.Type switch
-            {
-                PersonalityType.SingaporeanKopitiamUncle => "Sorry, system got problem. Can try again?",
-                PersonalityType.FrenchBoulanger => "Pardonnez-moi, there's a technical issue. Please try again?",
-                PersonalityType.JapaneseConbiniClerk => "Sumimasen, there's a system issue. Could you please try again?",
-                PersonalityType.IndianChaiWala => "Arre yaar, system mein problem hai. Try again?",
-                PersonalityType.AmericanBarista => "Sorry about that, I'm having a technical issue. Could you try that again?",
-                _ => "Sorry, I'm having a system issue. Please try again."
-            };
+            return "Sorry, I'm having a technical issue. Please try again.";
         }
 
         private static bool IsExitCommand(string input)
@@ -775,7 +839,7 @@ Maintain your {personality.StaffTitle} personality!";
 
         private static bool IsCompletionRequest(string input)
         {
-            var completionCommands = new[] { "that's all", "that's it", "complete", "finish", "pay", "checkout", "done", "habis", "sudah", "selesai" };
+            var completionCommands = new[] { "that's all", "that's it", "complete", "finish", "pay", "checkout", "done", "finish order", "that'll be all", "nothing else" };
             return completionCommands.Any(cmd => input.ToLowerInvariant().Contains(cmd));
         }
 
@@ -797,18 +861,6 @@ Maintain your {personality.StaffTitle} personality!";
             Console.WriteLine("Options:");
             Console.WriteLine("  --store, --select, -s      🏪 Interactive Store Selection Demo");
             Console.WriteLine("  --help, -h                 Show this help message");
-            Console.WriteLine();
-            Console.WriteLine("🌍 Available Store Experiences:");
-            Console.WriteLine("• American Coffee Shop - Friendly barista experience");
-            Console.WriteLine("• Singaporean Kopitiam - Authentic uncle with cultural intelligence");
-            Console.WriteLine("• French Boulangerie - Artisanal baker with French flair");
-            Console.WriteLine("• Japanese Convenience Store - Polite and efficient service");
-            Console.WriteLine("• Indian Chai Stall - Warm chai wala experience");
-            Console.WriteLine("• Generic Store - Professional cashier service");
-            Console.WriteLine();
-            Console.WriteLine("🔌 Integration Options:");
-            Console.WriteLine("• REAL KERNEL - Connect to actual POS Kernel services");
-            Console.WriteLine("• MOCK - Self-contained demonstration");
         }
     }
 }

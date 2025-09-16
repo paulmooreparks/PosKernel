@@ -14,16 +14,16 @@
 // limitations under the License.
 //
 
-using System;
-using System.IO;
-using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
 namespace PosKernel.Extensions.Restaurant 
 {
     /// <summary>
-    /// Main entry point for the restaurant domain extension.
-    /// This runs as a pure service that provides product catalog operations
+    /// Main entry point for the restaurant domain extension service.
+    /// This runs as a hosted service that provides product catalog operations
     /// via named pipe IPC for any client (AI demo, kernel service, etc.).
     /// </summary>
     class Program 
@@ -32,48 +32,88 @@ namespace PosKernel.Extensions.Restaurant
         {
             try 
             {
-                Console.WriteLine("POS Kernel Restaurant Extension v0.4.0");
-                Console.WriteLine("Simplified domain service");
+                Console.WriteLine("🏪 POS Kernel Restaurant Extension v0.5.0");
+                Console.WriteLine("Domain service with named pipe IPC");
 
-                // Create a simple console logger
-                using var loggerFactory = LoggerFactory.Create(builder => {
-                    builder.AddConsole().SetMinimumLevel(LogLevel.Information);
-                });
-                var logger = loggerFactory.CreateLogger<Program>();
-
-                // Create basic configuration
-                var config = new RestaurantConfig {
-                    DatabasePath = Path.Combine("data", "catalog", "restaurant_catalog.db")
-                };
-
-                // Initialize database
-                await InitializeDatabaseAsync(config.DatabasePath, logger);
-
-                // Simple console mode for testing
-                logger.LogInformation("Restaurant extension initialized. Type 'exit' to quit.");
-                
-                string? input;
-                do {
-                    Console.Write("Enter command (or 'exit'): ");
-                    input = Console.ReadLine();
-                    
-                    if (input == "test") {
-                        // Test the extension
-                        var context = new ValidationContext {
-                            StoreId = "STORE_COFFEE_001",
-                            TerminalId = "TERMINAL_01",
-                            OperatorId = "TEST"
-                        };
+                // Build host with proper DI and logging
+                var host = Host.CreateDefaultBuilder(args)
+                    .ConfigureAppConfiguration((hostingContext, config) =>
+                    {
+                        // Clear existing sources and add our specific configuration
+                        config.Sources.Clear();
                         
-                        var result = ValidateProduct("COFFEE_SMALL", context);
-                        Console.WriteLine($"Product validation result: {result.IsValid}");
-                        if (result.ProductInfo != null) {
-                            Console.WriteLine($"Product: {result.ProductInfo.Name} - ${result.EffectivePriceCents / 100.0:F2}");
+                        // Add configuration from the project directory  
+                        var projectDir = "PosKernel.Extensions.Restaurant";
+                        var configFile = Path.Combine(projectDir, "appsettings.json");
+                        
+                        Console.WriteLine($"📁 Loading configuration from: {configFile}");
+                        
+                        if (File.Exists(configFile))
+                        {
+                            config.AddJsonFile(configFile, optional: false, reloadOnChange: true);
+                            Console.WriteLine($"✅ Found configuration file: {configFile}");
                         }
-                    }
-                } while (input != "exit");
+                        else
+                        {
+                            Console.WriteLine($"❌ Configuration file not found: {configFile}");
+                            Console.WriteLine($"📁 Current directory: {Directory.GetCurrentDirectory()}");
+                            Console.WriteLine($"📄 Files in current directory:");
+                            foreach (var file in Directory.GetFiles(".", "*.json"))
+                            {
+                                Console.WriteLine($"   {file}");
+                            }
+                        }
+                        
+                        config.AddEnvironmentVariables();
+                    })
+                    .ConfigureServices((context, services) =>
+                    {
+                        // Register RestaurantExtensionService with configuration
+                        services.AddSingleton<RestaurantExtensionService>(serviceProvider =>
+                        {
+                            var logger = serviceProvider.GetRequiredService<ILogger<RestaurantExtensionService>>();
+                            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+                            
+                            // Get database path from configuration - try different approaches
+                            var databasePath = configuration["Restaurant:DatabasePath"];
+                            if (string.IsNullOrEmpty(databasePath))
+                            {
+                                databasePath = configuration.GetValue<string>("Restaurant:DatabasePath");
+                            }
+                            
+                            // Debug: Log what we're reading from configuration
+                            Console.WriteLine($"🔧 Configuration DatabasePath: '{databasePath}'");
+                            Console.WriteLine($"🔧 Full configuration dump:");
+                            Console.WriteLine($"   Restaurant:DatabasePath = '{configuration["Restaurant:DatabasePath"]}'");
+                            Console.WriteLine($"   Restaurant:StoreType = '{configuration["Restaurant:StoreType"]}'");
+                            
+                            if (string.IsNullOrEmpty(databasePath))
+                            {
+                                Console.WriteLine("⚠️  DatabasePath is null/empty, using default");
+                                Console.WriteLine("📁 Current working directory: " + Directory.GetCurrentDirectory());
+                                Console.WriteLine("📄 Looking for appsettings.json in current directory");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"✅ Using configured database path: {databasePath}");
+                            }
+                            
+                            return new RestaurantExtensionService(logger, databasePath: databasePath);
+                        });
+                        
+                        services.AddHostedService<RestaurantExtensionHost>();
+                    })
+                    .ConfigureLogging(logging =>
+                    {
+                        logging.ClearProviders();
+                        logging.AddConsole();
+                        logging.SetMinimumLevel(LogLevel.Information);
+                    })
+                    .Build();
 
-                logger.LogInformation("Restaurant extension service stopped");
+                // Run the service
+                await host.RunAsync();
+
                 return 0;
             }
             catch (Exception ex) {
@@ -81,96 +121,57 @@ namespace PosKernel.Extensions.Restaurant
                 return 1;
             }
         }
+    }
 
-        private static async Task InitializeDatabaseAsync(string databasePath, ILogger logger)
+    /// <summary>
+    /// Hosted service wrapper for the Restaurant Extension Service.
+    /// </summary>
+    public class RestaurantExtensionHost : BackgroundService
+    {
+        private readonly RestaurantExtensionService _service;
+        private readonly ILogger<RestaurantExtensionHost> _logger;
+
+        /// <summary>
+        /// Initializes a new instance of the RestaurantExtensionHost.
+        /// </summary>
+        /// <param name="service">The restaurant extension service.</param>
+        /// <param name="logger">The logger.</param>
+        public RestaurantExtensionHost(RestaurantExtensionService service, ILogger<RestaurantExtensionHost> logger)
         {
-            // Ensure database directory exists
-            var dbDirectory = Path.GetDirectoryName(databasePath);
-            if (!string.IsNullOrEmpty(dbDirectory) && !Directory.Exists(dbDirectory))
-            {
-                Directory.CreateDirectory(dbDirectory);
-                logger.LogInformation("Created database directory: {Directory}", dbDirectory);
-            }
-
-            // Check if database exists and is initialized
-            var dbExists = File.Exists(databasePath);
-            
-            using var connection = new SqliteConnection($"Data Source={databasePath}");
-            connection.Open();
-
-            if (!dbExists)
-            {
-                logger.LogInformation("Initializing new restaurant catalog database: {DatabasePath}", databasePath);
-                
-                // Read and execute schema script
-                var schemaPath = Path.Combine("data", "catalog", "restaurant_catalog_schema.sql");
-                if (File.Exists(schemaPath))
-                {
-                    var schema = await File.ReadAllTextAsync(schemaPath);
-                    using var command = connection.CreateCommand();
-                    command.CommandText = schema;
-                    command.ExecuteNonQuery();
-                    logger.LogInformation("Database schema created successfully");
-                }
-                else
-                {
-                    logger.LogWarning("Schema file not found: {SchemaPath}", schemaPath);
-                }
-
-                // Read and execute data script
-                var dataPath = Path.Combine("data", "catalog", "restaurant_catalog_data.sql");
-                if (File.Exists(dataPath))
-                {
-                    var data = await File.ReadAllTextAsync(dataPath);
-                    using var command = connection.CreateCommand();
-                    command.CommandText = data;
-                    command.ExecuteNonQuery();
-                    logger.LogInformation("Sample data loaded successfully");
-                }
-                else
-                {
-                    logger.LogWarning("Data file not found: {DataPath}", dataPath);
-                }
-            }
-            else
-            {
-                // Verify database integrity
-                using var command = connection.CreateCommand();
-                command.CommandText = "PRAGMA integrity_check";
-                var result = command.ExecuteScalar()?.ToString();
-                
-                if (result != "ok")
-                {
-                    throw new InvalidOperationException($"Database integrity check failed: {result}");
-                }
-                
-                logger.LogInformation("Database integrity verified: {DatabasePath}", databasePath);
-            }
+            _service = service;
+            _logger = logger;
         }
 
-        public static ProductValidationResult ValidateProduct(string productId, ValidationContext context) 
+        /// <summary>
+        /// Executes the background service.
+        /// </summary>
+        /// <param name="stoppingToken">Cancellation token.</param>
+        /// <returns>A task representing the operation.</returns>
+        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // Validate product implementation
-            // For demo, let's assume any product ID containing "COFFEE" is valid
-            if (productId.Contains("COFFEE")) 
+            _logger.LogInformation("Starting Restaurant Extension Service...");
+            
+            try
             {
-                return new ProductValidationResult 
-                {
-                    IsValid = true,
-                    ProductInfo = new ProductInfo 
-                    {
-                        Name = "Sample Coffee",
-                        Description = "A delicious cup of coffee"
-                    },
-                    EffectivePriceCents = 299
-                };
+                await _service.StartAsync(stoppingToken);
+                
+                // Keep running until cancellation is requested
+                await Task.Delay(Timeout.Infinite, stoppingToken);
             }
-
-            return new ProductValidationResult 
+            catch (OperationCanceledException)
             {
-                IsValid = false,
-                ErrorMessage = "Product not found"
-            };
+                // Expected when cancellation is requested
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in Restaurant Extension Service");
+                throw;
+            }
+            finally
+            {
+                _logger.LogInformation("Stopping Restaurant Extension Service...");
+                await _service.StopAsync(CancellationToken.None);
+            }
         }
     }
 }

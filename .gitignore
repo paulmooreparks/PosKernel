@@ -45,3 +45,6 @@ Cargo.lock
 
 # JetBrains
 .idea/
+/pos-kernel-rs/pos_kernel_data/terminals/RUST_SERVICE_01/terminal.lock
+/pos-kernel-rs/pos_kernel_data/terminals/RUST_SERVICE_01/transaction.wal
+/pos-kernel-rs/pos_kernel_data/shared/coordination/active_terminals.json

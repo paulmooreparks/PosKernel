@@ -1,0 +1,124 @@
+// pos_kernel.proto
+// Copyright 2025 Paul Moore Parks and contributors
+// Licensed under the Apache License, Version 2.0
+
+syntax = "proto3";
+
+package pos_kernel;
+
+// POS Kernel Service for high-performance transaction processing
+service PosKernelService {
+  // Session Management
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse);
+
+  // Transaction Operations
+  rpc StartTransaction(StartTransactionRequest) returns (TransactionResponse);
+  rpc AddLineItem(AddLineItemRequest) returns (TransactionResponse);
+  rpc ProcessPayment(ProcessPaymentRequest) returns (TransactionResponse);
+  rpc GetTransaction(GetTransactionRequest) returns (TransactionResponse);
+
+  // Utility Operations
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse);
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Session Management Messages
+message CreateSessionRequest {
+  string terminal_id = 1;
+  string operator_id = 2;
+  map<string, string> metadata = 3;
+}
+
+message CreateSessionResponse {
+  bool success = 1;
+  string error = 2;
+  string session_id = 3;
+}
+
+message CloseSessionRequest {
+  string session_id = 1;
+}
+
+message CloseSessionResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// Transaction Messages
+message StartTransactionRequest {
+  string session_id = 1;
+  string store = 2;
+  string currency = 3;
+  map<string, string> metadata = 4;
+}
+
+message AddLineItemRequest {
+  string session_id = 1;
+  string transaction_id = 2;
+  string product_id = 3;
+  int32 quantity = 4;
+  int64 unit_price_minor = 5; // Price in minor currency units (cents)
+  map<string, string> metadata = 6;
+}
+
+message ProcessPaymentRequest {
+  string session_id = 1;
+  string transaction_id = 2;
+  int64 amount_minor = 3; // Amount in minor currency units
+  string payment_type = 4; // "cash", "card", "mobile", etc.
+  map<string, string> metadata = 5;
+}
+
+message GetTransactionRequest {
+  string session_id = 1;
+  string transaction_id = 2;
+}
+
+message TransactionResponse {
+  bool success = 1;
+  string error = 2;
+  string session_id = 3;
+  string transaction_id = 4;
+  int64 total_minor = 5;
+  int64 tendered_minor = 6;
+  int64 change_minor = 7;
+  string state = 8; // "Building", "Completed"
+  uint32 line_count = 9;
+  repeated LineItem line_items = 10;
+  TransactionTotals totals = 11;
+}
+
+message LineItem {
+  string product_id = 1;
+  int32 quantity = 2;
+  int64 unit_price_minor = 3;
+  int64 extended_price_minor = 4;
+  map<string, string> metadata = 5;
+}
+
+message TransactionTotals {
+  int64 subtotal_minor = 1;
+  int64 tax_minor = 2;
+  int64 total_minor = 3;
+  int64 tendered_minor = 4;
+  int64 change_minor = 5;
+  string currency = 6;
+}
+
+// Utility Messages
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  string version = 1;
+  string build_date = 2;
+  string commit_hash = 3;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  string status = 2;
+  map<string, string> details = 3;
+}

@@ -29,9 +29,9 @@ namespace PosKernel.Extensions.Restaurant.Client
     /// <summary>
     /// Client for communicating with the restaurant domain extension service.
     /// Provides a clean interface for AI demo and other clients to access
-    /// restaurant-specific product catalog functionality.
+    /// restaurant-specific product catalog functionality via IPC.
     /// </summary>
-    public class RestaurantExtensionClient : IDisposable
+    public class RestaurantExtensionClient : IRestaurantExtension, IDisposable
     {
         private readonly string _pipeName;
         private readonly ILogger<RestaurantExtensionClient> _logger;
@@ -88,9 +88,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             }
         }
 
-        /// <summary>
-        /// Validates a product and returns detailed information including allergens and customizations.
-        /// </summary>
+        /// <inheritdoc/>
         public async Task<ProductValidationResult> ValidateProductAsync(
             string productId, 
             string storeId = "STORE_COFFEE_001",
@@ -146,9 +144,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             };
         }
 
-        /// <summary>
-        /// Searches for products matching the given search term.
-        /// </summary>
+        /// <inheritdoc/>
         public async Task<List<ProductInfo>> SearchProductsAsync(
             string searchTerm, 
             int maxResults = 50,
@@ -189,9 +185,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             }
         }
 
-        /// <summary>
-        /// Gets the most popular products for recommendations and upselling.
-        /// </summary>
+        /// <inheritdoc/>
         public async Task<List<ProductInfo>> GetPopularItemsAsync(CancellationToken cancellationToken = default)
         {
             await EnsureConnectedAsync(cancellationToken);
@@ -225,9 +219,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             }
         }
 
-        /// <summary>
-        /// Gets all products in a specific category.
-        /// </summary>
+        /// <inheritdoc/>
         public async Task<List<ProductInfo>> GetCategoryProductsAsync(
             string category, 
             CancellationToken cancellationToken = default)
@@ -263,6 +255,54 @@ namespace PosKernel.Extensions.Restaurant.Client
             {
                 _logger.LogError(ex, "Failed to deserialize category products");
                 return new List<ProductInfo>();
+            }
+        }
+
+        /// <inheritdoc/>
+        public async Task<List<string>> GetCategoriesAsync(CancellationToken cancellationToken = default)
+        {
+            await EnsureConnectedAsync(cancellationToken);
+
+            var requestId = Interlocked.Increment(ref _requestId).ToString();
+            var request = new ExtensionRequest
+            {
+                Id = requestId,
+                Method = "get_categories",
+                Params = new Dictionary<string, JsonElement>()
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken);
+            
+            if (!response.Success || response.Data?.TryGetValue("categories", out var categoriesObj) != true)
+            {
+                _logger.LogWarning("Failed to get categories: {Error}", response.Error);
+                return new List<string>();
+            }
+
+            try
+            {
+                var categoriesJson = JsonSerializer.Serialize(categoriesObj);
+                var categories = JsonSerializer.Deserialize<List<string>>(categoriesJson);
+                return categories ?? new List<string>();
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to deserialize categories");
+                return new List<string>();
+            }
+        }
+
+        /// <inheritdoc/>
+        public async Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await EnsureConnectedAsync(cancellationToken);
+                return _client?.IsConnected == true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
