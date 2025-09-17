@@ -58,8 +58,6 @@ namespace PosKernel.AI {
                     return 1;
                 }
 
-                System.Console.WriteLine($"✅ API key configured - starting Terminal.Gui interface...");
-
                 // Always use Terminal.Gui interface - no console mode
                 var ui = new TerminalUserInterface();
                 await ui.InitializeAsync();

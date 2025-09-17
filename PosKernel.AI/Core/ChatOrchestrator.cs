@@ -157,12 +157,13 @@ namespace PosKernel.AI.Core {
             // Check for completion requests
             if (IsCompletionRequest(userInput) && _receipt.Items.Any()) {
                 _receipt.Status = PaymentStatus.ReadyForPayment;
-                _logger.LogInformation("Order completion requested, setting status to ReadyForPayment with {ItemCount} items totaling ${Total:F2}",
-                    _receipt.Items.Count, _receipt.Total);
+                _logger.LogInformation("Order completion requested, setting status to ReadyForPayment with {ItemCount} items totaling {FormattedTotal}",
+                    _receipt.Items.Count, CurrencyFormattingService.FormatWithSymbol(_receipt.Total, _storeConfig.Currency));
 
+                var formattedTotal = CurrencyFormattingService.FormatWithSymbol(_receipt.Total, _storeConfig.Currency);
                 var completionMessage = new ChatMessage {
                     Sender = _personality.StaffTitle,
-                    Content = $"Perfect! Your order is ready. That's {_receipt.Items.Count} items for ${_receipt.Total:F2}. How would you like to pay?",
+                    Content = $"Perfect! Your order is ready. That's {_receipt.Items.Count} items for {formattedTotal}. How would you like to pay?",
                     IsSystem = false
                 };
                 _conversationHistory.Add(completionMessage);
@@ -257,9 +258,13 @@ Greet the customer using your actual menu knowledge!";
         }
 
         private async Task<ChatMessage> InitializeMockAsync(string timeOfDay) {
-            var greetingPrompt = _personality.GreetingTemplate
-                .Replace("{timeOfDay}", timeOfDay)
-                .Replace("{currentTime}", DateTime.Now.ToString("HH:mm"));
+            var context = new PromptContext 
+            {
+                TimeOfDay = timeOfDay,
+                CurrentTime = DateTime.Now.ToString("HH:mm")
+            };
+            
+            var greetingPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "greeting", context);
 
             var availableTools = _mockToolsProvider!.GetAvailableTools();
             var response = await _mcpClient.CompleteWithToolsAsync(greetingPrompt, availableTools);
@@ -326,22 +331,25 @@ Greet the customer using your actual menu knowledge!";
                 }
 
                 if (TryParseAddedItem(result, out var item)) {
-                    _logger.LogInformation("Successfully parsed item: {ProductName} x{Quantity} @ ${UnitPrice} = ${LineTotal}",
-                        item.ProductName, item.Quantity, item.UnitPrice, item.CalculatedTotal);
+                    _logger.LogInformation("Successfully parsed item: {ProductName} x{Quantity} @ {UnitPrice} = {LineTotal}",
+                        item.ProductName, item.Quantity, 
+                        CurrencyFormattingService.FormatWithSymbol(item.UnitPrice, _storeConfig.Currency),
+                        CurrencyFormattingService.FormatWithSymbol(item.CalculatedTotal, _storeConfig.Currency));
                     _receipt.Items.Add(item);
-                    _logger.LogInformation("Receipt now has {ItemCount} items, total: ${Total}",
-                        _receipt.Items.Count, _receipt.Total);
+                    _logger.LogInformation("Receipt now has {ItemCount} items, total: {Total}",
+                        _receipt.Items.Count, CurrencyFormattingService.FormatWithSymbol(_receipt.Total, _storeConfig.Currency));
                 }
                 else {
                     _logger.LogWarning("Failed to parse item from result: {Result}", result);
 
                     // Fallback: Try to extract basic info from the result
                     if (TryCreateFallbackItem(result, toolCall, out var fallbackItem)) {
-                        _logger.LogInformation("Created fallback item: {ProductName} x{Quantity} @ ${UnitPrice}",
-                            fallbackItem.ProductName, fallbackItem.Quantity, fallbackItem.UnitPrice);
+                        _logger.LogInformation("Created fallback item: {ProductName} x{Quantity} @ {UnitPrice}",
+                            fallbackItem.ProductName, fallbackItem.Quantity, 
+                            CurrencyFormattingService.FormatWithSymbol(fallbackItem.UnitPrice, _storeConfig.Currency));
                         _receipt.Items.Add(fallbackItem);
-                        _logger.LogInformation("Receipt now has {ItemCount} items (fallback), total: ${Total}",
-                            _receipt.Items.Count, _receipt.Total);
+                        _logger.LogInformation("Receipt now has {ItemCount} items (fallback), total: {Total}",
+                            _receipt.Items.Count, CurrencyFormattingService.FormatWithSymbol(_receipt.Total, _storeConfig.Currency));
                     }
                     else {
                         _logger.LogError("Failed to create any item from tool result: {Result}", result);
@@ -423,8 +431,8 @@ Greet the customer using your actual menu knowledge!";
                     receiptItem.ProductName, quantity, receiptItem.UnitPrice);
             }
 
-            _logger.LogInformation("Created mock transaction with {ItemCount} items, total: ${Total}",
-                transaction.Lines.Count, transaction.Total.ToDecimal());
+            _logger.LogInformation("Created mock transaction with {ItemCount} items, total: {Total}",
+                transaction.Lines.Count, CurrencyFormattingService.FormatWithSymbol(transaction.Total.ToDecimal(), _storeConfig.Currency));
 
             return transaction;
         }
@@ -435,14 +443,18 @@ Greet the customer using your actual menu knowledge!";
         }
 
         private string CreateIntelligentPrompt(string conversationContext, string userInput) {
-            var template = _personality.OrderingTemplate
-                .Replace("{conversationContext}", conversationContext)
-                .Replace("{cartItems}", GetCartSummary())
-                .Replace("{currentTotal}", _receipt.Total.ToString("F2"))
-                .Replace("{currency}", _storeConfig.Currency)
-                .Replace("{userInput}", userInput);
+            var context = new PromptContext {
+                ConversationContext = conversationContext,
+                CartItems = GetCartSummary(),
+                CurrentTotal = CurrencyFormattingService.FormatAmount(_receipt.Total, _storeConfig.Currency),
+                Currency = _storeConfig.Currency,
+                UserInput = userInput
+            };
 
-            return template + $@"
+            var prompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering", context);
+
+            // Append store-specific context
+            return prompt + $@"
 STORE CONTEXT:
 - Store: {_storeConfig.StoreName}
 - Type: {_storeConfig.StoreType}
@@ -508,9 +520,9 @@ Keep it natural and conversational.";
                     _logger.LogInformation("Cleaned result: '{CleanResult}'", cleanResult);
                 }
 
-                // Try to split by " x" for quantity
-                var parts = cleanResult.Split(" x");
-                _logger.LogInformation("Split by ' x' resulted in {PartCount} parts: [{Parts}]",
+                // Try to split with regex to handle multiple spaces or delimiters
+                var parts = System.Text.RegularExpressions.Regex.Split(cleanResult, @"\s*x\s*");
+                _logger.LogInformation("Split by regex resulted in {PartCount} parts: [{Parts}]",
                     parts.Length, string.Join("', '", parts));
 
                 if (parts.Length >= 2) {
@@ -564,7 +576,8 @@ Keep it natural and conversational.";
 
                             if (decimal.TryParse(priceStr, out var price)) {
                                 item.UnitPrice = price;
-                                _logger.LogInformation("Parsed unit price: ${UnitPrice}", price);
+                                _logger.LogInformation("Parsed unit price: {UnitPrice}", 
+                                    CurrencyFormattingService.FormatWithSymbol(price, _storeConfig.Currency));
                             }
                             else {
                                 _logger.LogWarning("Failed to parse price from: '{PriceStr}'", priceStr);
@@ -578,7 +591,8 @@ Keep it natural and conversational.";
 
                             if (priceMatch.Success && decimal.TryParse(priceMatch.Value, out var altPrice)) {
                                 item.UnitPrice = altPrice;
-                                _logger.LogInformation("Parsed alternate price: ${AltPrice}", altPrice);
+                                _logger.LogInformation("Parsed alternate price: {AltPrice}", 
+                                    CurrencyFormattingService.FormatWithSymbol(altPrice, _storeConfig.Currency));
                             }
                             else {
                                 _logger.LogWarning("Failed to parse alternate price from: '{RemainingPart}'", remainingPart);
@@ -590,8 +604,9 @@ Keep it natural and conversational.";
                     }
 
                     var success = !string.IsNullOrEmpty(item.ProductName) && item.Quantity > 0 && item.UnitPrice > 0;
-                    _logger.LogInformation("Final parsing result: Success={Success}, ProductName='{ProductName}', Quantity={Quantity}, UnitPrice=${UnitPrice}",
-                        success, item.ProductName, item.Quantity, item.UnitPrice);
+                    _logger.LogInformation("Final parsing result: Success={Success}, ProductName='{ProductName}', Quantity={Quantity}, UnitPrice={UnitPrice}",
+                        success, item.ProductName, item.Quantity, 
+                        CurrencyFormattingService.FormatWithSymbol(item.UnitPrice, _storeConfig.Currency));
 
                     return success;
                 }

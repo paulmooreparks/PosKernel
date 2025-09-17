@@ -29,57 +29,94 @@ Prompts/
 ## Prompt Types
 
 ### greeting.md
-Contains the prompt used when an AI personality first greets a customer. This should establish the character's personality, cultural context, and initial interaction style.
-
-**Available variables:**
-- `{timeOfDay}` - Time period (Morning, Afternoon, Evening)
-- `{currentTime}` - Current time in HH:mm format
+Contains the static prompt content used when an AI personality first greets a customer. Dynamic content (time, etc.) is injected programmatically.
 
 ### ordering.md
-Contains the prompt used during the order-taking process. This includes context about the current conversation and order status.
+Contains the static personality instructions for order processing. Dynamic content (conversation history, cart status, user input) is injected efficiently as a context header.
 
-**Available variables:**
-- `{conversationContext}` - Previous conversation history
-- `{cartItems}` - Current items in the customer's cart
-- `{currentTotal}` - Current order total
-- `{currency}` - Store currency (USD, SGD, EUR, JPY, INR)
-- `{userInput}` - The customer's latest input
+## Efficient Architecture
+
+### Performance-Optimized Building
+Instead of expensive string replacement operations, prompts are built efficiently:
+
+```csharp
+var context = new PromptContext 
+{
+    ConversationContext = recentHistory,
+    CartItems = currentItems,
+    UserInput = customerRequest
+};
+
+var prompt = AiPersonalityFactory.BuildPrompt(PersonalityType.SingaporeanKopitiamUncle, "ordering", context);
+```
+
+### How It Works
+1. **Static Content**: Loaded once from Markdown files and cached
+2. **Dynamic Context**: Built programmatically using StringBuilder for efficiency
+3. **No String Replacement**: Avoids expensive `.Replace()` operations on growing content
+4. **Pre-allocated Buffers**: StringBuilder pre-allocated with reasonable capacity
+
+### Context Injection
+Dynamic content is prepended as a structured header:
+
+```
+## CURRENT SESSION CONTEXT:
+### Recent Conversation:
+Customer: I want kopi
+Uncle: What kind of kopi?
+
+### Current Order Status:
+- Items in cart: none
+- Current total: $0.00
+- Currency: SGD
+
+**CUSTOMER JUST SAID:** 'kopi si kosong'
+
+[Static personality content follows...]
+```
+
+## Benefits of This Architecture
+
+- **Performance**: No expensive string operations on growing conversation history
+- **Scalability**: Performance doesn't degrade as conversation length increases
+- **Memory Efficient**: Single StringBuilder allocation instead of multiple string copies
+- **Clean Separation**: Static personality rules separate from dynamic session data
+- **Easy Editing**: Markdown files contain only the essential personality instructions
+- **Maintainable**: Dynamic content structure is consistent across all personalities
 
 ## Editing Prompts
 
-1. **Maintain Character Consistency**: Each personality should have a distinct voice and cultural context
-2. **Include Cultural Elements**: Use appropriate language, phrases, and cultural references
-3. **Provide Clear Guidelines**: Include confidence levels and processing instructions for the AI
-4. **Use Markdown Formatting**: Structure prompts with headers, lists, and emphasis for clarity
+1. **Focus on Personality**: Markdown files should contain cultural knowledge and behavior rules
+2. **Avoid Dynamic Placeholders**: Don't use `{variables}` - dynamic content is injected automatically
+3. **Include Processing Guidelines**: Add confidence levels and cultural processing instructions
+4. **Use Clear Structure**: Headers and lists for easy AI comprehension
 
 ## Development Features
 
 ### Prompt Caching
-Prompts are cached in memory for performance. During development, if you modify prompt files, you may need to restart the application to see changes.
+Static templates are cached for performance. Dynamic context is built fresh each time.
 
 ### Cache Clearing
-For advanced scenarios, you can call `AiPersonalityFactory.ClearPromptCache()` to force reload prompts from disk without restarting the application.
+Call `AiPersonalityFactory.ClearPromptCache()` to reload templates during development.
 
 ## Adding New Personalities
 
-1. Create a new directory under `Prompts/` with the personality name
-2. Add `greeting.md` and `ordering.md` files
-3. Update `PersonalityType` enum in `AiPersonalityConfig.cs`
-4. Add a new factory method in `AiPersonalityFactory`
+1. Create directory under `Prompts/` with personality name
+2. Add `greeting.md` and `ordering.md` files (no placeholders needed)
+3. Update `PersonalityType` enum 
+4. Add factory method - use `BuildPrompt()` for efficiency
 
-## Fallback Behavior
+## Migration from String Replacement
 
-If a prompt file is missing, the system will:
-1. Try to use the GenericCashier equivalent
-2. Fall back to a basic inline prompt
-3. Cache the fallback for performance
+Old approach (slow):
+```csharp
+var template = LoadPrompt(type, "ordering")
+    .Replace("{conversationContext}", history)
+    .Replace("{cartItems}", items)
+    .Replace("{userInput}", input);
+```
 
-This ensures the application continues to work even if prompt files are accidentally deleted or misconfigured.
-
-## Benefits of Markdown-Based Prompts
-
-- **Easy Editing**: Prompts can be modified without recompiling code
-- **Version Control**: Changes to prompts are clearly visible in Git diffs
-- **Collaboration**: Non-programmers can easily edit prompts
-- **Documentation**: Markdown provides better formatting for complex instructions
-- **Separation of Concerns**: Business logic (prompts) separated from code logic
+New approach (fast):
+```csharp
+var context = new PromptContext { /* populate fields */ };
+var prompt = AiPersonalityFactory.BuildPrompt(type, "ordering", context);

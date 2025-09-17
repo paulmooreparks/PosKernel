@@ -20,6 +20,7 @@ namespace PosKernel.AI.Services
 {
     /// <summary>
     /// Configuration for AI personality behavior and responses.
+    /// Contains metadata about personality characteristics, not prompt content.
     /// </summary>
     public class AiPersonalityConfig
     {
@@ -52,21 +53,47 @@ namespace PosKernel.AI.Services
         /// Gets or sets the currency (e.g., "USD", "SGD").
         /// </summary>
         public string Currency { get; set; } = "USD";
+    }
+
+    /// <summary>
+    /// Context information used to build dynamic prompts efficiently.
+    /// </summary>
+    public class PromptContext
+    {
+        /// <summary>
+        /// Recent conversation history formatted for display.
+        /// </summary>
+        public string? ConversationContext { get; set; }
 
         /// <summary>
-        /// Gets or sets common phrases for the personality.
+        /// Summary of items currently in the cart.
         /// </summary>
-        public Dictionary<string, string> CommonPhrases { get; set; } = new();
+        public string? CartItems { get; set; }
 
         /// <summary>
-        /// Gets or sets the greeting template.
+        /// Current order total as a formatted string.
         /// </summary>
-        public string GreetingTemplate { get; set; } = "";
+        public string? CurrentTotal { get; set; }
 
         /// <summary>
-        /// Gets or sets the ordering template.
+        /// Store currency code.
         /// </summary>
-        public string OrderingTemplate { get; set; } = "";
+        public string? Currency { get; set; }
+
+        /// <summary>
+        /// The customer's latest input.
+        /// </summary>
+        public string? UserInput { get; set; }
+
+        /// <summary>
+        /// Time of day for greeting prompts (morning, afternoon, evening).
+        /// </summary>
+        public string? TimeOfDay { get; set; }
+
+        /// <summary>
+        /// Current time formatted as HH:mm for greeting prompts.
+        /// </summary>
+        public string? CurrentTime { get; set; }
     }
 
     /// <summary>
@@ -148,6 +175,125 @@ namespace PosKernel.AI.Services
             return content;
         }
 
+        /// <summary>
+        /// Loads a prompt template from a Markdown file for the specified personality and prompt type.
+        /// </summary>
+        /// <param name="personalityType">The personality type.</param>
+        /// <param name="promptType">The prompt type ("greeting" or "ordering").</param>
+        /// <returns>The prompt content as a string.</returns>
+        public static string LoadPrompt(PersonalityType personalityType, string promptType)
+        {
+            var personalityFolder = personalityType.ToString();
+            return LoadPromptTemplate(personalityFolder, promptType);
+        }
+
+        /// <summary>
+        /// Builds a complete prompt by combining the template with dynamic context.
+        /// This is more efficient than string replacement for dynamic content.
+        /// </summary>
+        /// <param name="personalityType">The personality type.</param>
+        /// <param name="promptType">The prompt type ("greeting" or "ordering").</param>
+        /// <param name="context">Dynamic context to inject into the prompt.</param>
+        /// <returns>The complete prompt with context.</returns>
+        public static string BuildPrompt(PersonalityType personalityType, string promptType, PromptContext context)
+        {
+            var template = LoadPrompt(personalityType, promptType);
+            
+            // For ordering prompts, inject dynamic context efficiently
+            if (promptType == "ordering" && context != null)
+            {
+                return BuildOrderingPrompt(template, context);
+            }
+            
+            // For greeting prompts, simple replacement is fine since it's only done once
+            if (promptType == "greeting" && context != null)
+            {
+                return template
+                    .Replace("{timeOfDay}", context.TimeOfDay ?? "")
+                    .Replace("{currentTime}", context.CurrentTime ?? "");
+            }
+            
+            return template;
+        }
+
+        /// <summary>
+        /// Efficiently builds an ordering prompt by prepending dynamic context.
+        /// This avoids expensive string replacement operations.
+        /// </summary>
+        private static string BuildOrderingPrompt(string template, PromptContext context)
+        {
+            var sb = new System.Text.StringBuilder(template.Length + 500); // Pre-allocate reasonable size
+            
+            // Start with the base template (remove placeholder sections)
+            var cleanTemplate = RemovePlaceholderSections(template);
+            sb.AppendLine(cleanTemplate);
+            sb.AppendLine();
+            
+            // Append dynamic context header
+            sb.AppendLine("## CURRENT SESSION CONTEXT:");
+            
+            if (!string.IsNullOrEmpty(context.ConversationContext))
+            {
+                sb.AppendLine("### Recent Conversation:");
+                sb.AppendLine(context.ConversationContext);
+                sb.AppendLine();
+            }
+            
+            sb.AppendLine("### Current Order Status:");
+            sb.AppendLine($"- Items in cart: {context.CartItems ?? "none"}");
+            sb.AppendLine($"- Current total: ${context.CurrentTotal ?? "0.00"}");
+            sb.AppendLine($"- Currency: {context.Currency ?? "USD"}");
+            sb.AppendLine();
+            
+            sb.AppendLine($"**CUSTOMER JUST SAID:** '{context.UserInput ?? ""}'");
+            sb.AppendLine();
+            sb.AppendLine("Process this request using your cultural knowledge and tools.");
+            
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Removes placeholder sections from the template since we're building context programmatically.
+        /// </summary>
+        private static string RemovePlaceholderSections(string template)
+        {
+            // Remove the placeholder sections that we'll replace with programmatic context
+            var lines = template.Split('\n');
+            var result = new System.Text.StringBuilder();
+            bool skipSection = false;
+            
+            foreach (var line in lines)
+            {
+                var trimmedLine = line.Trim();
+                
+                // Skip sections that contain placeholders we're replacing programmatically
+                if (trimmedLine.Contains("{conversationContext}") || 
+                    trimmedLine.Contains("{cartItems}") ||
+                    trimmedLine.Contains("{currentTotal}") ||
+                    trimmedLine.Contains("{currency}") ||
+                    trimmedLine.Contains("{userInput}") ||
+                    trimmedLine == "## Conversation History:" ||
+                    trimmedLine == "## Current Order Status:")
+                {
+                    skipSection = true;
+                    continue;
+                }
+                
+                // End skipping when we hit the next major section
+                if (trimmedLine.StartsWith("## ") && !trimmedLine.Contains("Conversation History") && !trimmedLine.Contains("Current Order Status"))
+                {
+                    skipSection = false;
+                }
+                
+                if (!skipSection && !trimmedLine.Contains("{"))
+                {
+                    result.AppendLine(line);
+                }
+            }
+            
+            return result.ToString();
+        }
+
         private static AiPersonalityConfig CreateAmericanBarista()
         {
             return new AiPersonalityConfig
@@ -157,18 +303,7 @@ namespace PosKernel.AI.Services
                 VenueTitle = "Coffee Shop",
                 SupportedLanguages = new List<string> { "English" },
                 CultureCode = "en-US",
-                Currency = "USD",
-                CommonPhrases = new Dictionary<string, string>
-                {
-                    ["greeting_morning"] = "Good morning! What can I get started for you today?",
-                    ["greeting_afternoon"] = "Good afternoon! What sounds good to you?",
-                    ["greeting_evening"] = "Good evening! How can I help you?",
-                    ["order_complete"] = "Perfect! Your order is complete.",
-                    ["payment_request"] = "Your total comes to {total}. How would you like to pay?",
-                    ["farewell"] = "Thank you! Have a great day!"
-                },
-                GreetingTemplate = LoadPromptTemplate("AmericanBarista", "greeting"),
-                OrderingTemplate = LoadPromptTemplate("AmericanBarista", "ordering")
+                Currency = "USD"
             };
         }
 
@@ -181,18 +316,7 @@ namespace PosKernel.AI.Services
                 VenueTitle = "Kopitiam",
                 SupportedLanguages = new List<string> { "English", "Mandarin", "Cantonese", "Hokkien", "Hakka", "Teochew", "Malay", "Tamil", "Punjabi", "Bangladeshi" },
                 CultureCode = "en-SG",
-                Currency = "SGD",
-                CommonPhrases = new Dictionary<string, string>
-                {
-                    ["greeting_morning"] = "Morning! What you want?",
-                    ["greeting_afternoon"] = "Afternoon lah! Order what?",
-                    ["greeting_evening"] = "Evening! You want order or not?",
-                    ["order_complete"] = "Can! All done.",
-                    ["payment_request"] = "Total {total} dollar. How you pay?",
-                    ["farewell"] = "Thank you! Come again!"
-                },
-                GreetingTemplate = LoadPromptTemplate("SingaporeanKopitiamUncle", "greeting"),
-                OrderingTemplate = LoadPromptTemplate("SingaporeanKopitiamUncle", "ordering")
+                Currency = "SGD"
             };
         }
 
@@ -205,18 +329,7 @@ namespace PosKernel.AI.Services
                 VenueTitle = "Boulangerie",
                 SupportedLanguages = new List<string> { "French", "English" },
                 CultureCode = "fr-FR",
-                Currency = "EUR",
-                CommonPhrases = new Dictionary<string, string>
-                {
-                    ["greeting_morning"] = "Bonjour! Que désirez-vous aujourd'hui?",
-                    ["greeting_afternoon"] = "Bon après-midi! Comment puis-je vous aider?",
-                    ["greeting_evening"] = "Bonsoir! Qu'est-ce qui vous ferait plaisir?",
-                    ["order_complete"] = "Parfait! Votre commande est prête.",
-                    ["payment_request"] = "Cela fait {total} euros. Comment souhaitez-vous payer?",
-                    ["farewell"] = "Merci beaucoup! Bonne journée!"
-                },
-                GreetingTemplate = LoadPromptTemplate("FrenchBoulanger", "greeting"),
-                OrderingTemplate = LoadPromptTemplate("FrenchBoulanger", "ordering")
+                Currency = "EUR"
             };
         }
 
@@ -229,18 +342,7 @@ namespace PosKernel.AI.Services
                 VenueTitle = "Convenience Store",
                 SupportedLanguages = new List<string> { "Japanese", "English" },
                 CultureCode = "ja-JP",
-                Currency = "JPY",
-                CommonPhrases = new Dictionary<string, string>
-                {
-                    ["greeting_morning"] = "Irasshaimase! Ohayou gozaimasu!",
-                    ["greeting_afternoon"] = "Irasshaimase! Konnichiwa!",
-                    ["greeting_evening"] = "Irasshaimase! Konbanwa!",
-                    ["order_complete"] = "Arigatou gozaimasu!",
-                    ["payment_request"] = "{total}円 desu. How would you like to pay?",
-                    ["farewell"] = "Arigatou gozaimashita! Mata douzo!"
-                },
-                GreetingTemplate = LoadPromptTemplate("JapaneseConbiniClerk", "greeting"),
-                OrderingTemplate = LoadPromptTemplate("JapaneseConbiniClerk", "ordering")
+                Currency = "JPY"
             };
         }
 
@@ -253,18 +355,7 @@ namespace PosKernel.AI.Services
                 VenueTitle = "Chai Stall",
                 SupportedLanguages = new List<string> { "Hindi", "English", "Punjabi", "Bengali" },
                 CultureCode = "hi-IN",
-                Currency = "INR",
-                CommonPhrases = new Dictionary<string, string>
-                {
-                    ["greeting_morning"] = "Namaste! Chai chahiye?",
-                    ["greeting_afternoon"] = "Sahib, kya chahiye?",
-                    ["greeting_evening"] = "Adaab! Evening chai?",
-                    ["order_complete"] = "Bas! Ready hai!",
-                    ["payment_request"] = "Total {total} rupees. Cash denge?",
-                    ["farewell"] = "Dhanyawad! Phir aana!"
-                },
-                GreetingTemplate = LoadPromptTemplate("IndianChaiWala", "greeting"),
-                OrderingTemplate = LoadPromptTemplate("IndianChaiWala", "ordering")
+                Currency = "INR"
             };
         }
 
@@ -277,18 +368,7 @@ namespace PosKernel.AI.Services
                 VenueTitle = "Store",
                 SupportedLanguages = new List<string> { "English" },
                 CultureCode = "en-US",
-                Currency = "USD",
-                CommonPhrases = new Dictionary<string, string>
-                {
-                    ["greeting_morning"] = "Good morning! How can I help you?",
-                    ["greeting_afternoon"] = "Good afternoon! What can I get for you?",
-                    ["greeting_evening"] = "Good evening! How may I assist you?",
-                    ["order_complete"] = "Your order is complete.",
-                    ["payment_request"] = "Your total is {total}. How would you like to pay?",
-                    ["farewell"] = "Thank you for your business!"
-                },
-                GreetingTemplate = LoadPromptTemplate("GenericCashier", "greeting"),
-                OrderingTemplate = LoadPromptTemplate("GenericCashier", "ordering")
+                Currency = "USD"
             };
         }
     }
