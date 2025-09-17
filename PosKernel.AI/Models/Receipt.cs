@@ -41,7 +41,12 @@ namespace PosKernel.AI.Models
         /// <summary>
         /// Gets or sets the line total.
         /// </summary>
-        public decimal LineTotal => UnitPrice * Quantity;
+        public decimal LineTotal { get; set; }
+        
+        /// <summary>
+        /// Gets the calculated line total (quantity * unit price) if LineTotal is not set.
+        /// </summary>
+        public decimal CalculatedTotal => LineTotal > 0 ? LineTotal : UnitPrice * Quantity;
         
         /// <summary>
         /// Gets or sets preparation notes.
@@ -77,7 +82,7 @@ namespace PosKernel.AI.Models
         /// <summary>
         /// Gets the subtotal of all items.
         /// </summary>
-        public decimal Subtotal => Items.Sum(i => i.LineTotal);
+        public decimal Subtotal => Items.Sum(i => i.CalculatedTotal);
         
         /// <summary>
         /// Gets or sets the tax amount.
