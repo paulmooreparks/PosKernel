@@ -73,14 +73,14 @@ namespace PosKernel.AI.Services
     public enum StoreType
     {
         /// <summary>
-        /// American coffee shop - coffee drinks, pastries, sandwiches.
-        /// </summary>
-        CoffeeShop,
-        
-        /// <summary>
         /// Singaporean kopitiam - traditional drinks and local food.
         /// </summary>
         Kopitiam,
+        
+        /// <summary>
+        /// American coffee shop - coffee drinks, pastries, sandwiches.
+        /// </summary>
+        CoffeeShop,
         
         /// <summary>
         /// French bakery - bread, pastries, coffee, French specialties.
@@ -144,8 +144,8 @@ namespace PosKernel.AI.Services
         {
             return storeType switch
             {
-                StoreType.CoffeeShop => CreateCoffeeShop(useRealKernel),
                 StoreType.Kopitiam => CreateKopitiam(useRealKernel),
+                StoreType.CoffeeShop => CreateCoffeeShop(useRealKernel),
                 StoreType.Boulangerie => CreateBoulangerie(useRealKernel),
                 StoreType.ConvenienceStore => CreateConvenienceStore(useRealKernel),
                 StoreType.ChaiStall => CreateChaiStall(useRealKernel),
@@ -203,7 +203,7 @@ namespace PosKernel.AI.Services
                     ["specialty"] = "Traditional kopitiam culture",
                     ["atmosphere"] = "Busy and authentic",
                     ["target_service_time"] = "2-4 minutes",
-                    ["languages"] = new[] { "English", "Mandarin", "Cantonese", "Hokkien", "Malay" }
+                    ["languages"] = new[] { "English", "Mandarin", "Cantonese", "Hokkien", "Malay", "Tamil" }
                 }
             };
         }

@@ -71,6 +71,32 @@ namespace PosKernel.AI.Interfaces
     }
     
     /// <summary>
+    /// Interface for displaying log messages.
+    /// </summary>
+    public interface ILogDisplay
+    {
+        /// <summary>
+        /// Adds a log message.
+        /// </summary>
+        void AddLog(string message);
+        
+        /// <summary>
+        /// Shows a system status message in the log.
+        /// </summary>
+        void ShowStatus(string message);
+        
+        /// <summary>
+        /// Shows an error message in the log.
+        /// </summary>
+        void ShowError(string message);
+        
+        /// <summary>
+        /// Clears the log display.
+        /// </summary>
+        void Clear();
+    }
+    
+    /// <summary>
     /// Interface for the overall UI layout.
     /// </summary>
     public interface IUserInterface
@@ -84,6 +110,11 @@ namespace PosKernel.AI.Interfaces
         /// Gets the receipt display component.
         /// </summary>
         IReceiptDisplay Receipt { get; }
+        
+        /// <summary>
+        /// Gets the log display component.
+        /// </summary>
+        ILogDisplay Log { get; }
         
         /// <summary>
         /// Initializes the UI.

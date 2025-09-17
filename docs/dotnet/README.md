@@ -436,4 +436,3 @@ public class LoggingTransaction : IDisposable
         _transaction.Dispose();
     }
 }
-```

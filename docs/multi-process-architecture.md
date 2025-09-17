@@ -354,4 +354,4 @@ public class SystemManager {
 - **Centralized transaction coordination** service
 - **Database backend integration** for enterprise scenarios
 
-This architecture provides a solid foundation for enterprise-grade POS systems while maintaining the simplicity and reliability principles established in your coding standards.
+This architecture provides a solid foundation for enterprise-grade POS systems while maintaining the simplicity and reliability principles established in the current coding standards.

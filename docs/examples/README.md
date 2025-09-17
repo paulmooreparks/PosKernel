@@ -1,4 +1,4 @@
-# Examples
+# POS Kernel Examples
 
 This directory contains practical examples demonstrating POS Kernel usage across different languages and scenarios.
 
@@ -58,7 +58,7 @@ int main() {
 }
 ```
 
-### Python - FFI Wrapper (conceptual)
+### Python - FFI Wrapper
 ```python
 import ctypes
 from contextlib import contextmanager
