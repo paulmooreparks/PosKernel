@@ -20,6 +20,8 @@ using Terminal.Gui.EnumExtensions;
 using PosKernel.AI.Models;
 using PosKernel.AI.Interfaces;
 using PosKernel.AI.Core;
+using PosKernel.AI.Services;
+using PosKernel.Configuration.Services;
 using System.Text;
 using TGAttribute = Terminal.Gui.Attribute;
 
@@ -218,17 +220,40 @@ namespace PosKernel.AI.UI.Terminal {
         private readonly ScrollBar _receiptScrollBar;
         private readonly TerminalLogDisplay _logDisplay;
         private readonly Label _statusBar;
+        private readonly ICurrencyFormattingService? _currencyFormatter;
+        private readonly PosKernel.AI.Services.StoreConfig? _storeConfig;
 
-        public TerminalReceiptDisplay(TextView receiptView, ScrollBar receiptScrollBar, Label statusBar, TerminalLogDisplay logDisplay) {
+        public TerminalReceiptDisplay(TextView receiptView, ScrollBar receiptScrollBar, Label statusBar, TerminalLogDisplay logDisplay, ICurrencyFormattingService? currencyFormatter = null, PosKernel.AI.Services.StoreConfig? storeConfig = null) {
             _receiptView = receiptView ?? throw new ArgumentNullException(nameof(receiptView));
             _receiptScrollBar = receiptScrollBar ?? throw new ArgumentNullException(nameof(receiptScrollBar));
             _logDisplay = logDisplay ?? throw new ArgumentNullException(nameof(logDisplay));
             _statusBar = statusBar ?? throw new ArgumentNullException(nameof(statusBar));
+            _currencyFormatter = currencyFormatter;
+            _storeConfig = storeConfig;
             
             // Connect ScrollBar to TextView
             _receiptScrollBar.PositionChanged += (sender, args) => {
                 _receiptView.TopRow = args.CurrentValue;
             };
+        }
+
+        /// <summary>
+        /// Formats a currency amount using the store's currency formatting service.
+        /// ARCHITECTURAL PRINCIPLE: No client-side currency assumptions - fail fast if service unavailable.
+        /// </summary>
+        /// <param name="amount">The amount to format.</param>
+        /// <returns>Formatted currency string.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when currency formatting service is not available.</exception>
+        private string FormatCurrency(decimal amount) {
+            if (_currencyFormatter != null && _storeConfig != null) {
+                return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreName);
+            }
+            
+            // ARCHITECTURAL PRINCIPLE: Fail fast - no fallback currency formatting assumptions
+            throw new InvalidOperationException(
+                $"DESIGN DEFICIENCY: Currency formatting service not available in TerminalReceiptDisplay. " +
+                $"Cannot format {amount} without proper currency service. " +
+                $"Inject ICurrencyFormattingService and StoreConfig into TerminalReceiptDisplay constructor.");
         }
 
         public void UpdateReceipt(Receipt receipt) {
@@ -245,7 +270,7 @@ namespace PosKernel.AI.UI.Terminal {
             if (receipt.Items.Any()) {
                 foreach (var item in receipt.Items) {
                     var lineTotal = item.CalculatedTotal;
-                    content.AppendLine($"{item.Quantity}x {item.ProductName} - ${lineTotal:F2}");
+                    content.AppendLine($"{item.Quantity}x {item.ProductName} - {FormatCurrency(lineTotal)}");
 
                     if (!string.IsNullOrEmpty(item.PreparationNotes)) {
                         content.AppendLine($"  ({item.PreparationNotes})");
@@ -253,9 +278,8 @@ namespace PosKernel.AI.UI.Terminal {
                 }
 
                 content.AppendLine();
-                content.AppendLine($"TOTAL: ${receipt.Total:F2}");
-            }
-            else {
+                content.AppendLine($"TOTAL: {FormatCurrency(receipt.Total)}");
+            } else {
                 content.AppendLine("(Empty Order)");
             }
 
@@ -282,7 +306,7 @@ namespace PosKernel.AI.UI.Terminal {
                 var itemCount = receipt.Items.Count;
                 var status = receipt.Status switch {
                     PaymentStatus.Building => $"Building Order ({itemCount} items)",
-                    PaymentStatus.ReadyForPayment => $"Ready for Payment - ${receipt.Total:F2}",
+                    PaymentStatus.ReadyForPayment => $"Ready for Payment - {FormatCurrency(receipt.Total)}",
                     PaymentStatus.Completed => "✅ PAID",
                     _ => receipt.Status.ToString()
                 };
@@ -423,6 +447,37 @@ namespace PosKernel.AI.UI.Terminal {
         public TerminalUserInterface() {
         }
 
+        /// <summary>
+        /// Gets the orchestrator instance.
+        /// </summary>
+        public ChatOrchestrator? GetOrchestrator() => _orchestrator;
+
+        /// <summary>
+        /// Gets the log display instance.
+        /// </summary>
+        public TerminalLogDisplay? LogDisplay => _logDisplay;
+
+        /// <summary>
+        /// Gets the prompt display instance.
+        /// </summary>
+        public TerminalPromptDisplay? PromptDisplay => _promptDisplay;
+
+        /// <summary>
+        /// Updates the prompt display with the current prompt from the orchestrator.
+        /// Call this after processing user input to show what prompt was sent to the AI.
+        /// </summary>
+        public void UpdatePromptDisplay() {
+            _logDisplay?.AddLog($"DEBUG: UpdatePromptDisplay called - orchestrator: {(_orchestrator != null ? "YES" : "NO")}, promptDisplay: {(_promptDisplay != null ? "YES" : "NO")}");
+
+            if (_orchestrator?.LastPrompt != null && _promptDisplay != null) {
+                _logDisplay?.AddLog($"DEBUG: Showing prompt with length: {_orchestrator.LastPrompt.Length}");
+                _promptDisplay.ShowPrompt(_orchestrator.LastPrompt);
+                _logDisplay?.AddLog("DEBUG: ShowPrompt called successfully");
+            } else {
+                _logDisplay?.AddLog($"DEBUG: Cannot show prompt - LastPrompt: {(_orchestrator?.LastPrompt != null ? "available" : "null")}, PromptDisplay: {(_promptDisplay != null ? "available" : "null")}");
+            }
+        }
+
         public void SetOrchestrator(ChatOrchestrator orchestrator) {
             _orchestrator = orchestrator;
             
@@ -450,26 +505,45 @@ namespace PosKernel.AI.UI.Terminal {
         }
 
         /// <summary>
-        /// Updates the prompt display with the current prompt from the orchestrator.
-        /// Call this after processing user input to show what prompt was sent to the AI.
+        /// Updates the receipt display with currency formatting services.
+        /// Call this after store config is available to enable proper currency formatting.
         /// </summary>
-        public void UpdatePromptDisplay() {
-            _logDisplay?.AddLog($"DEBUG: UpdatePromptDisplay called - orchestrator: {(_orchestrator != null ? "YES" : "NO")}, promptDisplay: {(_promptDisplay != null ? "YES" : "NO")}");
-
-            if (_orchestrator?.LastPrompt != null && _promptDisplay != null) {
-                _logDisplay?.AddLog($"DEBUG: Showing prompt with length: {_orchestrator.LastPrompt.Length}");
-                _promptDisplay.ShowPrompt(_orchestrator.LastPrompt);
-                _logDisplay?.AddLog("DEBUG: ShowPrompt called successfully");
-            } else {
-                _logDisplay?.AddLog($"DEBUG: Cannot show prompt - LastPrompt: {(_orchestrator?.LastPrompt != null ? "available" : "null")}, PromptDisplay: {(_promptDisplay != null ? "available" : "null")}");
+        public void SetCurrencyServices(ICurrencyFormattingService currencyFormatter, PosKernel.AI.Services.StoreConfig storeConfig) {
+            _logDisplay?.AddLog($"INFO: Setting currency services for store: {storeConfig.StoreName} ({storeConfig.Currency})");
+            
+            // Create new receipt display with currency services
+            var currentReceipt = Receipt as TerminalReceiptDisplay;
+            var statusBar = currentReceipt != null ? GetStatusBarFromReceipt(currentReceipt) : null;
+            
+            if (statusBar != null && currentReceipt != null) {
+                var receiptView = GetReceiptViewFromReceipt(currentReceipt);
+                var receiptScrollBar = GetReceiptScrollBarFromReceipt(currentReceipt);
+                
+                if (receiptView != null && receiptScrollBar != null) {
+                    Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay, currencyFormatter, storeConfig);
+                    _logDisplay?.AddLog("SUCCESS: Receipt display updated with currency formatting services");
+                }
             }
         }
-
-        public ChatOrchestrator? GetOrchestrator() => _orchestrator;
-
-        public TerminalLogDisplay? LogDisplay => _logDisplay;
-
-        public TerminalPromptDisplay? PromptDisplay => _promptDisplay;
+        
+        // Helper methods to extract components from existing receipt display
+        private Label? GetStatusBarFromReceipt(TerminalReceiptDisplay receiptDisplay) {
+            // Use reflection to get the private _statusBar field
+            var field = typeof(TerminalReceiptDisplay).GetField("_statusBar", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            return field?.GetValue(receiptDisplay) as Label;
+        }
+        
+        private TextView? GetReceiptViewFromReceipt(TerminalReceiptDisplay receiptDisplay) {
+            // Use reflection to get the private _receiptView field
+            var field = typeof(TerminalReceiptDisplay).GetField("_receiptView", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            return field?.GetValue(receiptDisplay) as TextView;
+        }
+        
+        private ScrollBar? GetReceiptScrollBarFromReceipt(TerminalReceiptDisplay receiptDisplay) {
+            // Use reflection to get the private _receiptScrollBar field
+            var field = typeof(TerminalReceiptDisplay).GetField("_receiptScrollBar", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            return field?.GetValue(receiptDisplay) as ScrollBar;
+        }
 
         public async Task InitializeAsync() {
             if (_initialized) {
@@ -565,7 +639,7 @@ namespace PosKernel.AI.UI.Terminal {
                 Width = Dim.Percent(chatWidthPercent),
                 Height = Dim.Percent(chatHeightPercent),
                 ReadOnly = true,
-                WordWrap = true,
+                WordWrap = false,
                 CanFocus = false,
             };
 
@@ -805,7 +879,7 @@ namespace PosKernel.AI.UI.Terminal {
                 
                 if (logCollapsed) {
                     // When collapsed, keep container at minimum height but ensure label stays visible
-                    logContainer.Height = Dim.Absolute(0); // Hide the container completely
+                    logContainer.Height = 0; // Hide the container completely
                     logView.Visible = false;
                     logScrollBar.Visible = false;
                 } else {
@@ -832,7 +906,7 @@ namespace PosKernel.AI.UI.Terminal {
                     
                     if (logCollapsed) {
                         // When collapsed, hide container but keep label visible
-                        logContainer.Height = Dim.Absolute(0);
+                        logContainer.Height = 0;
                         logView.Visible = false;
                         logScrollBar.Visible = false;
                     } else {
@@ -868,6 +942,8 @@ namespace PosKernel.AI.UI.Terminal {
             Chat = _terminalChat;
             _logDisplay = new TerminalLogDisplay(logView, logScrollBar);
             _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer);
+            
+            // Receipt display needs currency service - this will be updated later when store config is available
             Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay);
             Log = _logDisplay; // Expose log display through ILogDisplay interface
 
@@ -1114,7 +1190,7 @@ namespace PosKernel.AI.UI.Terminal {
             Application.Invoke(() => {
                 if (_isCollapsed) {
                     // When prompt is collapsed, use minimal height
-                    _containerView.Height = 1;
+                    _containerView.Height = 0;
                 } else {
                     // When prompt is expanded, use percentage or fill available space
                     // Check if we need to expand based on debug pane state

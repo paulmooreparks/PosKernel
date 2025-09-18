@@ -27,6 +27,7 @@ using PosKernel.AI.UI.Terminal;
 using PosKernel.AI.Interfaces;
 using PosKernel.Client;
 using PosKernel.Configuration;
+using PosKernel.Configuration.Services;
 using PosKernel.Extensions.Restaurant.Client;
 
 namespace PosKernel.AI {
@@ -102,6 +103,10 @@ namespace PosKernel.AI {
                     .Build();
                 services.AddSingleton<IConfiguration>(configuration);
 
+                // ARCHITECTURAL FIX: Add currency formatting service - no fallbacks allowed
+                services.AddSingleton<ICurrencyFormattingService, CurrencyFormattingService>();
+                services.AddSingleton<IStoreConfigurationService, SimpleStoreConfigurationService>();
+
                 // Add MCP services
                 var mcpConfig = aiConfig.ToMcpConfiguration();
                 services.AddSingleton(mcpConfig);
@@ -149,16 +154,19 @@ namespace PosKernel.AI {
                         var restaurantClient = serviceProvider.GetRequiredService<RestaurantExtensionClient>();
                         var logger = serviceProvider.GetRequiredService<ILogger<KernelPosToolsProvider>>();
                         var config = serviceProvider.GetRequiredService<IConfiguration>();
+                        var currencyFormatter = serviceProvider.GetRequiredService<ICurrencyFormattingService>();
 
                         ui.Log.AddLog($"INFO: Creating KernelPosToolsProvider with StoreConfig for {storeSelectionResult.StoreName} ({storeSelectionResult.Currency})");
                         
-                        // Use the constructor that takes StoreConfig
+                        // Use the constructor that takes StoreConfig AND currency formatter
                         return new KernelPosToolsProvider(
                             restaurantClient,
                             logger,
                             storeSelectionResult,
                             PosKernelClientFactory.KernelType.RustService,
-                            config);
+                            config,
+                            customizationService: null,
+                            currencyFormatter: currencyFormatter);
                     });
                 }
 
@@ -187,7 +195,13 @@ namespace PosKernel.AI {
                     }
 
                     // Set orchestrator - UI now handles the case where it's not available gracefully
-                    terminalGuiUi.SetOrchestrator(orchestrator);
+                    var terminalGuiUI = (TerminalUserInterface)ui;
+                    terminalGuiUI.SetOrchestrator(orchestrator);
+                    
+                    // Set up currency services for receipt display
+                    var currencyFormatter = updatedServiceProvider.GetRequiredService<ICurrencyFormattingService>();
+                    terminalGuiUI.SetCurrencyServices(currencyFormatter, storeSelectionResult);
+                    
                     ui.Log.AddLog("Orchestrator set successfully");
 
                     // Test connections if using real kernel - NO GRACEFUL HANDLING
@@ -466,6 +480,25 @@ namespace PosKernel.AI {
 
             // Route to debug pane instead of console
             _terminalUi.LogDisplay?.AddLog(logEntry);
+        }
+    }
+
+    /// <summary>
+    /// Simple implementation of IStoreConfigurationService for demo purposes.
+    /// In a real system, this would load store configuration from database or configuration files.
+    /// </summary>
+    internal class SimpleStoreConfigurationService : IStoreConfigurationService
+    {
+        public StoreConfiguration GetStoreConfiguration(string storeId)
+        {
+            // For now, return a generic store configuration
+            // In a real system, this would be looked up from a database or configuration
+            return new StoreConfiguration
+            {
+                StoreId = storeId,
+                Currency = "USD", // Default - will be overridden by StoreConfig
+                Locale = "en-US"  // Default - will be overridden by StoreConfig  
+            };
         }
     }
 }

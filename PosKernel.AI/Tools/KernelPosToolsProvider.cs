@@ -797,21 +797,24 @@ namespace PosKernel.AI.Tools
         }
 
         /// <summary>
-        /// Formats a currency amount using the store's currency formatting service if available,
-        /// otherwise falls back to generic $ formatting.
+        /// Formats a currency amount using the store's currency formatting service.
+        /// ARCHITECTURAL PRINCIPLE: No client-side currency assumptions - fail fast if service unavailable.
         /// </summary>
         /// <param name="amount">The amount to format.</param>
         /// <returns>Formatted currency string.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when currency formatting service is not available.</exception>
         private string FormatCurrency(decimal amount)
         {
             if (_currencyFormatter != null && _storeConfig != null)
             {
-                // Use proper currency formatting service
                 return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreName);
             }
             
-            // Fallback to generic formatting - architecturally acceptable
-            return $"${amount:F2}";
+            // ARCHITECTURAL PRINCIPLE: Fail fast - no fallback currency formatting assumptions
+            throw new InvalidOperationException(
+                $"DESIGN DEFICIENCY: Currency formatting service not available. " +
+                $"Cannot format {amount} without proper currency service. " +
+                $"Register ICurrencyFormattingService in DI container and ensure StoreConfig is provided.");
         }
 
         /// <summary>
