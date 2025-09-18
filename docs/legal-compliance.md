@@ -1,8 +1,8 @@
-# POS Kernel Legal Compliance Architecture
+# POS Kernel ACID Compliance Architecture
 
-## Legal Requirements
+## Design Goals
 
-Every transaction action needs to be written to a persistent log with **legal implications**. This requires:
+Transaction integrity is a core design goal. This requires:
 
 - **ACID Compliance**: Atomicity, Consistency, Isolation, Durability
 - **Write-Ahead Logging (WAL)**: Operations logged before being applied
@@ -33,7 +33,7 @@ pub struct WalEntry {
 - `TransactionTimeout` - Transaction expired
 - `SystemConfigChange` - System configuration modified
 
-### Legal Guarantees
+### Durability Guarantees
 
 #### Before Operation Acknowledgment
 1. **WAL Entry Written** - Operation details logged
@@ -80,7 +80,7 @@ Client Request → WAL Write → DISK FAILS → Error Response
 ├── transaction.wal          # Write-Ahead Log (CRITICAL)
 │   ├── Sequence numbers     # Monotonic ordering
 │   ├── Checksums           # Data integrity
-│   ├── Timestamps          # Legal audit trail
+│   ├── Timestamps          # Audit trail
 │   └── Operation details   # Complete transaction log
 ├── audit.log               # Non-transactional events
 └── config.txt              # System configuration
@@ -95,7 +95,7 @@ sequence,timestamp_nanos,tx_handle,operation_type,data,checksum
 4,1703721600300000000,1,TransactionCommit,committed_at:2023-12-27T...,45678
 ```
 
-## Legal Compliance Features
+## Integrity Features
 
 ### 1. Tamper Evidence
 - **Append-only logs** - No modification of historical records
@@ -111,7 +111,7 @@ sequence,timestamp_nanos,tx_handle,operation_type,data,checksum
 ### 3. Audit Trail
 - **Complete operation history** - Every action logged
 - **Immutable records** - Cannot be altered after written
-- **Legal admissibility** - Structured format for legal proceedings
+- **Structured format** - Consistent, parseable format
 - **Recovery capability** - Reconstruct transactions from logs
 
 ### 4. Consistency Maintenance
@@ -121,7 +121,7 @@ sequence,timestamp_nanos,tx_handle,operation_type,data,checksum
 
 ## API Usage
 
-### Legal Compliance Functions
+### ACID-Compliant Functions
 ```c
 // ACID-compliant transaction operations
 PkResult pk_begin_transaction_legal(...);
@@ -130,14 +130,14 @@ PkResult pk_add_cash_tender_legal(...);
 PkResult pk_commit_transaction_legal(...);
 PkResult pk_abort_transaction_legal(...);
 
-// Legal compliance verification
+// Integrity verification
 PkResult pk_get_transaction_wal_info(...);
 PkResult pk_verify_wal_integrity();
 PkResult pk_force_wal_sync();
 ```
 
 ### Backward Compatibility
-Original functions delegate to legal versions:
+Original functions delegate to ACID versions:
 ```c
 // These now use ACID-compliant implementation
 PkResult pk_begin_transaction(...);  // → pk_begin_transaction_legal(...)
@@ -145,25 +145,25 @@ PkResult pk_add_line(...);           // → pk_add_line_legal(...)
 PkResult pk_add_cash_tender(...);    // → pk_add_cash_tender_legal(...)
 ```
 
-## Legal Benefits
+## Design Benefits
 
-### 1. Regulatory Compliance
-- **PCI DSS** - Payment card industry standards
-- **SOX** - Sarbanes-Oxley financial controls  
-- **GDPR** - Data protection requirements
-- **Industry Standards** - Retail and hospitality regulations
-
-### 2. Legal Admissibility
+### 1. Data Integrity
 - **Complete audit trail** - Every action documented
 - **Tamper evidence** - Detect unauthorized modifications
 - **Chronological ordering** - Establish sequence of events
 - **Data integrity** - Checksums verify accuracy
 
-### 3. Business Protection
+### 2. System Reliability
 - **Dispute resolution** - Clear transaction history
-- **Fraud detection** - Anomaly detection in logs
-- **Regulatory audits** - Demonstrate compliance
-- **Insurance claims** - Document losses and incidents
+- **Anomaly detection** - Pattern recognition in logs
+- **System audits** - Demonstrate operational integrity
+- **Recovery capability** - Reconstruct system state from logs
+
+### 3. Business Value
+- **Regulatory readiness** - Architecture supports compliance requirements
+- **Audit support** - Comprehensive transaction documentation
+- **Fraud detection** - Complete transaction visibility
+- **Data protection** - Immutable transaction records
 
 ## Performance Considerations
 
@@ -172,7 +172,7 @@ PkResult pk_add_cash_tender(...);    // → pk_add_cash_tender_legal(...)
 - **Batch fsync** - Group multiple operations (future optimization)
 - **Memory buffering** - BufWriter reduces syscall overhead
 
-### Read Performance**  
+### Read Performance
 - **Hot data in memory** - Active transactions cached
 - **Read-write locks** - Multiple concurrent readers
 - **Indexed access** - HashMap for O(1) transaction lookup
@@ -182,4 +182,4 @@ PkResult pk_add_cash_tender(...);    // → pk_add_cash_tender_legal(...)
 - **Log rotation** - Archive old WAL files
 - **Retention policies** - Configurable retention periods
 
-This architecture ensures the POS Kernel meets the highest legal compliance standards while maintaining excellent performance characteristics.
+This architecture ensures the POS Kernel maintains transaction integrity and provides comprehensive audit capabilities while maintaining excellent performance characteristics.

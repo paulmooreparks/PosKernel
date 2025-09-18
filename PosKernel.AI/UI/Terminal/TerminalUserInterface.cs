@@ -385,6 +385,16 @@ namespace PosKernel.AI.UI.Terminal {
             }
             
             _logDisplay?.AddLog("INFO: Orchestrator set and system is now ready for input");
+            _logDisplay?.AddLog($"DEBUG: LastPrompt available: {(_orchestrator?.LastPrompt != null ? "YES" : "NO")}");
+            _logDisplay?.AddLog($"DEBUG: PromptDisplay available: {(_promptDisplay != null ? "YES" : "NO")}");
+            
+            // Display the initial prompt that was used during initialization
+            // Use a small delay to ensure orchestrator initialization is complete
+            Task.Delay(100).ContinueWith(_ => {
+                Application.Invoke(() => {
+                    UpdatePromptDisplay();
+                });
+            });
         }
 
         /// <summary>
@@ -392,8 +402,14 @@ namespace PosKernel.AI.UI.Terminal {
         /// Call this after processing user input to show what prompt was sent to the AI.
         /// </summary>
         public void UpdatePromptDisplay() {
+            _logDisplay?.AddLog($"DEBUG: UpdatePromptDisplay called - orchestrator: {(_orchestrator != null ? "YES" : "NO")}, promptDisplay: {(_promptDisplay != null ? "YES" : "NO")}");
+            
             if (_orchestrator?.LastPrompt != null && _promptDisplay != null) {
+                _logDisplay?.AddLog($"DEBUG: Showing prompt with length: {_orchestrator.LastPrompt.Length}");
                 _promptDisplay.ShowPrompt(_orchestrator.LastPrompt);
+                _logDisplay?.AddLog("DEBUG: ShowPrompt called successfully");
+            } else {
+                _logDisplay?.AddLog($"DEBUG: Cannot show prompt - LastPrompt: {(_orchestrator?.LastPrompt != null ? "available" : "null")}, PromptDisplay: {(_promptDisplay != null ? "available" : "null")}");
             }
         }
 
@@ -926,12 +942,19 @@ namespace PosKernel.AI.UI.Terminal {
             _promptContent.AppendLine();
             _promptContent.AppendLine("=== END PROMPT ===");
 
+            // Add some debug logging
+            var parentUI = FindParentTerminalUI();
+            parentUI?.LogDisplay?.AddLog($"DEBUG: TerminalPromptDisplay.ShowPrompt called with prompt length: {prompt.Length}");
+            parentUI?.LogDisplay?.AddLog($"DEBUG: Prompt content length after formatting: {_promptContent.Length}");
+
             Application.Invoke(() => {
                 _promptView.Text = _promptContent.ToString();
                 
                 // Update ScrollBar based on content size
                 var lines = _promptContent.ToString().Split('\n').Length;
                 var viewHeight = _promptView.Frame.Height;
+                
+                parentUI?.LogDisplay?.AddLog($"DEBUG: TextView updated - lines: {lines}, viewHeight: {viewHeight}");
                 
                 if (lines > viewHeight) {
                     _promptScrollBar.ScrollableContentSize = lines;
@@ -947,7 +970,21 @@ namespace PosKernel.AI.UI.Terminal {
                         _promptScrollBar.Position = Math.Max(0, lines - viewHeight);
                     }
                 }
+                
+                parentUI?.LogDisplay?.AddLog("DEBUG: ShowPrompt Application.Invoke completed");
             });
+        }
+
+        // Helper method to find parent TerminalUserInterface for logging
+        private TerminalUserInterface? FindParentTerminalUI() {
+            var currentView = _promptView.SuperView;
+            while (currentView != null) {
+                if (currentView is Toplevel toplevel) {
+                    return toplevel.Data as TerminalUserInterface;
+                }
+                currentView = currentView.SuperView;
+            }
+            return null;
         }
 
         public void ToggleCollapsed() {

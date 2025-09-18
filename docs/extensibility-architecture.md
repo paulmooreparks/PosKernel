@@ -53,7 +53,7 @@ Following Windows NT principles with POS-specific adaptations:
                               ↓
 ┌─────────────────────────────────────────────────────────┐
 │              CUSTOMIZATION ABSTRACTION LAYER (CAL)      │
-│  • Tax Abstraction Interface    • Compliance Isolation  │
+│  • Tax Abstraction Interface    • Regional Isolation    │
 │  • Currency Conversion Layer   • Regulatory Sandboxing  │
 │  • Pricing Abstraction        • Jurisdiction Mapping    │
 │  • Payment Abstraction        • Multi-Layer Government  │
@@ -77,8 +77,8 @@ pub trait CustomizationAbstractionLayer {
     // Tax abstraction - hides complexity of regional tax systems
     fn get_tax_calculator(&self) -> Box<dyn TaxCalculator>;
     
-    // Regulatory abstraction - handles compliance requirements
-    fn get_compliance_auditor(&self) -> Box<dyn ComplianceAuditor>;
+    // Regulatory abstraction - handles regulatory requirements
+    fn get_audit_formatter(&self) -> Box<dyn AuditFormatter>;
     
     // Currency abstraction - handles conversions and formatting
     fn get_currency_handler(&self) -> Box<dyn CurrencyHandler>;
@@ -97,7 +97,7 @@ pub trait CustomizationAbstractionLayer {
 pub struct TurkishCAL {
     jurisdiction_stack: Vec<JurisdictionLevel>, // Municipal -> Provincial -> National
     tax_engine: TurkishTaxEngine,
-    compliance_auditor: TurkishComplianceAuditor,
+    audit_formatter: TurkishAuditFormatter,
     currency_handler: TurkishLiraHandler,
 }
 
@@ -228,7 +228,7 @@ pub struct PluginSandbox {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResourceLimits {
+pub class ResourceLimits {
     max_memory_mb: u32,
     max_cpu_percent: u8,
     max_file_handles: u32,
@@ -444,7 +444,7 @@ pub struct EnterprisePKI { /* ... */ }
 ### Enterprise Deployment
 - **PKI Integration**: Works with enterprise certificate authorities
 - **Policy Enforcement**: Configurable trust requirements per region
-- **Audit Trail**: All plugin operations logged for compliance
+- **Audit Trail**: All plugin operations logged for system integrity
 - **Update Management**: Secure plugin update mechanisms
 
 ## Conclusion
@@ -459,6 +459,6 @@ pub struct EnterprisePKI { /* ... */ }
 
 **Architectural Strength**: The kernel's handle-based design and process isolation are excellent foundations for this security model.
 
-**Recommendation**: Proceed with this approach. It provides the extensibility needed for enterprise POS systems with proper security and compliance.
+**Recommendation**: Proceed with this approach. It provides the extensibility needed for enterprise POS systems with proper security and audit capabilities.
 
 The Windows NT inspiration provides proven patterns that scale well to POS domain requirements.

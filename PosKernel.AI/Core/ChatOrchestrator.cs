@@ -252,6 +252,9 @@ Store: {_storeConfig.StoreName} | Currency: {_storeConfig.Currency}
 
 Greet the customer using your actual menu knowledge!";
 
+            // Store the prompt for UI debugging
+            LastPrompt = enhancedGreetingPrompt;
+
             var availableTools = _kernelToolsProvider.GetAvailableTools();
             var response = await _mcpClient.CompleteWithToolsAsync(enhancedGreetingPrompt, availableTools);
 
@@ -273,6 +276,9 @@ Greet the customer using your actual menu knowledge!";
             };
             
             var greetingPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "greeting", context);
+
+            // Store the prompt for UI debugging
+            LastPrompt = greetingPrompt;
 
             var availableTools = _mockToolsProvider!.GetAvailableTools();
             var response = await _mcpClient.CompleteWithToolsAsync(greetingPrompt, availableTools);

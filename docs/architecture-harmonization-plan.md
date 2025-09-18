@@ -13,7 +13,7 @@ All design documents converge on several key themes:
 1. **Security-First Design**: OS-inspired security model throughout
 2. **Abstraction Layers**: Clean separation between kernel and customization
 3. **Global Readiness**: Culture-neutral kernel with localized user-space
-4. **Compliance by Design**: Legal requirements baked into architecture
+4. **Data Integrity**: Transaction logging and audit trail design goals
 5. **Extensibility**: Plugin-based customization without kernel modification
 6. **Performance**: Multi-process isolation with efficient FFI
 
@@ -21,7 +21,7 @@ All design documents converge on several key themes:
 
 ```mermaid
 graph TD
-    A[Legal Compliance] --> B[Exception Handling]
+    A[Data Integrity] --> B[Exception Handling]
     A --> C[Multi-Process Architecture]
     D[Extensibility] --> E[Internationalization]
     D --> F[Function Granularity] 
@@ -41,7 +41,7 @@ graph TD
 ### 1. Security Model Alignment
 
 **Convergence**: All documents support OS-inspired security:
-- **Legal Compliance**: ACID logging with tamper evidence
+- **Data Integrity**: ACID logging with tamper evidence
 - **Extensibility**: Code-signed plugins with capability-based security  
 - **Multi-Process**: Process isolation for fault tolerance
 - **Exception Handling**: Fail-fast with comprehensive audit trails
@@ -50,7 +50,7 @@ graph TD
 ```rust
 // Unified security model across all components
 pub struct UnifiedSecurityContext {
-    // Legal compliance (from legal-compliance.md)
+    // Data integrity (from legal-compliance.md)
     audit_logger: Arc<TamperProofLogger>,
     wal_integrity: WalIntegrityChecker,
     
@@ -207,7 +207,7 @@ impl UnifiedConfiguration {
 
 1. **Security Throughout**: Every layer implements security controls
 2. **Culture Neutrality**: Kernel never handles localized content
-3. **Legal by Design**: All operations logged for compliance
+3. **Audit by Design**: All operations logged for integrity
 4. **Extensible by Default**: Plugin points at every abstraction level
 5. **Performance First**: Multi-process + efficient FFI + batch operations
 6. **Fail-Safe**: Exception handling prevents data corruption
@@ -242,7 +242,7 @@ pub struct ExtensionSecurityManager {
 ```
 
 **Integration Points**:
-- Build on current legal compliance (ACID logging)
+- Build on current integrity features (ACID logging)
 - Extend current multi-process architecture
 - Maintain current exception handling patterns
 
@@ -283,7 +283,7 @@ pub trait CustomizationAbstractionLayer {
     fn get_tax_calculator(&self) -> Box<dyn TaxCalculator>;
     fn get_currency_handler(&self) -> Box<dyn CurrencyHandler>;
     fn get_jurisdiction_resolver(&self) -> Box<dyn JurisdictionResolver>;
-    fn get_compliance_auditor(&self) -> Box<dyn ComplianceAuditor>;
+    fn get_audit_formatter(&self) -> Box<dyn AuditFormatter>;
 }
 
 // 2. Reference implementations
@@ -324,7 +324,7 @@ pub struct TestFramework {
     scenario_runner: ScenarioRunner,
     performance_tester: PerformanceTester,
     security_tester: SecurityTester,
-    compliance_validator: ComplianceValidator,
+    integrity_validator: IntegrityValidator,
 }
 ```
 
@@ -375,7 +375,7 @@ tx.AddCardTender(5.00m, cardAuth);
 var turkishConfig = new RegionalConfiguration {
     TaxProvider = "TurkishKDV",
     CurrencyHandler = "TurkishLira", 
-    ComplianceAuditor = "TurkishRegulatory"
+    AuditFormatter = "TurkishRegulatory"
 };
 
 PosKernel.ConfigureRegion("TR", turkishConfig);
@@ -398,14 +398,14 @@ mod tests {
 mod integration_tests {
     #[test] fn test_ffi_extension_workflow();
     #[test] fn test_multi_process_coordination();
-    #[test] fn test_legal_compliance_audit();
+    #[test] fn test_integrity_audit();
     #[test] fn test_exception_safety_boundaries();
 }
 
 // Real-world scenario tests
 mod scenario_tests {
     #[test] fn test_turkish_market_deployment();
-    #[test] fn test_german_fiscal_compliance();
+    #[test] fn test_german_fiscal_requirements();
     #[test] fn test_us_multi_jurisdiction_tax();
 }
 ```
@@ -424,11 +424,11 @@ mod scenario_tests {
 - **<100MB Memory Usage**: Per-terminal process memory footprint
 - **Zero Memory Leaks**: 24-hour soak test clean
 
-### Compliance Metrics
+### Integrity Metrics
 - **100% Audit Coverage**: All operations logged with context
 - **Zero Exception Swallowing**: All errors properly handled
 - **ACID Compliance**: All transactions durable before acknowledgment
-- **Legal Admissibility**: Audit trails meet legal standards
+- **Data Integrity**: Audit trails meet technical standards
 
 ## Next Actions
 
