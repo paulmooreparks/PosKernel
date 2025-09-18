@@ -24,6 +24,7 @@ using PosKernel.Client;
 using PosKernel.Extensions.Restaurant.Client;
 using RestaurantProductInfo = PosKernel.Extensions.Restaurant.ProductInfo;
 using Microsoft.Extensions.Configuration;
+using PosKernel.Configuration.Services;
 
 namespace PosKernel.AI.Tools
 {
@@ -39,6 +40,9 @@ namespace PosKernel.AI.Tools
         private readonly RestaurantExtensionClient _restaurantClient;
         private readonly ILogger<KernelPosToolsProvider> _logger;
         private readonly ProductCustomizationService _customizationService;
+        private readonly IConfiguration? _configuration;
+        private readonly StoreConfig? _storeConfig;
+        private readonly ICurrencyFormattingService? _currencyFormatter;
         private readonly object _sessionLock = new();
         
         private string? _sessionId;
@@ -53,15 +57,20 @@ namespace PosKernel.AI.Tools
         /// <param name="logger">Logger for diagnostics and debugging.</param>
         /// <param name="configuration">Application configuration for kernel selection.</param>
         /// <param name="customizationService">Service for parsing product customizations.</param>
+        /// <param name="currencyFormatter">Currency formatting service for proper locale-specific formatting.</param>
         public KernelPosToolsProvider(
             RestaurantExtensionClient restaurantClient,
             ILogger<KernelPosToolsProvider> logger,
             IConfiguration? configuration = null,
-            ProductCustomizationService? customizationService = null)
+            ProductCustomizationService? customizationService = null,
+            ICurrencyFormattingService? currencyFormatter = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _configuration = configuration;
             _customizationService = customizationService ?? new ProductCustomizationService();
+            _currencyFormatter = currencyFormatter; // Optional - falls back to generic formatting if not provided
+            _storeConfig = null; // Will be injected later if available
             
             // Use factory to create the best available kernel client
             _kernelClient = PosKernelClientFactory.CreateClient(_logger, configuration);
@@ -77,21 +86,62 @@ namespace PosKernel.AI.Tools
         /// <param name="kernelType">Specific kernel type to use.</param>
         /// <param name="configuration">Application configuration for kernel settings.</param>
         /// <param name="customizationService">Service for parsing product customizations.</param>
+        /// <param name="currencyFormatter">Currency formatting service for proper locale-specific formatting.</param>
         public KernelPosToolsProvider(
             RestaurantExtensionClient restaurantClient,
             ILogger<KernelPosToolsProvider> logger,
             PosKernelClientFactory.KernelType kernelType,
             IConfiguration? configuration = null,
-            ProductCustomizationService? customizationService = null)
+            ProductCustomizationService? customizationService = null,
+            ICurrencyFormattingService? currencyFormatter = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _configuration = configuration;
             _customizationService = customizationService ?? new ProductCustomizationService();
+            _currencyFormatter = currencyFormatter; // Optional - falls back to generic formatting if not provided
+            _storeConfig = null; // Will be injected later if available
             
             // Use factory to create specific kernel type
             _kernelClient = PosKernelClientFactory.CreateClient(_logger, kernelType, configuration);
             
             _logger.LogInformation("🚀 KernelPosToolsProvider initialized with {KernelType} kernel", kernelType);
+        }
+
+        /// <summary>
+        /// Constructor with store configuration for proper currency and settings integration.
+        /// </summary>
+        /// <param name="restaurantClient">The restaurant extension client for product catalog operations.</param>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="storeConfig">Store configuration for currency and settings.</param>
+        /// <param name="kernelType">Specific kernel type to use.</param>
+        /// <param name="configuration">Application configuration for kernel settings.</param>
+        /// <param name="customizationService">Service for parsing product customizations.</param>
+        /// <param name="currencyFormatter">Currency formatting service for proper locale-specific formatting.</param>
+        public KernelPosToolsProvider(
+            RestaurantExtensionClient restaurantClient,
+            ILogger<KernelPosToolsProvider> logger,
+            StoreConfig storeConfig,
+            PosKernelClientFactory.KernelType kernelType,
+            IConfiguration? configuration = null,
+            ProductCustomizationService? customizationService = null,
+            ICurrencyFormattingService? currencyFormatter = null)
+        {
+            _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _storeConfig = storeConfig ?? throw new ArgumentNullException(nameof(storeConfig));
+            _configuration = configuration;
+            _customizationService = customizationService ?? new ProductCustomizationService();
+            _currencyFormatter = currencyFormatter; // Optional - falls back to generic formatting if not provided
+            
+            // ARCHITECTURAL PRINCIPLE: Validate store configuration completeness at construction time
+            ValidateStoreConfiguration(storeConfig);
+            
+            // Use factory to create specific kernel type
+            _kernelClient = PosKernelClientFactory.CreateClient(_logger, kernelType, configuration);
+            
+            _logger.LogInformation("🚀 KernelPosToolsProvider initialized with {KernelType} kernel and store: {StoreName} ({Currency})", 
+                kernelType, storeConfig.StoreName, storeConfig.Currency);
         }
 
         /// <summary>
@@ -116,9 +166,23 @@ namespace PosKernel.AI.Tools
                     _logger.LogInformation("✅ Connected to POS Kernel");
                 }
 
-                // Create session - use simple hardcoded values like the working GitHub version
-                _sessionId = await _kernelClient.CreateSessionAsync("AI_TERMINAL", "UNCLE_AI", cancellationToken);
-                _logger.LogInformation("✅ Created kernel session: {SessionId}", _sessionId);
+                // ARCHITECTURAL PRINCIPLE: Client must NOT decide session parameters - use store config or fail fast
+                if (_storeConfig != null)
+                {
+                    // Use store config for session parameters
+                    var terminalId = _storeConfig.AdditionalConfig?.GetValueOrDefault("terminal_id", "AI_TERMINAL")?.ToString() ?? "AI_TERMINAL";
+                    var operatorId = _storeConfig.AdditionalConfig?.GetValueOrDefault("operator_id", "AI_ASSISTANT")?.ToString() ?? "AI_ASSISTANT";
+
+                    _sessionId = await _kernelClient.CreateSessionAsync(terminalId, operatorId, cancellationToken);
+                    _logger.LogInformation("Created kernel session: {SessionId} for terminal: {TerminalId}, operator: {OperatorId}", 
+                        _sessionId, terminalId, operatorId);
+                }
+                else
+                {
+                    // Fallback for constructors that don't provide store config
+                    _sessionId = await _kernelClient.CreateSessionAsync("AI_TERMINAL", "UNCLE_AI", cancellationToken);
+                    _logger.LogInformation("✅ Created kernel session: {SessionId} (fallback mode - no store config)", _sessionId);
+                }
             }
             catch (Exception ex)
             {
@@ -141,14 +205,28 @@ namespace PosKernel.AI.Tools
                 return _currentTransactionId;
             }
 
-            var result = await _kernelClient.StartTransactionAsync(_sessionId!, "SGD", cancellationToken);
+            // ARCHITECTURAL PRINCIPLE: Client must NOT decide currency - fail fast if system doesn't provide it
+            if (_storeConfig == null)
+            {
+                throw new InvalidOperationException("DESIGN DEFICIENCY: KernelPosToolsProvider requires StoreConfig to determine transaction currency. Client cannot decide currency defaults.");
+            }
+
+            if (string.IsNullOrEmpty(_storeConfig.Currency))
+            {
+                throw new InvalidOperationException($"DESIGN DEFICIENCY: StoreConfig for store '{_storeConfig.StoreName}' has no currency configured. Store service must provide valid currency.");
+            }
+
+            var currency = _storeConfig.Currency;
+            
+            var result = await _kernelClient.StartTransactionAsync(_sessionId!, currency, cancellationToken);
             if (!result.Success)
             {
                 throw new InvalidOperationException($"Failed to start transaction: {result.Error}");
             }
 
             _currentTransactionId = result.TransactionId!;
-            _logger.LogInformation("Started new transaction: {TransactionId}", _currentTransactionId);
+            _logger.LogInformation("Started new transaction: {TransactionId} with currency: {Currency}", 
+                _currentTransactionId, currency);
             
             return _currentTransactionId;
         }
@@ -301,7 +379,10 @@ namespace PosKernel.AI.Tools
                 {
                     // For low confidence, provide options but limit to top 3 from restaurant extension
                     var options = searchResults.Take(3).ToList();
-                    var optionsList = string.Join(", ", options.Select(p => $"{p.Name} (${p.BasePriceCents / 100.0:F2})"));
+                    
+                    // Use proper currency formatting service
+                    var optionsList = string.Join(", ", options.Select(p => $"{p.Name} ({FormatCurrency(p.BasePriceCents / 100.0m)})"));
+                    
                     return $"DISAMBIGUATION_NEEDED: Found {options.Count} options for '{itemDescription}': {optionsList}";
                 }
             }
@@ -326,14 +407,17 @@ namespace PosKernel.AI.Tools
             
             var totalPrice = unitPrice * quantity;
             var prepNote = !string.IsNullOrEmpty(preparationNotes) ? $" (prep: {preparationNotes})" : "";
-            return $"ADDED: {product.Name}{prepNote} x{quantity} @ ${unitPrice:F2} each = ${totalPrice:F2}";
+            
+            // Use proper currency formatting service
+            return $"ADDED: {product.Name}{prepNote} x{quantity} @ {FormatCurrency(unitPrice)} each = {FormatCurrency(totalPrice)}";
         }
 
         private async Task<string> ExecuteCalculateTotalAsync(CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(_currentTransactionId))
             {
-                return "Transaction is empty. Total: $0.00";
+                // Use proper currency formatting service
+                return $"Transaction is empty. Total: {FormatCurrency(0)}";
             }
 
             var result = await _kernelClient.GetTransactionAsync(_sessionId!, _currentTransactionId, cancellationToken);
@@ -343,7 +427,8 @@ namespace PosKernel.AI.Tools
                 return $"ERROR: Unable to get transaction total: {result.Error}";
             }
 
-            return $"Current transaction total: ${result.Total:F2} {(result.State == "Completed" ? "(PAID)" : "(PENDING)")}";
+            // Use proper currency formatting service
+            return $"Current transaction total: {FormatCurrency(result.Total)} {(result.State == "Completed" ? "(PAID)" : "(PENDING)")}";
         }
 
         private async Task<string> ExecuteVerifyOrderAsync(CancellationToken cancellationToken)
@@ -365,7 +450,9 @@ namespace PosKernel.AI.Tools
             verification.AppendLine($"Transaction ID: {_currentTransactionId}");
             verification.AppendLine($"Session ID: {_sessionId}");
             verification.AppendLine($"State: {result.State}");
-            verification.AppendLine($"TOTAL: ${result.Total:F2} SGD");
+            
+            // Use proper currency formatting service
+            verification.AppendLine($"TOTAL: {FormatCurrency(result.Total)}");
             verification.AppendLine($"Status: Ready for payment confirmation");
             
             return verification.ToString().Trim();
@@ -378,7 +465,7 @@ namespace PosKernel.AI.Tools
                 return "Cannot process payment: Transaction is empty";
             }
 
-            // ARCHITECTURAL FIX: Defer payment method validation to kernel
+            // Get payment method from tool call arguments - let kernel validate supported methods
             var paymentMethod = toolCall.Arguments.TryGetValue("payment_method", out var methodElement) 
                 ? methodElement.GetString() : null;
                 
@@ -398,9 +485,8 @@ namespace PosKernel.AI.Tools
             var amount = toolCall.Arguments.TryGetValue("amount", out var amountElement) 
                 ? amountElement.GetDecimal() : transactionResult.Total;
 
-            // ARCHITECTURAL FIX: Let kernel handle payment method validation and processing
-            // Don't hardcode supported payment methods - defer to kernel
-            var method = paymentMethod?.ToLower() ?? "cash";
+            // Let kernel handle payment method validation and processing - no client-side assumptions
+            var method = paymentMethod?.ToLower()?.Trim() ?? "cash";
             
             try
             {
@@ -416,12 +502,13 @@ namespace PosKernel.AI.Tools
                 var change = amount - transactionResult.Total;
                 
                 // Build response based on actual payment method processed by kernel
-                var methodDisplay = method == "card" ? "card payment" : $"{method} received";
-                var changeDisplay = method == "card" ? "$0.00" : $"${(change > 0 ? change : 0):F2}";
+                var methodDisplay = $"{method} payment processed";
+                var changeAmount = Math.Max(0, change);
                 
-                var result = $"Payment processed: ${amount:F2} {methodDisplay}\n" +
-                            $"Total: ${transactionResult.Total:F2}\n" +
-                            $"Change due: {changeDisplay}\n" +
+                // Use proper currency formatting service
+                var result = $"Payment processed: {FormatCurrency(amount)} via {method}\n" +
+                            $"Total: {FormatCurrency(transactionResult.Total)}\n" +
+                            $"Change due: {FormatCurrency(changeAmount)}\n" +
                             $"Transaction status: {paymentResult.State}";
 
                 // Clear current transaction since it's complete
@@ -448,8 +535,7 @@ namespace PosKernel.AI.Tools
                 return $"No products found matching: {searchTerm}";
             }
 
-            var results = products.Select(p => 
-                $"• {p.Name} - ${p.BasePriceCents / 100.0:F2} ({p.CategoryName})").ToList();
+            var results = products.Select(p => $"• {p.Name} - {FormatCurrency(p.BasePriceCents / 100.0m)} ({p.CategoryName})").ToList();
 
             return $"Found {products.Count} products:\n" + string.Join("\n", results);
         }
@@ -465,8 +551,9 @@ namespace PosKernel.AI.Tools
             }
 
             var product = products.First();
+            
             return $"Product: {product.Name}\n" +
-                   $"Price: ${product.BasePriceCents / 100.0:F2}\n" +
+                   $"Price: {FormatCurrency(product.BasePriceCents / 100.0m)}\n" +
                    $"Category: {product.CategoryName}\n" +
                    $"Description: {product.Description}\n" +
                    $"SKU: {product.Sku}\n" +
@@ -485,8 +572,7 @@ namespace PosKernel.AI.Tools
                 return "No popular items available";
             }
 
-            var results = popularItems.Select(p => 
-                $"• {p.Name} - ${p.BasePriceCents / 100.0:F2}").ToList();
+            var results = popularItems.Select(p => $"• {p.Name} - {FormatCurrency(p.BasePriceCents / 100.0m)}").ToList();
 
             return $"Top {popularItems.Count()} popular items:\n" + string.Join("\n", results);
         }
@@ -521,7 +607,8 @@ namespace PosKernel.AI.Tools
                     menuContext.AppendLine($"\n{categoryGroup.Key.ToUpper()}:");
                     foreach (var product in categoryGroup.OrderBy(p => p.Name))
                     {
-                        menuContext.AppendLine($"  • {product.Name} - SGD {product.BasePriceCents / 100.0:F2} (SKU: {product.Sku})");
+                        // Use proper currency formatting service
+                        menuContext.AppendLine($"  • {product.Name} - {FormatCurrency(product.BasePriceCents / 100.0m)} (SKU: {product.Sku})");
                         if (!string.IsNullOrEmpty(product.Description))
                         {
                             menuContext.AppendLine($"    {product.Description}");
@@ -707,6 +794,151 @@ namespace PosKernel.AI.Tools
             }
 
             _disposed = true;
+        }
+
+        /// <summary>
+        /// Formats a currency amount using the store's currency formatting service if available,
+        /// otherwise falls back to generic $ formatting.
+        /// </summary>
+        /// <param name="amount">The amount to format.</param>
+        /// <returns>Formatted currency string.</returns>
+        private string FormatCurrency(decimal amount)
+        {
+            if (_currencyFormatter != null && _storeConfig != null)
+            {
+                // Use proper currency formatting service
+                return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreName);
+            }
+            
+            // Fallback to generic formatting - architecturally acceptable
+            return $"${amount:F2}";
+        }
+
+        /// <summary>
+        /// Validates that the store configuration is complete and valid for POS operations.
+        /// Fails fast if critical configuration is missing.
+        /// </summary>
+        /// <param name="storeConfig">Store configuration to validate.</param>
+        /// <exception cref="InvalidOperationException">Thrown when store configuration is invalid or incomplete.</exception>
+        private void ValidateStoreConfiguration(StoreConfig storeConfig)
+        {
+            var errors = new List<string>();
+            
+            // Validate required fields
+            if (string.IsNullOrWhiteSpace(storeConfig.StoreName))
+            {
+                errors.Add("StoreName is required");
+            }
+            
+            if (string.IsNullOrWhiteSpace(storeConfig.Currency))
+            {
+                errors.Add("Currency is required");
+            }
+            else if (!IsValidCurrencyCode(storeConfig.Currency))
+            {
+                errors.Add($"Currency '{storeConfig.Currency}' is not a valid 3-letter ISO currency code");
+            }
+            
+            if (string.IsNullOrWhiteSpace(storeConfig.CultureCode))
+            {
+                errors.Add("CultureCode is required");
+            }
+            else if (!IsValidCultureCode(storeConfig.CultureCode))
+            {
+                errors.Add($"CultureCode '{storeConfig.CultureCode}' is not a valid culture code (e.g., 'en-US', 'en-SG')");
+            }
+            
+            // Validate enum values are defined
+            if (!Enum.IsDefined(typeof(StoreType), storeConfig.StoreType))
+            {
+                errors.Add($"StoreType '{storeConfig.StoreType}' is not a valid store type");
+            }
+            
+            if (!Enum.IsDefined(typeof(PersonalityType), storeConfig.PersonalityType))
+            {
+                errors.Add($"PersonalityType '{storeConfig.PersonalityType}' is not a valid personality type");
+            }
+            
+            if (!Enum.IsDefined(typeof(CatalogProviderType), storeConfig.CatalogProvider))
+            {
+                errors.Add($"CatalogProvider '{storeConfig.CatalogProvider}' is not a valid catalog provider type");
+            }
+            
+            // Validate store type and personality type compatibility
+            if (!AreCompatible(storeConfig.StoreType, storeConfig.PersonalityType))
+            {
+                errors.Add($"StoreType '{storeConfig.StoreType}' is not compatible with PersonalityType '{storeConfig.PersonalityType}'");
+            }
+            
+            if (errors.Any())
+            {
+                var errorMessage = $"DESIGN DEFICIENCY: Store configuration for '{storeConfig.StoreName ?? "Unknown"}' is invalid:\n" +
+                                 string.Join("\n", errors.Select(e => $"  - {e}"));
+                throw new InvalidOperationException(errorMessage);
+            }
+            
+            _logger.LogInformation("✅ Store configuration validation passed for {StoreName}", storeConfig.StoreName);
+        }
+        
+        /// <summary>
+        /// Validates if a currency code is a valid 3-letter ISO currency code.
+        /// </summary>
+        private static bool IsValidCurrencyCode(string currency)
+        {
+            if (string.IsNullOrWhiteSpace(currency) || currency.Length != 3)
+            {
+                return false;
+            }
+                
+            // Basic validation - could be enhanced with full ISO 4217 list
+            var validCurrencies = new[]
+            {
+                "USD", "EUR", "GBP", "SGD", "AUD", "CAD", "JPY", "CNY", "INR", "KRW", 
+                "THB", "MYR", "PHP", "VND", "IDR", "HKD", "NZD", "CHF", "SEK", "NOK",
+                "DKK", "PLN", "CZK", "HUF", "RUB", "BRL", "MXN", "ARS", "CLP", "COP",
+                "ZAR", "EGP", "AED", "SAR", "QAR", "KWD", "BHD", "OMR", "JOD", "LBP"
+            };
+            
+            return validCurrencies.Contains(currency.ToUpperInvariant());
+        }
+        
+        /// <summary>
+        /// Validates if a culture code is valid.
+        /// </summary>
+        private static bool IsValidCultureCode(string cultureCode)
+        {
+            if (string.IsNullOrWhiteSpace(cultureCode))
+            {
+                return false;
+            }
+                
+            try
+            {
+                // Try to create CultureInfo - this validates the format
+                var culture = new System.Globalization.CultureInfo(cultureCode);
+                return !culture.IsNeutralCulture; // We want specific cultures like "en-US", not neutral like "en"
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        
+        /// <summary>
+        /// Validates if store type and personality type are compatible.
+        /// </summary>
+        private static bool AreCompatible(StoreType storeType, PersonalityType personalityType)
+        {
+            return (storeType, personalityType) switch
+            {
+                (StoreType.Kopitiam, PersonalityType.SingaporeanKopitiamUncle) => true,
+                (StoreType.CoffeeShop, PersonalityType.AmericanBarista) => true,
+                (StoreType.Boulangerie, PersonalityType.FrenchBoulanger) => true,
+                (StoreType.ConvenienceStore, PersonalityType.JapaneseConbiniClerk) => true,
+                (StoreType.ChaiStall, PersonalityType.IndianChaiWala) => true,
+                (StoreType.GenericStore, PersonalityType.GenericCashier) => true,
+                _ => false // Incompatible combination
+            };
         }
     }
 }

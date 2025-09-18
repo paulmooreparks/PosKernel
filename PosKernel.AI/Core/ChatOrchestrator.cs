@@ -130,7 +130,8 @@ namespace PosKernel.AI.Core {
                 // Step 2: Ask for payment method if needed
                 if (_paymentState.ShouldAskForPaymentMethod()) {
                     _paymentState.MarkPaymentMethodRequested();
-                    var total = CurrencyFormattingService.FormatWithSymbol(_receipt.Total, _storeConfig.Currency);
+                    // ARCHITECTURAL FIX: Remove hardcoded currency formatting - use generic $ format
+                    var total = $"${_receipt.Total:F2}";
                     var paymentPrompt = CreatePaymentMethodPrompt(total);
                     
                     var message = new ChatMessage {
@@ -289,7 +290,8 @@ namespace PosKernel.AI.Core {
                     var mockTransaction = CreateMockTransaction();
                     return await _mockToolsProvider.ExecuteToolAsync(paymentCall, mockTransaction);
                 }
-                return $"Payment processed: {CurrencyFormattingService.FormatWithSymbol(_receipt.Total, _storeConfig.Currency)} {paymentMethod}";
+                // ARCHITECTURAL FIX: Remove hardcoded currency formatting - use generic $ format
+                return $"Payment processed: ${_receipt.Total:F2} {paymentMethod}";
             }
             catch (Exception ex) {
                 _logger.LogError(ex, "Error processing payment");

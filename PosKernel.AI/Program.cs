@@ -111,22 +111,13 @@ namespace PosKernel.AI {
                 if (useRealKernel) {
                     ui.Log.AddLog("INFO: Configuring real kernel integration...");
                     
-                    // Register services without try/catch - let failures propagate
+                    // Register services without store config first - will be updated after store selection
                     services.AddSingleton<RestaurantExtensionClient>();
-                    services.AddSingleton<KernelPosToolsProvider>(serviceProvider => {
-                        var restaurantClient = serviceProvider.GetRequiredService<RestaurantExtensionClient>();
-                        var logger = serviceProvider.GetRequiredService<ILogger<KernelPosToolsProvider>>();
-                        var config = serviceProvider.GetRequiredService<IConfiguration>();
-
-                        ui.Log.AddLog("INFO: Creating KernelPosToolsProvider with Rust service...");
-                        
-                        return new KernelPosToolsProvider(
-                            restaurantClient,
-                            logger,
-                            PosKernelClientFactory.KernelType.RustService,
-                            config);
-                    });
-                    ui.Log.AddLog("SUCCESS: Real kernel services configured");
+                    
+                    // DON'T register KernelPosToolsProvider yet - it requires StoreConfig
+                    // It will be registered after store selection
+                    
+                    ui.Log.AddLog("SUCCESS: Real kernel services configured (store config pending)");
                 }
                 else {
                     ui.Log.AddLog("INFO: Using mock services (development mode)");
@@ -136,12 +127,11 @@ namespace PosKernel.AI {
                     services.AddSingleton<PosToolsProvider>();
                 }
 
-                // Add orchestrator
-                services.AddSingleton<ChatOrchestrator>();
-
+                // DON'T add orchestrator yet - it needs the store config too
+                
                 using var serviceProvider = services.BuildServiceProvider();
 
-                // Show store selection dialog within the TUI AFTER services are configured
+                // Show store selection dialog within the TUI AFTER basic services are configured
                 var storeSelectionResult = await ShowStoreSelectionDialogAsync(ui, useRealKernel);
                 if (storeSelectionResult == null) {
                     ui.Log.AddLog("Store selection cancelled - exiting application immediately");
@@ -153,16 +143,36 @@ namespace PosKernel.AI {
 
                 ui.Log.AddLog($"Selected store: {storeSelectionResult.StoreName}");
 
+                // NOW register services that require StoreConfig
+                if (useRealKernel) {
+                    services.AddSingleton<KernelPosToolsProvider>(serviceProvider => {
+                        var restaurantClient = serviceProvider.GetRequiredService<RestaurantExtensionClient>();
+                        var logger = serviceProvider.GetRequiredService<ILogger<KernelPosToolsProvider>>();
+                        var config = serviceProvider.GetRequiredService<IConfiguration>();
+
+                        ui.Log.AddLog($"INFO: Creating KernelPosToolsProvider with StoreConfig for {storeSelectionResult.StoreName} ({storeSelectionResult.Currency})");
+                        
+                        // Use the constructor that takes StoreConfig
+                        return new KernelPosToolsProvider(
+                            restaurantClient,
+                            logger,
+                            storeSelectionResult,
+                            PosKernelClientFactory.KernelType.RustService,
+                            config);
+                    });
+                }
+
+                // Add store configuration and orchestrator
+                services.AddSingleton(storeSelectionResult);
+                services.AddSingleton<ChatOrchestrator>();
+
+                // Rebuild service provider with all services including store config
+                using var updatedServiceProvider = services.BuildServiceProvider();
+
                 try {
                     // Create the orchestrator after store selection
                     var personality = AiPersonalityFactory.CreatePersonality(storeSelectionResult.PersonalityType);
-                    var mcpClient = serviceProvider.GetRequiredService<McpClient>();
-
-                    // Add store configuration to DI for kernel tools to access
-                    services.AddSingleton(storeSelectionResult);
-
-                    // Rebuild service provider with store config
-                    using var updatedServiceProvider = services.BuildServiceProvider();
+                    var mcpClient = updatedServiceProvider.GetRequiredService<McpClient>();
 
                     ChatOrchestrator orchestrator;
                     if (useRealKernel) {
@@ -185,16 +195,16 @@ namespace PosKernel.AI {
                         ui.Log.ShowStatus("Connecting to real kernel services...");
                         
                         // Test Restaurant Extension connection - FAIL FAST if not available
-                        var restaurantClient = serviceProvider.GetRequiredService<RestaurantExtensionClient>();
+                        var restaurantClient = updatedServiceProvider.GetRequiredService<RestaurantExtensionClient>();
                         ui.Log.AddLog("INFO: Testing Restaurant Extension Service connection...");
                         var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
                         ui.Log.ShowStatus($"✅ Connected to Restaurant Extension ({testProducts.Count} test products found)");
                         
                         // Test Kernel connection - FAIL FAST if not available  
-                        var kernelTools = serviceProvider.GetRequiredService<KernelPosToolsProvider>();
+                        var kernelTools = updatedServiceProvider.GetRequiredService<KernelPosToolsProvider>();
                         ui.Log.AddLog("INFO: Testing Kernel Service connection...");
                         // The kernel connection will be tested on first use - let it fail there if needed
-                        ui.Log.ShowStatus("✅ Kernel tools provider ready");
+                        ui.Log.ShowStatus("✅ Kernel tools provider ready with store config");
                     }
 
                     // Show store info
