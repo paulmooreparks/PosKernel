@@ -60,6 +60,11 @@ namespace PosKernel.AI.Core {
         public AiPersonalityConfig Personality => _personality;
 
         /// <summary>
+        /// Gets the last prompt sent to the AI for debugging/refinement purposes.
+        /// </summary>
+        public string? LastPrompt { get; private set; }
+
+        /// <summary>
         /// Initializes a new instance of the ChatOrchestrator.
         /// </summary>
         /// <param name="mcpClient">The MCP client for AI communication.</param>
@@ -173,6 +178,9 @@ namespace PosKernel.AI.Core {
             try {
                 var conversationContext = string.Join("\n", _conversationHistory.TakeLast(8).Select(m => $"{m.Sender}: {m.Content}"));
                 var prompt = CreateIntelligentPrompt(conversationContext, userInput);
+
+                // Store the prompt for UI debugging
+                LastPrompt = prompt;
 
                 var availableTools = _useRealKernel ? _kernelToolsProvider!.GetAvailableTools() : _mockToolsProvider!.GetAvailableTools();
                 var response = await _mcpClient.CompleteWithToolsAsync(prompt, availableTools);

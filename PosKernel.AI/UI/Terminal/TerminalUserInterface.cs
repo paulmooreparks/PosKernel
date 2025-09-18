@@ -107,6 +107,10 @@ namespace PosKernel.AI.UI.Terminal {
                                 ShowMessage(response);
                                 terminalUI?.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
                                 terminalUI?.LogDisplay?.AddLog($"Receipt updated: {orchestrator.CurrentReceipt.Items.Count} items, Status: {orchestrator.CurrentReceipt.Status}");
+                                
+                                // Update prompt display with the last prompt sent to AI
+                                terminalUI?.UpdatePromptDisplay();
+                                
                                 _inputField.SetFocus();
                             });
                         }
@@ -178,12 +182,12 @@ namespace PosKernel.AI.UI.Terminal {
     public class TerminalReceiptDisplay : IReceiptDisplay {
         private readonly TextView _receiptView;
         private readonly TerminalLogDisplay _logDisplay;
-        private readonly Label _statusLabel;
+        private readonly Label _statusBar;
 
-        public TerminalReceiptDisplay(TextView receiptView, Label statusLabel, TerminalLogDisplay logDisplay) {
+        public TerminalReceiptDisplay(TextView receiptView, Label statusBar, TerminalLogDisplay logDisplay) {
             _receiptView = receiptView ?? throw new ArgumentNullException(nameof(receiptView));
             _logDisplay = logDisplay ?? throw new ArgumentNullException(nameof(logDisplay));
-            _statusLabel = statusLabel ?? throw new ArgumentNullException(nameof(statusLabel));
+            _statusBar = statusBar ?? throw new ArgumentNullException(nameof(statusBar));
         }
 
         public void UpdateReceipt(Receipt receipt) {
@@ -229,20 +233,23 @@ namespace PosKernel.AI.UI.Terminal {
                     PaymentStatus.Completed => "✅ PAID",
                     _ => receipt.Status.ToString()
                 };
-                _statusLabel.Text = $"Status: {status}";
+                _statusBar.Text = $"Status: {status}";
             });
         }
 
         public void ShowPaymentStatus(string status) {
             Application.Invoke(() => {
-                _statusLabel.Text = $"💳 {status}";
+                // Only update if we're not currently showing a focus hint
+                if (!_statusBar.Text.ToString().Contains("Viewing")) {
+                    _statusBar.Text = $"Status: {status}";
+                }
             });
         }
 
         public void Clear() {
             Application.Invoke(() => {
                 _receiptView.Text = "";
-                _statusLabel.Text = "Status: Empty";
+                _statusBar.Text = "Status: Empty";
             });
         }
     }
@@ -252,27 +259,78 @@ namespace PosKernel.AI.UI.Terminal {
     /// </summary>
     public class TerminalLogDisplay : ILogDisplay {
         private readonly TextView _logView;
+        private readonly ScrollBar _logScrollBar;
         private readonly StringBuilder _logContent;
+        private readonly List<string> _logEntries = new List<string>();
 
-        public TerminalLogDisplay(TextView logView) {
+        public TerminalLogDisplay(TextView logView, ScrollBar logScrollBar) {
             _logView = logView ?? throw new ArgumentNullException(nameof(logView));
+            _logScrollBar = logScrollBar ?? throw new ArgumentNullException(nameof(logScrollBar));
             _logContent = new StringBuilder();
+            
+            // Connect ScrollBar to TextView following Terminal.Gui ScrollBarDemo pattern
+            _logScrollBar.PositionChanged += (sender, args) => {
+                _logView.TopRow = args.CurrentValue;
+            };
+        }
+
+        private void OnScrollBarPositionChanged(object? sender, EventArgs<int> e) {
+            if (e.CurrentValue >= 0 && e.CurrentValue < _logEntries.Count) {
+                // Update TextView scroll position based on scroll bar
+                _logView.TopRow = e.CurrentValue;
+            }
+        }
+
+        private void OnTextViewKeyDown(object? sender, Key e) {
+            // Update scroll bar position when TextView scrolls via keyboard
+            // Use a small delay to let Terminal.Gui process the scroll first
+            Task.Delay(10).ContinueWith(_ => {
+                Application.Invoke(() => {
+                    _logScrollBar.Position = _logView.TopRow;
+                });
+            });
+        }
+
+        private void OnTextViewMouseClick(object? sender, MouseEventArgs e) {
+            // Update scroll bar position after mouse interaction
+            Task.Delay(10).ContinueWith(_ => {
+                Application.Invoke(() => {
+                    _logScrollBar.Position = _logView.TopRow;
+                });
+            });
         }
 
         public void AddLog(string message) {
             var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-            _logContent.AppendLine($"[{timestamp}] {message}");
-
-            var lines = _logContent.ToString().Split('\n');
-            if (lines.Length > 100) {
-                var recentLines = lines.TakeLast(100);
-                _logContent.Clear();
-                _logContent.AppendLine(string.Join('\n', recentLines));
+            var logEntry = $"[{timestamp}] {message}";
+            
+            _logEntries.Add(logEntry);
+            
+            // Keep only last 1000 entries to prevent memory issues
+            if (_logEntries.Count > 1000) {
+                _logEntries.RemoveAt(0);
             }
-
+            
             Application.Invoke(() => {
-                _logView.Text = _logContent.ToString();
-                _logView.MoveEnd(); // Always auto-scroll debug log to bottom
+                var allLogs = string.Join("\n", _logEntries);
+                _logView.Text = allLogs;
+                
+                // Update ScrollBar based on content size
+                var lines = allLogs.Split('\n').Length;
+                var viewHeight = _logView.Frame.Height;
+                
+                if (lines > viewHeight) {
+                    _logScrollBar.ScrollableContentSize = lines;
+                    _logScrollBar.Visible = true;
+                } else {
+                    _logScrollBar.Visible = false;
+                }
+                
+                // Auto-scroll to bottom to show latest logs
+                _logView.MoveEnd();
+                if (_logScrollBar.Visible) {
+                    _logScrollBar.Position = Math.Max(0, lines - viewHeight);
+                }
             });
         }
 
@@ -286,6 +344,7 @@ namespace PosKernel.AI.UI.Terminal {
 
         public void Clear() {
             _logContent.Clear();
+            _logEntries.Clear();
             Application.Invoke(() => {
                 _logView.Text = "";
             });
@@ -305,6 +364,7 @@ namespace PosKernel.AI.UI.Terminal {
         private Window? _mainWindow;
         private TerminalChatDisplay? _terminalChat;
         private TerminalLogDisplay? _logDisplay;
+        private TerminalPromptDisplay? _promptDisplay;
         private ChatOrchestrator? _orchestrator;
         private ConsoleOutputRedirector? _consoleRedirector;
 
@@ -327,9 +387,21 @@ namespace PosKernel.AI.UI.Terminal {
             _logDisplay?.AddLog("INFO: Orchestrator set and system is now ready for input");
         }
 
+        /// <summary>
+        /// Updates the prompt display with the current prompt from the orchestrator.
+        /// Call this after processing user input to show what prompt was sent to the AI.
+        /// </summary>
+        public void UpdatePromptDisplay() {
+            if (_orchestrator?.LastPrompt != null && _promptDisplay != null) {
+                _promptDisplay.ShowPrompt(_orchestrator.LastPrompt);
+            }
+        }
+
         public ChatOrchestrator? GetOrchestrator() => _orchestrator;
 
         public TerminalLogDisplay? LogDisplay => _logDisplay;
+
+        public TerminalPromptDisplay? PromptDisplay => _promptDisplay;
 
         public async Task InitializeAsync() {
             if (_initialized) {
@@ -364,14 +436,15 @@ namespace PosKernel.AI.UI.Terminal {
             };
 
             // Calculate layout dimensions
-            var chatWidthPercent = 60; // Fixed width for chat area to match screenshot
             var inputHeight = 3;
-            var logHeight = 10; // Fixed height for debug logs
+            var chatHeightPercent = 50; // Fixed width for chat area to match screenshot
+            var chatWidthPercent = 60; // Fixed width for chat area to match screenshot
+            var promptHeightPercent = 20; // Height when expanded, 1 when collapsed
 
             // Create a simple menu WITHOUT interfering with focus
             var quitItem = new MenuItem("_Quit", "", () => Application.RequestStop());
             var fileMenu = new MenuBarItem("_File", new MenuItem[] { quitItem });
-            var helpItem = new MenuItem("_Help", "", ShowHelp);
+            var helpItem = new MenuItem("Show _Help", "", ShowHelp);
             var helpMenu = new MenuBarItem("_Help", new MenuItem[] { helpItem });
 
             var menuBar = new MenuBar();
@@ -380,70 +453,41 @@ namespace PosKernel.AI.UI.Terminal {
 
             _mainWindow.Y = Pos.Bottom(menuBar);
 
-            // Create chat view above input - use Dim.Fill to calculate available space
-            var chatView = new TextView() {
+            var inputPrompt = new Label() {
+                Text = "Type your order here and press Enter to send:",
                 X = 0,
                 Y = Pos.Bottom(menuBar),
-                Width = Dim.Percent(chatWidthPercent),
-                Height = Dim.Fill(inputHeight + logHeight + 4), // Leave space for input, log, and labels
-                ReadOnly = true,
-                WordWrap = true,
-                CanFocus = false,
-                ColorScheme = new ColorScheme() {
-                    Normal = new TGAttribute(Color.Blue, Color.White),
-                    Focus = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotNormal = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotFocus = new TGAttribute(Color.Black, Color.White),
-                    Disabled = new TGAttribute(Color.Gray, Color.White)
-                }
-            };
-
-            // Create receipt view on the right side
-            var receiptView = new TextView() {
-                X = Pos.Right(chatView) + 1,
-                Y = Pos.Bottom(menuBar),
-                Width = Dim.Fill(),
-                Height = Dim.Fill(inputHeight + logHeight + 4), // Same calculation as chat
-                ReadOnly = true,
-                CanFocus = false,
-                ColorScheme = new ColorScheme() {
-                    Normal = new TGAttribute(Color.Blue, Color.White),
-                    Focus = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotNormal = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotFocus = new TGAttribute(Color.Black, Color.White),
-                    Disabled = new TGAttribute(Color.Gray, Color.White)
-                }
+                Width = Dim.Fill()
             };
 
             var inputField = new TextField() {
-                X = 1,
-                Y = Pos.Bottom(chatView) + 2, // Position above log area
-                Width = Dim.Fill(1),
+                X = 0,
+                Y = Pos.Bottom(inputPrompt),
+                Width = Dim.Fill(),
                 Height = inputHeight,
                 CanFocus = true,
                 CursorVisibility = CursorVisibility.Default, // Ensure cursor is visible
                 ColorScheme = new ColorScheme() {
                     Normal = new TGAttribute(Color.Black, Color.White),
-                    Focus = new TGAttribute(Color.Black, Color.BrightCyan),
+                    Focus = new TGAttribute(Color.Black, Color.White),
                     HotNormal = new TGAttribute(Color.Blue, Color.White),
                     HotFocus = new TGAttribute(Color.Blue, Color.BrightCyan),
                     Disabled = new TGAttribute(Color.Gray, Color.White)
                 }
             };
 
-            var inputPrompt = new Label() {
-                Text = "➤ Type your order (Press Enter to send):",
-                X = 1,
-                Y = Pos.Top(inputField) - 1,
+            Label? chatLabel = new Label() {
+                Text = "Chat content:",
+                X = 0,
+                Y = Pos.Bottom(inputField),
                 Width = Dim.Fill()
             };
 
-            // Create debug log view at bottom
-            var logView = new TextView() {
+            var chatView = new TextView() {
                 X = 0,
-                Y = Pos.Bottom(inputField) + 2,
-                Width = Dim.Fill(),
-                Height = Dim.Fill(),
+                Y = Pos.Bottom(chatLabel),
+                Width = Dim.Percent(chatWidthPercent),
+                Height = Dim.Percent(chatHeightPercent),
                 ReadOnly = true,
                 WordWrap = true,
                 CanFocus = false,
@@ -456,21 +500,136 @@ namespace PosKernel.AI.UI.Terminal {
                 }
             };
 
-            var statusLabel = new Label() {
-                Text = "Status: Empty",
-                X = Pos.Left(receiptView) + 1,
-                Y = Pos.Bottom(receiptView),
+            Label? receiptLabel = new Label() {
+                Text = "Receipt:",
+                X = Pos.Right(chatView) + 1,
+                Y = Pos.Bottom(inputField),
                 Width = Dim.Fill()
             };
 
+            var receiptView = new TextView() {
+                X = Pos.Right(chatView) + 1,
+                Y = Pos.Bottom(receiptLabel),
+                Width = Dim.Fill(),
+                Height = Dim.Percent(chatHeightPercent),
+                ReadOnly = true,
+                CanFocus = false,
+                ColorScheme = new ColorScheme() {
+                    Normal = new TGAttribute(Color.Blue, Color.White),
+                    Focus = new TGAttribute(Color.BrightBlue, Color.White),
+                    HotNormal = new TGAttribute(Color.BrightBlue, Color.White),
+                    HotFocus = new TGAttribute(Color.Black, Color.White),
+                    Disabled = new TGAttribute(Color.Gray, Color.White)
+                }
+            };
+
+            // Create prompt context view between input and log
+            var promptLabel = new Label() {
+                Text = "▼ Prompt Context (Click to collapse)",
+                X = 0,
+                Y = Pos.Bottom(chatView),
+                Width = Dim.Fill(),
+                CanFocus = true
+            };
+
+            // Container view for prompt display (starts expanded)
+            var promptContainer = new View() {
+                X = 0,
+                Y = Pos.Bottom(promptLabel),
+                Width = Dim.Fill(),
+                Height = Dim.Percent(promptHeightPercent),
+            };
+
+            var promptView = new TextView() {
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(1), // Leave space for scroll bar
+                Height = Dim.Fill(),
+                ReadOnly = true,
+                WordWrap = false, // Disable word wrap for horizontal scrolling
+                CanFocus = true, // Enable focus for scrolling
+                Visible = true, // Show initially instead of hidden
+                ColorScheme = new ColorScheme() {
+                    Normal = new TGAttribute(Color.DarkGray, Color.White),
+                    Focus = new TGAttribute(Color.Black, Color.White),
+                    HotNormal = new TGAttribute(Color.Blue, Color.White),
+                    HotFocus = new TGAttribute(Color.Blue, Color.White),
+                    Disabled = new TGAttribute(Color.Gray, Color.White)
+                }
+            };
+
+            // Add vertical scroll bar for prompt view
+            var promptScrollBar = new ScrollBar {
+                X = Pos.AnchorEnd(),
+                Y = 0,
+                Height = Dim.Fill(),
+                AutoShow = false, // Don't auto-show, let content determine visibility
+                Visible = true // Show initially instead of hidden
+            };
+
+            promptContainer.Add(promptView);
+            promptContainer.Add(promptScrollBar);
+
+            // Create collapsible debug log view at bottom
             var logLabel = new Label() {
-                Text = "Debug Logs:",
-                X = 1,
-                Y = Pos.Top(logView) - 1,
-                Width = Dim.Fill()
+                Text = "▼ Debug Logs (Click to collapse):",
+                X = 0,
+                Y = Pos.Bottom(promptContainer),
+                Width = Dim.Fill(),
+                CanFocus = true
             };
 
-            // Handle Enter key
+            var logContainer = new View() {
+                X = 0,
+                Y = Pos.Bottom(logLabel),
+                Width = Dim.Fill(),
+                Height = Dim.Fill(1) // Fill all remaining space, leaving room for status bar
+            };
+
+            var logView = new TextView() {
+                X = 0,
+                Y = 0,
+                Width = Dim.Fill(1), // Leave space for scroll bar
+                Height = Dim.Fill(),
+                ReadOnly = true,
+                WordWrap = false, // Disable word wrap for horizontal scrolling
+                CanFocus = true, // Enable focus for scrolling
+                ColorScheme = new ColorScheme() {
+                    Normal = new TGAttribute(Color.Blue, Color.White),
+                    Focus = new TGAttribute(Color.BrightBlue, Color.White),
+                    HotNormal = new TGAttribute(Color.BrightBlue, Color.White),
+                    HotFocus = new TGAttribute(Color.Black, Color.White),
+                    Disabled = new TGAttribute(Color.Gray, Color.White)
+                }
+            };
+
+            // Add vertical scroll bar for log view
+            var logScrollBar = new ScrollBar {
+                X = Pos.AnchorEnd(),
+                Y = 0,
+                Height = Dim.Fill(),
+                AutoShow = false // Don't auto-show, let content determine visibility
+            };
+
+            logContainer.Add(logView);
+            logContainer.Add(logScrollBar);
+
+            // Create status bar at bottom - following Notepad.cs example
+            var statusBar = new Label() {
+                Text = "Status: Empty",
+                X = 0,
+                Y = Pos.AnchorEnd(),
+                Width = Dim.Fill(),
+                ColorScheme = new ColorScheme() {
+                    Normal = new TGAttribute(Color.Black, Color.Gray),
+                    Focus = new TGAttribute(Color.Black, Color.Gray),
+                    HotNormal = new TGAttribute(Color.Black, Color.Gray),
+                    HotFocus = new TGAttribute(Color.Black, Color.Gray),
+                    Disabled = new TGAttribute(Color.Black, Color.Gray)
+                }
+            };
+
+            // Handle Enter key for input
             inputField.KeyDown += (_, e) => {
                 if (e.KeyCode == KeyCode.Enter) {
                     _terminalChat?.OnUserInput();
@@ -478,13 +637,101 @@ namespace PosKernel.AI.UI.Terminal {
                 }
             };
 
-            _top.Add(inputField, menuBar, chatView, receiptView, inputPrompt, statusLabel, logLabel, logView);
+            // Handle click events for collapsible panes
+            promptLabel.MouseClick += (_, e) => {
+                _promptDisplay?.ToggleCollapsed();
+                e.Handled = true;
+            };
+
+            // Add keyboard shortcuts for quick access to prompt view
+            promptLabel.KeyDown += (_, e) => {
+                if (e.KeyCode == KeyCode.Space || e.KeyCode == KeyCode.Enter) {
+                    _promptDisplay?.ToggleCollapsed();
+                    e.Handled = true;
+                }
+            };
+
+            // When prompt view gets focus, show a status hint
+            promptView.HasFocusChanged += (_, e) => {
+                if (promptView.HasFocus) {
+                    statusBar.Text = "Status: Viewing prompt context (Use arrows/PgUp/PgDn to scroll, Tab to move focus)";
+                } else {
+                    statusBar.Text = "Status: Building Order (0 items)";
+                }
+            };
+
+            var logCollapsed = false;
+            logLabel.MouseClick += (_, e) => {
+                logCollapsed = !logCollapsed;
+                var arrow = logCollapsed ? "▶" : "▼";
+                logLabel.Text = $"{arrow} Debug Logs (Click to {(logCollapsed ? "expand" : "collapse")}):";
+                
+                if (logCollapsed) {
+                    // When collapsed, keep container at minimum height but ensure label stays visible
+                    logContainer.Height = Dim.Absolute(0); // Hide the container completely
+                    logView.Visible = false;
+                    logScrollBar.Visible = false;
+                } else {
+                    // When expanded, show container and contents
+                    logContainer.Height = Dim.Fill(1); // Fill remaining space
+                    logView.Visible = true;
+                    logScrollBar.Visible = true;
+                }
+                
+                // Update prompt container size based on debug pane state
+                var newPromptHeight = logCollapsed ? Dim.Fill(3) : Dim.Percent(promptHeightPercent);
+                _promptDisplay?.UpdateContainerSize(newPromptHeight);
+                
+                logContainer.SetNeedsLayout();
+                e.Handled = true;
+            };
+
+            // Add keyboard shortcuts for debug log access
+            logLabel.KeyDown += (_, e) => {
+                if (e.KeyCode == KeyCode.Space || e.KeyCode == KeyCode.Enter) {
+                    logCollapsed = !logCollapsed;
+                    var arrow = logCollapsed ? "▶" : "▼";
+                    logLabel.Text = $"{arrow} Debug Logs (Click to {(logCollapsed ? "expand" : "collapse")}):";
+                    
+                    if (logCollapsed) {
+                        // When collapsed, hide container but keep label visible
+                        logContainer.Height = Dim.Absolute(0);
+                        logView.Visible = false;
+                        logScrollBar.Visible = false;
+                    } else {
+                        // When expanded, show container and contents
+                        logContainer.Height = Dim.Fill(1);
+                        logView.Visible = true;
+                        logScrollBar.Visible = true;
+                    }
+                    
+                    // Update prompt container size based on debug pane state
+                    var newPromptHeight = logCollapsed ? Dim.Fill(3) : Dim.Percent(promptHeightPercent);
+                    _promptDisplay?.UpdateContainerSize(newPromptHeight);
+                    
+                    logContainer.SetNeedsLayout();
+                    e.Handled = true;
+                }
+            };
+
+            // When log view gets focus, show a status hint
+            logView.HasFocusChanged += (_, e) => {
+                if (logView.HasFocus) {
+                    statusBar.Text = "Status: Viewing debug logs (Use arrows/PgUp/PgDn to scroll, Tab to move focus)";
+                } else {
+                    statusBar.Text = "Status: Building Order (0 items)";
+                }
+            };
+
+            _top.Add(inputField, inputPrompt, menuBar, chatLabel, chatView, receiptLabel, receiptView, 
+                    promptLabel, promptContainer, logLabel, logContainer, statusBar);
 
             // Initialize display components
             _terminalChat = new TerminalChatDisplay(chatView, inputField);
             Chat = _terminalChat;
-            _logDisplay = new TerminalLogDisplay(logView);
-            Receipt = new TerminalReceiptDisplay(receiptView, statusLabel, _logDisplay);
+            _logDisplay = new TerminalLogDisplay(logView, logScrollBar);
+            _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer);
+            Receipt = new TerminalReceiptDisplay(receiptView, statusBar, _logDisplay);
             Log = _logDisplay; // Expose log display through ILogDisplay interface
 
             // Redirect console output to debug pane
@@ -530,10 +777,19 @@ namespace PosKernel.AI.UI.Terminal {
                 "• Terminal.Gui interface with store selection dialog\n" +
                 "• Type your order in the chat area\n" +
                 "• Press Enter to send\n" +
-                "• Receipt updates automatically\n\n" +
+                "• Receipt updates automatically\n" +
+                "• Click prompt/log labels to expand/collapse debug info\n\n" +
+                "Navigation:\n" +
+                "• Tab - Move between focusable areas\n" +
+                "• Arrow Keys - Scroll in prompt/log views\n" +
+                "• Page Up/Down - Fast scroll in prompt/log views\n" +
+                "• Home/End - Jump to top/bottom of prompt/log\n\n" +
                 "Shortcuts:\n" +
                 "• Alt+F4 or Ctrl+Q - Quit\n" +
                 "• F1 - Help\n\n" +
+                "Debug Features:\n" +
+                "• Prompt Context: Shows exact prompt sent to AI (scrollable)\n" +
+                "• Debug Logs: System diagnostics and tool execution (scrollable)\n\n" +
                 "Integration Modes:\n" +
                 "• Real Kernel: Uses Rust POS service + SQLite\n" +
                 "• Mock: Development mode with simulated data",
@@ -587,6 +843,151 @@ namespace PosKernel.AI.UI.Terminal {
                 System.Console.SetError(_originalError);
             }
             base.Dispose(disposing);
+        }
+    }
+
+    /// <summary>
+    /// Terminal.GUI-based prompt context display for debugging and refinement.
+    /// Shows the actual prompt sent to the AI with collapsible functionality.
+    /// </summary>
+    public class TerminalPromptDisplay {
+        private readonly TextView _promptView;
+        private readonly ScrollBar _promptScrollBar;
+        private readonly Label _promptLabel;
+        private readonly StringBuilder _promptContent;
+        private bool _isCollapsed = false;
+        private readonly View _containerView;
+
+        public TerminalPromptDisplay(TextView promptView, ScrollBar promptScrollBar, Label promptLabel, View containerView) {
+            _promptView = promptView ?? throw new ArgumentNullException(nameof(promptView));
+            _promptScrollBar = promptScrollBar ?? throw new ArgumentNullException(nameof(promptScrollBar));
+            _promptLabel = promptLabel ?? throw new ArgumentNullException(nameof(promptLabel));
+            _containerView = containerView ?? throw new ArgumentNullException(nameof(containerView));
+            _promptContent = new StringBuilder();
+            
+            // Connect ScrollBar to TextView following Terminal.Gui ScrollBarDemo pattern
+            _promptScrollBar.PositionChanged += (sender, args) => {
+                _promptView.TopRow = args.CurrentValue;
+            };
+            
+            UpdateLabelText();
+        }
+
+        /// <summary>
+        /// Gets whether the prompt display is currently collapsed.
+        /// </summary>
+        public bool IsCollapsed => _isCollapsed;
+
+        /// <summary>
+        /// Updates the container size (called externally when debug pane state changes).
+        /// Call this after processing user input to show what prompt was sent to the AI.
+        /// </summary>
+        public void UpdateContainerSize(Dim newHeight) {
+            if (!_isCollapsed) {
+                Application.Invoke(() => {
+                    _containerView.Height = newHeight;
+                    _containerView.SetNeedsLayout();
+                });
+            }
+        }
+
+        private void OnScrollBarPositionChanged(object? sender, EventArgs<int> e) {
+            var lines = _promptContent.ToString().Split('\n');
+            if (e.CurrentValue >= 0 && e.CurrentValue < lines.Length) {
+                // Update TextView scroll position based on scroll bar
+                _promptView.TopRow = e.CurrentValue;
+            }
+        }
+
+        private void OnTextViewKeyDown(object? sender, Key e) {
+            // Update scroll bar position when TextView scrolls via keyboard
+            // Use a small delay to let Terminal.Gui process the scroll first
+            Task.Delay(10).ContinueWith(_ => {
+                Application.Invoke(() => {
+                    _promptScrollBar.Position = _promptView.TopRow;
+                });
+            });
+        }
+
+        private void OnTextViewMouseClick(object? sender, MouseEventArgs e) {
+            // Update scroll bar position after mouse interaction
+            Task.Delay(10).ContinueWith(_ => {
+                Application.Invoke(() => {
+                    _promptScrollBar.Position = _promptView.TopRow;
+                });
+            });
+        }
+
+        public void ShowPrompt(string prompt) {
+            _promptContent.Clear();
+            _promptContent.AppendLine("=== PROMPT SENT TO AI ===");
+            _promptContent.AppendLine();
+            _promptContent.AppendLine(prompt);
+            _promptContent.AppendLine();
+            _promptContent.AppendLine("=== END PROMPT ===");
+
+            Application.Invoke(() => {
+                _promptView.Text = _promptContent.ToString();
+                
+                // Update ScrollBar based on content size
+                var lines = _promptContent.ToString().Split('\n').Length;
+                var viewHeight = _promptView.Frame.Height;
+                
+                if (lines > viewHeight) {
+                    _promptScrollBar.ScrollableContentSize = lines;
+                    _promptScrollBar.Visible = true;
+                } else {
+                    _promptScrollBar.Visible = false;
+                }
+                
+                // Auto-scroll to bottom for new content
+                if (_promptView.Visible) {
+                    _promptView.MoveEnd();
+                    if (_promptScrollBar.Visible) {
+                        _promptScrollBar.Position = Math.Max(0, lines - viewHeight);
+                    }
+                }
+            });
+        }
+
+        public void ToggleCollapsed() {
+            _isCollapsed = !_isCollapsed;
+            UpdateLabelText();
+            
+            Application.Invoke(() => {
+                if (_isCollapsed) {
+                    // When prompt is collapsed, use minimal height
+                    _containerView.Height = 1;
+                } else {
+                    // When prompt is expanded, use percentage or fill available space
+                    // Check if we need to expand based on debug pane state
+                    _containerView.Height = Dim.Percent(20); // Default expanded size
+                }
+                
+                _promptView.Visible = !_isCollapsed;
+                _promptScrollBar.Visible = !_isCollapsed;
+                
+                // When expanding with content, scroll to bottom
+                if (!_isCollapsed && _promptContent.Length > 0) {
+                    _promptView.MoveEnd();
+                }
+                
+                _containerView.SetNeedsLayout();
+            });
+        }
+
+        private void UpdateLabelText() {
+            var arrow = _isCollapsed ? "▶" : "▼";
+            Application.Invoke(() => {
+                _promptLabel.Text = $"{arrow} Prompt Context (Click to {(_isCollapsed ? "expand" : "collapse")})";
+            });
+        }
+
+        public void Clear() {
+            _promptContent.Clear();
+            Application.Invoke(() => {
+                _promptView.Text = "";
+            });
         }
     }
 }
