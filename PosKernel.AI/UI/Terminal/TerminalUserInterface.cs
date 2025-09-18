@@ -101,7 +101,13 @@ namespace PosKernel.AI.UI.Terminal {
 
                     Task.Run(async () => {
                         try {
+                            var previousReceiptStatus = orchestrator.CurrentReceipt.Status;
+                            terminalUI?.LogDisplay?.AddLog($"DEBUG: Previous receipt status: {previousReceiptStatus}");
+                            
                             var response = await orchestrator.ProcessUserInputAsync(input);
+                            
+                            var newReceiptStatus = orchestrator.CurrentReceipt.Status;
+                            terminalUI?.LogDisplay?.AddLog($"DEBUG: New receipt status: {newReceiptStatus}");
 
                             Application.Invoke(() => {
                                 ShowMessage(response);
@@ -113,6 +119,25 @@ namespace PosKernel.AI.UI.Terminal {
                                 
                                 _inputField.SetFocus();
                             });
+
+                            // ENHANCED: Check for payment completion and generate post-payment message
+                            terminalUI?.LogDisplay?.AddLog($"DEBUG: Checking payment completion - Previous: {previousReceiptStatus}, New: {newReceiptStatus}");
+                            
+                            if (previousReceiptStatus != PaymentStatus.Completed && newReceiptStatus == PaymentStatus.Completed) {
+                                terminalUI?.LogDisplay?.AddLog("INFO: Payment completed - generating post-payment message");
+                                
+                                // Generate a proper post-payment acknowledgment message
+                                var postPaymentMessage = await orchestrator.GeneratePostPaymentMessageAsync();
+                                
+                                Application.Invoke(() => {
+                                    ShowMessage(postPaymentMessage);
+                                    terminalUI?.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
+                                    terminalUI?.UpdatePromptDisplay();
+                                    _inputField.SetFocus();
+                                });
+                            } else {
+                                terminalUI?.LogDisplay?.AddLog($"DEBUG: No payment completion detected - Previous: {previousReceiptStatus}, New: {newReceiptStatus}");
+                            }
                         }
                         catch (Exception ex) {
                             Application.Invoke(() => {
@@ -361,7 +386,6 @@ namespace PosKernel.AI.UI.Terminal {
 
         private bool _initialized = false;
         private Toplevel? _top;
-        private Window? _mainWindow;
         private TerminalChatDisplay? _terminalChat;
         private TerminalLogDisplay? _logDisplay;
         private TerminalPromptDisplay? _promptDisplay;
@@ -428,27 +452,12 @@ namespace PosKernel.AI.UI.Terminal {
 
             _top = new Toplevel();
 
-            // Set a custom color scheme for the top level
             _top.ColorScheme = new ColorScheme() {
-                Normal = new TGAttribute(Color.White, Color.Blue),
-                Focus = new TGAttribute(Color.Yellow, Color.Blue),
-                HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-                Disabled = new TGAttribute(Color.Gray, Color.Blue)
-            };
-
-            // Create a simple window without complex nesting
-            _mainWindow = new Window() {
-                Title = "POS Kernel AI Demo - Terminal GUI"
-            };
-
-            // You can also set the window's color scheme if desired
-            _mainWindow.ColorScheme = new ColorScheme() {
-                Normal = new TGAttribute(Color.Black, Color.Gray),
-                Focus = new TGAttribute(Color.White, Color.DarkGray),
-                HotNormal = new TGAttribute(Color.BrightBlue, Color.Gray),
-                HotFocus = new TGAttribute(Color.BrightYellow, Color.DarkGray),
-                Disabled = new TGAttribute(Color.DarkGray, Color.Gray)
+                Normal = new TGAttribute(Color.Black, Color.White),
+                Focus = new TGAttribute(Color.Black, Color.White),
+                HotNormal = new TGAttribute(Color.BrightRed, Color.White),
+                HotFocus = new TGAttribute(Color.BrightRed, Color.White),
+                Disabled = new TGAttribute(Color.DarkGray, Color.White)
             };
 
             // Calculate layout dimensions
@@ -466,14 +475,28 @@ namespace PosKernel.AI.UI.Terminal {
             var menuBar = new MenuBar();
             menuBar.Menus = new MenuBarItem[] { fileMenu, helpMenu };
             menuBar.Y = 0; // Put menu at top
-
-            _mainWindow.Y = Pos.Bottom(menuBar);
+            
+            menuBar.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.Black, Color.Cyan),
+                Focus = new TGAttribute(Color.White, Color.Blue),
+                HotNormal = new TGAttribute(Color.BrightRed, Color.Cyan),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                Disabled = new TGAttribute(Color.Gray, Color.Cyan)
+            };
 
             var inputPrompt = new Label() {
                 Text = "Type your order here and press Enter to send:",
                 X = 0,
                 Y = Pos.Bottom(menuBar),
                 Width = Dim.Fill()
+            };
+
+            inputPrompt.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.Black, Color.White),
+                Focus = new TGAttribute(Color.Black, Color.White),
+                HotNormal = new TGAttribute(Color.BrightRed, Color.White),
+                HotFocus = new TGAttribute(Color.BrightRed, Color.White),
+                Disabled = new TGAttribute(Color.DarkGray, Color.White)
             };
 
             var inputField = new TextField() {
@@ -483,13 +506,14 @@ namespace PosKernel.AI.UI.Terminal {
                 Height = inputHeight,
                 CanFocus = true,
                 CursorVisibility = CursorVisibility.Default, // Ensure cursor is visible
-                ColorScheme = new ColorScheme() {
-                    Normal = new TGAttribute(Color.Black, Color.White),
-                    Focus = new TGAttribute(Color.Black, Color.White),
-                    HotNormal = new TGAttribute(Color.Blue, Color.White),
-                    HotFocus = new TGAttribute(Color.Blue, Color.BrightCyan),
-                    Disabled = new TGAttribute(Color.Gray, Color.White)
-                }
+            };
+
+            inputField.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.White, Color.Black),
+                Focus = new TGAttribute(Color.BrightYellow, Color.Black),
+                HotNormal = new TGAttribute(Color.BrightCyan, Color.Black),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Black),
+                Disabled = new TGAttribute(Color.Gray, Color.Black)
             };
 
             Label? chatLabel = new Label() {
@@ -497,6 +521,14 @@ namespace PosKernel.AI.UI.Terminal {
                 X = 0,
                 Y = Pos.Bottom(inputField),
                 Width = Dim.Fill()
+            };
+
+            chatLabel.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.Black, Color.White),
+                Focus = new TGAttribute(Color.Black, Color.White),
+                HotNormal = new TGAttribute(Color.BrightRed, Color.White),
+                HotFocus = new TGAttribute(Color.BrightRed, Color.White),
+                Disabled = new TGAttribute(Color.DarkGray, Color.White)
             };
 
             var chatView = new TextView() {
@@ -507,13 +539,14 @@ namespace PosKernel.AI.UI.Terminal {
                 ReadOnly = true,
                 WordWrap = true,
                 CanFocus = false,
-                ColorScheme = new ColorScheme() {
-                    Normal = new TGAttribute(Color.Blue, Color.White),
-                    Focus = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotNormal = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotFocus = new TGAttribute(Color.Black, Color.White),
-                    Disabled = new TGAttribute(Color.Gray, Color.White)
-                }
+            };
+
+            chatView.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.White, Color.Blue),
+                Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                Disabled = new TGAttribute(Color.Gray, Color.Blue)
             };
 
             Label? receiptLabel = new Label() {
@@ -523,6 +556,14 @@ namespace PosKernel.AI.UI.Terminal {
                 Width = Dim.Fill()
             };
 
+            receiptLabel.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.Black, Color.White),
+                Focus = new TGAttribute(Color.Black, Color.White),
+                HotNormal = new TGAttribute(Color.BrightRed, Color.White),
+                HotFocus = new TGAttribute(Color.BrightRed, Color.White),
+                Disabled = new TGAttribute(Color.DarkGray, Color.White)
+            };
+
             var receiptView = new TextView() {
                 X = Pos.Right(chatView) + 1,
                 Y = Pos.Bottom(receiptLabel),
@@ -530,13 +571,14 @@ namespace PosKernel.AI.UI.Terminal {
                 Height = Dim.Percent(chatHeightPercent),
                 ReadOnly = true,
                 CanFocus = false,
-                ColorScheme = new ColorScheme() {
-                    Normal = new TGAttribute(Color.Blue, Color.White),
-                    Focus = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotNormal = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotFocus = new TGAttribute(Color.Black, Color.White),
-                    Disabled = new TGAttribute(Color.Gray, Color.White)
-                }
+            };
+
+            receiptView.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.White, Color.Blue),
+                Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                Disabled = new TGAttribute(Color.Gray, Color.Blue)
             };
 
             // Create prompt context view between input and log
@@ -546,6 +588,14 @@ namespace PosKernel.AI.UI.Terminal {
                 Y = Pos.Bottom(chatView),
                 Width = Dim.Fill(),
                 CanFocus = true
+            };
+
+            promptLabel.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.Black, Color.White),
+                Focus = new TGAttribute(Color.BrightRed, Color.White),
+                HotNormal = new TGAttribute(Color.BrightRed, Color.White),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.White),
+                Disabled = new TGAttribute(Color.DarkGray, Color.White)
             };
 
             // Container view for prompt display (starts expanded)
@@ -565,13 +615,14 @@ namespace PosKernel.AI.UI.Terminal {
                 WordWrap = false, // Disable word wrap for horizontal scrolling
                 CanFocus = true, // Enable focus for scrolling
                 Visible = true, // Show initially instead of hidden
-                ColorScheme = new ColorScheme() {
-                    Normal = new TGAttribute(Color.DarkGray, Color.White),
-                    Focus = new TGAttribute(Color.Black, Color.White),
-                    HotNormal = new TGAttribute(Color.Blue, Color.White),
-                    HotFocus = new TGAttribute(Color.Blue, Color.White),
-                    Disabled = new TGAttribute(Color.Gray, Color.White)
-                }
+            };
+
+            promptView.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.BrightCyan, Color.Blue),
+                Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                HotNormal = new TGAttribute(Color.White, Color.Blue),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                Disabled = new TGAttribute(Color.Gray, Color.Blue)
             };
 
             // Add vertical scroll bar for prompt view
@@ -581,6 +632,14 @@ namespace PosKernel.AI.UI.Terminal {
                 Height = Dim.Fill(),
                 AutoShow = false, // Don't auto-show, let content determine visibility
                 Visible = true // Show initially instead of hidden
+            };
+
+            promptScrollBar.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.White, Color.Blue),
+                Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                Disabled = new TGAttribute(Color.Gray, Color.Blue)
             };
 
             promptContainer.Add(promptView);
@@ -593,6 +652,14 @@ namespace PosKernel.AI.UI.Terminal {
                 Y = Pos.Bottom(promptContainer),
                 Width = Dim.Fill(),
                 CanFocus = true
+            };
+
+            logLabel.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.Black, Color.White),
+                Focus = new TGAttribute(Color.BrightRed, Color.White),
+                HotNormal = new TGAttribute(Color.BrightRed, Color.White),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.White),
+                Disabled = new TGAttribute(Color.DarkGray, Color.White)
             };
 
             var logContainer = new View() {
@@ -610,13 +677,14 @@ namespace PosKernel.AI.UI.Terminal {
                 ReadOnly = true,
                 WordWrap = false, // Disable word wrap for horizontal scrolling
                 CanFocus = true, // Enable focus for scrolling
-                ColorScheme = new ColorScheme() {
-                    Normal = new TGAttribute(Color.Blue, Color.White),
-                    Focus = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotNormal = new TGAttribute(Color.BrightBlue, Color.White),
-                    HotFocus = new TGAttribute(Color.Black, Color.White),
-                    Disabled = new TGAttribute(Color.Gray, Color.White)
-                }
+            };
+
+            logView.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.White, Color.Blue),
+                Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                Disabled = new TGAttribute(Color.Gray, Color.Blue)
             };
 
             // Add vertical scroll bar for log view
@@ -625,6 +693,14 @@ namespace PosKernel.AI.UI.Terminal {
                 Y = 0,
                 Height = Dim.Fill(),
                 AutoShow = false // Don't auto-show, let content determine visibility
+            };
+
+            logScrollBar.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.White, Color.Blue),
+                Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                Disabled = new TGAttribute(Color.Gray, Color.Blue)
             };
 
             logContainer.Add(logView);
@@ -636,13 +712,14 @@ namespace PosKernel.AI.UI.Terminal {
                 X = 0,
                 Y = Pos.AnchorEnd(),
                 Width = Dim.Fill(),
-                ColorScheme = new ColorScheme() {
-                    Normal = new TGAttribute(Color.Black, Color.Gray),
-                    Focus = new TGAttribute(Color.Black, Color.Gray),
-                    HotNormal = new TGAttribute(Color.Black, Color.Gray),
-                    HotFocus = new TGAttribute(Color.Black, Color.Gray),
-                    Disabled = new TGAttribute(Color.Black, Color.Gray)
-                }
+            };
+
+            statusBar.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.Black, Color.Cyan),
+                Focus = new TGAttribute(Color.Black, Color.Cyan),
+                HotNormal = new TGAttribute(Color.Black, Color.Cyan),
+                HotFocus = new TGAttribute(Color.Black, Color.Cyan),
+                Disabled = new TGAttribute(Color.Gray, Color.Cyan)
             };
 
             // Handle Enter key for input
@@ -757,7 +834,6 @@ namespace PosKernel.AI.UI.Terminal {
             System.Console.SetError(errorRedirector);
             _consoleRedirector = outRedirector; // Keep reference for disposal
 
-            // _mainWindow.Data = this;
             _top.Data = this;
             _initialized = true;
             await Task.CompletedTask;

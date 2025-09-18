@@ -195,10 +195,21 @@ namespace PosKernel.AI.Core {
                 if (response.ToolCalls.Any()) {
                     _logger.LogInformation("Executing {ToolCallCount} tool calls", response.ToolCalls.Count);
                     var toolResults = await ExecuteToolsAsync(response.ToolCalls);
-                    var followUpResponse = await GenerateFollowUpAsync(conversationContext, userInput, response.Content, toolResults);
-
-                    if (!string.IsNullOrEmpty(followUpResponse)) {
-                        aiMessage.Content = response.Content + " " + followUpResponse;
+                    
+                    // Check if this is a payment completion (don't generate follow-up)
+                    var isPaymentCompletion = toolResults.Any(result => result.Contains("Payment processed") || result.Contains("Transaction completed"));
+                    
+                    if (isPaymentCompletion) {
+                        _logger.LogInformation("Payment completed - using tool results directly without follow-up");
+                        // For payment completion, just use the tool results as the response
+                        var paymentResult = toolResults.FirstOrDefault(r => r.Contains("Payment processed")) ?? toolResults.First();
+                        aiMessage.Content = FormatPaymentResponse(paymentResult);
+                    } else {
+                        // For non-payment tool calls, generate follow-up as normal
+                        var followUpResponse = await GenerateFollowUpAsync(conversationContext, userInput, response.Content, toolResults);
+                        if (!string.IsNullOrEmpty(followUpResponse)) {
+                            aiMessage.Content = response.Content + " " + followUpResponse;
+                        }
                     }
                 }
 
@@ -215,6 +226,16 @@ namespace PosKernel.AI.Core {
                 _conversationHistory.Add(errorMessage);
                 return errorMessage;
             }
+        }
+
+        /// <summary>
+        /// Clears the prompt cache to allow live editing of prompt files during development.
+        /// Call this method to reload prompts from disk without restarting the application.
+        /// </summary>
+        public void ReloadPrompts()
+        {
+            _logger.LogInformation("Reloading AI personality prompts from disk");
+            AiPersonalityFactory.ClearPromptCache();
         }
 
         /// <summary>
@@ -236,21 +257,28 @@ namespace PosKernel.AI.Core {
 
             var menuContext = await _kernelToolsProvider!.ExecuteToolAsync(menuContextCall);
 
-            var enhancedGreetingPrompt = $@"You are {_personality.StaffTitle} at {_storeConfig.StoreName}.
+            // Use the proper greeting system with menu context injection
+            var context = new PromptContext 
+            {
+                TimeOfDay = timeOfDay,
+                CurrentTime = DateTime.Now.ToString("HH:mm")
+            };
+            
+            var greetingPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "greeting", context);
+            
+            // Append real menu context to the greeting prompt instead of hardcoding
+            var enhancedGreetingPrompt = greetingPrompt + $@"
 
-COMPLETE MENU INTELLIGENCE LOADED:
+## REAL MENU INTELLIGENCE LOADED:
 {menuContext}
 
-GREETING INSTRUCTIONS:
-- Greet the customer warmly in your personality style
-- Mention SPECIFIC items from your actual menu above (not generic terms)
-- Show you know what you serve with actual product names
-- Keep it natural and conversational
+## GREETING ENHANCEMENT:
+- Use SPECIFIC items from your actual menu above (not generic terms)
+- Show you know what you serve with actual product names and prices
+- Mention 2-3 popular items naturally in your greeting
+- Keep it conversational and match your personality style
 
-Time of day: {timeOfDay}
-Store: {_storeConfig.StoreName} | Currency: {_storeConfig.Currency}
-
-Greet the customer using your actual menu knowledge!";
+Store: {_storeConfig.StoreName} | Currency: {_storeConfig.Currency}";
 
             // Store the prompt for UI debugging
             LastPrompt = enhancedGreetingPrompt;
@@ -374,8 +402,9 @@ Greet the customer using your actual menu knowledge!";
                 _receipt.Status = PaymentStatus.Completed;
                 _logger.LogInformation("Payment processed, receipt status updated to Completed");
 
-                // CRITICAL FIX: Start new transaction after payment completion
-                Task.Delay(100).ContinueWith(_ => StartNewTransactionAfterPayment());
+                // DON'T start new transaction immediately - let UI handle the post-payment flow
+                // The UI will detect the Completed status and generate the post-payment message,
+                // then the new transaction will be started in the post-payment flow
             }
         }
 
@@ -392,6 +421,96 @@ Greet the customer using your actual menu knowledge!";
             _receipt.TransactionId = Guid.NewGuid().ToString()[..8]; // New transaction ID
 
             _logger.LogInformation("New transaction started: {TransactionId}", _receipt.TransactionId);
+        }
+
+        /// <summary>
+        /// Generates a post-payment acknowledgment message for natural conversation flow.
+        /// This should be called by the UI after payment completion to provide closure.
+        /// </summary>
+        public async Task<ChatMessage> GeneratePostPaymentMessageAsync() {
+            try {
+                var timeOfDay = DateTime.Now.Hour < 12 ? "morning" : DateTime.Now.Hour < 17 ? "afternoon" : "evening";
+                
+                // Use dedicated post-payment prompt if available, fallback to contextual prompt
+                var context = new PromptContext 
+                {
+                    TimeOfDay = timeOfDay,
+                    CurrentTime = DateTime.Now.ToString("HH:mm"),
+                    // IMPORTANT: Don't pass conversation context - this is a fresh interaction with a new customer
+                    ConversationContext = null,
+                    CartItems = "none",
+                    CurrentTotal = "0.00",
+                    Currency = _storeConfig.Currency
+                };
+
+                string postPaymentPrompt;
+                try {
+                    // Try to load dedicated post-payment prompt
+                    postPaymentPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "post-payment", context);
+                }
+                catch {
+                    // Fallback to contextual prompt if post-payment.md doesn't exist
+                    postPaymentPrompt = $@"You are {_personality.StaffTitle} at {_storeConfig.StoreName},
+
+## POST-PAYMENT SITUATION:
+- Previous customer just completed their transaction successfully
+- That customer has left and you now have a NEW CUSTOMER approaching
+- You should greet this NEW customer warmly 
+- Don't reference the previous transaction - this is a fresh interaction
+- Be ready to take a completely new order from this new customer
+- Time of day: {timeOfDay}
+
+Greet the new customer and offer to take their fresh order:";
+                }
+
+                LastPrompt = postPaymentPrompt;
+
+                var availableTools = _useRealKernel ? _kernelToolsProvider!.GetAvailableTools() : _mockToolsProvider!.GetAvailableTools();
+                var response = await _mcpClient.CompleteWithToolsAsync(postPaymentPrompt, availableTools);
+
+                var postPaymentMessage = new ChatMessage {
+                    Sender = _personality.StaffTitle,
+                    Content = response.Content,
+                    IsSystem = false
+                };
+
+                // CLEAR the conversation history for the new customer interaction
+                _conversationHistory.Clear();
+                _conversationHistory.Add(postPaymentMessage);
+
+                // NOW start the new transaction after the post-payment message is generated
+                StartNewTransactionAfterPayment();
+
+                return postPaymentMessage;
+            }
+            catch (Exception ex) {
+                _logger.LogError(ex, "Error generating post-payment message");
+                
+                // Fallback message based on personality - treat as NEW CUSTOMER
+                var fallbackContent = _personality.Type switch {
+                    PersonalityType.SingaporeanKopitiamUncle => "Next customer! What you want?",
+                    PersonalityType.AmericanBarista => "Hi there! Welcome to the coffee shop. What can I get started for you?",
+                    PersonalityType.FrenchBoulanger => "Bonjour! What can I get for you today?",
+                    PersonalityType.JapaneseConbiniClerk => "Irasshaimase! Welcome! How may I help you?",
+                    PersonalityType.IndianChaiWala => "Namaste! Fresh chai ready! What you want?",
+                    _ => "Welcome! How can I help you today?"
+                };
+                
+                var fallbackMessage = new ChatMessage {
+                    Sender = _personality.StaffTitle,
+                    Content = fallbackContent,
+                    IsSystem = false
+                };
+
+                // Clear conversation history for new customer
+                _conversationHistory.Clear();
+                _conversationHistory.Add(fallbackMessage);
+
+                // Start new transaction even in fallback case
+                StartNewTransactionAfterPayment();
+                
+                return fallbackMessage;
+            }
         }
 
         private bool TryCreateFallbackItem(string result, McpToolCall toolCall, out ReceiptLineItem item) {
@@ -633,6 +752,124 @@ Keep it natural and conversational.";
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Formats a payment completion response in the personality's style.
+        /// </summary>
+        private string FormatPaymentResponse(string paymentResult)
+        {
+            try {
+                // Parse the payment result to extract key information
+                var lines = paymentResult.Split('\n');
+                var amountLine = lines.FirstOrDefault(l => l.Contains("Payment processed:"))?.Trim();
+                var totalLine = lines.FirstOrDefault(l => l.StartsWith("Total:"))?.Trim();
+                var changeLine = lines.FirstOrDefault(l => l.StartsWith("Change due:"))?.Trim();
+
+                if (amountLine == null) {
+                    return paymentResult; // Fallback to raw result
+                }
+
+                // Create personality-appropriate payment confirmation
+                var response = _personality.Type switch {
+                    PersonalityType.SingaporeanKopitiamUncle => FormatKopitiamPaymentResponse(amountLine, totalLine, changeLine),
+                    PersonalityType.AmericanBarista => FormatAmericanPaymentResponse(amountLine, totalLine, changeLine),
+                    PersonalityType.FrenchBoulanger => FormatFrenchPaymentResponse(amountLine, totalLine, changeLine),
+                    PersonalityType.JapaneseConbiniClerk => FormatJapanesePaymentResponse(amountLine, totalLine, changeLine),
+                    PersonalityType.IndianChaiWala => FormatIndianPaymentResponse(amountLine, totalLine, changeLine),
+                    _ => FormatGenericPaymentResponse(amountLine, totalLine, changeLine)
+                };
+
+                return response;
+            }
+            catch (Exception ex) {
+                _logger.LogWarning(ex, "Error formatting payment response, using raw result");
+                return paymentResult; // Fallback to raw payment result
+            }
+        }
+
+        private string FormatKopitiamPaymentResponse(string amountLine, string? totalLine, string? changeLine)
+        {
+            var amount = ExtractAmount(amountLine);
+            var change = ExtractAmount(changeLine ?? "Change due: $0.00");
+
+            if (change > 0) {
+                return $"Thank you! {amountLine?.Replace("Payment processed: ", "")} received. Your change is ${change:F2}. "
+                    + "Come again!";
+            } else {
+                return $"Thank you! {amountLine?.Replace("Payment processed: ", "")} received. Exact amount, no change. "
+                    + "See you next time!";
+            }
+        }
+
+        private string FormatAmericanPaymentResponse(string amountLine, string? totalLine, string? changeLine)
+        {
+            var amount = ExtractAmount(amountLine);
+            var change = ExtractAmount(changeLine ?? "Change due: $0.00");
+
+            if (change > 0) {
+                return $"Perfect! {amountLine?.Replace("Payment processed: ", "")} received. Here's your change of ${change:F2}. Have a great day!";
+            } else {
+                return $"Awesome! {amountLine?.Replace("Payment processed: ", "")} received. Exact change - you're all set!";
+            }
+        }
+
+        private string FormatFrenchPaymentResponse(string amountLine, string? totalLine, string? changeLine)
+        {
+            var change = ExtractAmount(changeLine ?? "Change due: $0.00");
+
+            if (change > 0) {
+                return $"Merci beaucoup! {amountLine?.Replace("Payment processed: ", "")} received. Voici your change: ${change:F2}. À bientôt!";
+            } else {
+                return $"Parfait! {amountLine?.Replace("Payment processed: ", "")} reçu. Montant exact - merci!";
+            }
+        }
+
+        private string FormatJapanesePaymentResponse(string amountLine, string? totalLine, string? changeLine)
+        {
+            var change = ExtractAmount(changeLine ?? "Change due: $0.00");
+
+            if (change > 0) {
+                return $"Arigatou gozaimasu! {amountLine?.Replace("Payment processed: ", "")} received. Your change: ${change:F2}. またお越しくださいませ!";
+            } else {
+                return $"Arigatou gozaimasu! {amountLine?.Replace("Payment processed: ", "")} received. Perfect amount! またね!";
+            }
+        }
+
+        private string FormatIndianPaymentResponse(string amountLine, string? totalLine, string? changeLine)
+        {
+            var change = ExtractAmount(changeLine ?? "Change due: $0.00");
+
+            if (change > 0) {
+                return $"Thank you, sahib! {amountLine?.Replace("Payment processed: ", "")} received. Your change: ${change:F2}. Khush rahiye!";
+            } else {
+                return $"Perfect, sahib! {amountLine?.Replace("Payment processed: ", "")} received. Exact amount! Aapka din shubh ho!";
+            }
+        }
+
+        private string FormatGenericPaymentResponse(string amountLine, string? totalLine, string? changeLine)
+        {
+            var change = ExtractAmount(changeLine ?? "Change due: $0.00");
+
+            if (change > 0) {
+                return $"Thank you! {amountLine?.Replace("Payment processed: ", "")} received. Your change is ${change:F2}.";
+            } else {
+                return $"Thank you! {amountLine?.Replace("Payment processed: ", "")} received. Exact amount.";
+            }
+        }
+
+        private decimal ExtractAmount(string line)
+        {
+            try {
+                var match = System.Text.RegularExpressions.Regex.Match(line, @"\$(\d+\.?\d*)");
+                if (match.Success && decimal.TryParse(match.Groups[1].Value, out var amount)) {
+                    return amount;
+                }
+            }
+            catch (Exception ex) {
+                _logger.LogWarning(ex, "Error extracting amount from line: {Line}", line);
+            }
+            return 0m;
         }
     }
 }

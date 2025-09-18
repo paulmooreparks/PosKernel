@@ -104,6 +104,7 @@ namespace PosKernel.AI.Services
     {
         private static readonly string PromptsBasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Prompts");
         private static readonly Dictionary<string, string> _promptCache = new();
+        private static readonly Dictionary<string, DateTime> _promptFileTimestamps = new();
 
         /// <summary>
         /// Creates a personality configuration based on the specified type.
@@ -131,55 +132,74 @@ namespace PosKernel.AI.Services
         public static void ClearPromptCache()
         {
             _promptCache.Clear();
+            _promptFileTimestamps.Clear();
         }
 
         /// <summary>
-        /// Loads a prompt template from a Markdown file with caching.
+        /// Loads a prompt template from a Markdown file with caching and live editing support.
+        /// Automatically detects file changes and reloads when files are modified.
         /// </summary>
         /// <param name="personalityFolder">The personality folder name (e.g., "AmericanBarista").</param>
-        /// <param name="promptType">The prompt type ("greeting" or "ordering").</param>
+        /// <param name="promptType">The prompt type ("greeting", "ordering", or "post-payment").</param>
         /// <returns>The prompt content as a string.</returns>
         private static string LoadPromptTemplate(string personalityFolder, string promptType)
         {
             var cacheKey = $"{personalityFolder}_{promptType}";
-            
-            if (_promptCache.TryGetValue(cacheKey, out var cachedPrompt))
-            {
-                return cachedPrompt;
-            }
-
             var promptPath = Path.Combine(PromptsBasePath, personalityFolder, $"{promptType}.md");
             
-            if (!File.Exists(promptPath))
+            // Check if file exists and get timestamp
+            if (File.Exists(promptPath))
             {
-                // Fallback to a generic prompt if the specific one doesn't exist
-                var fallbackPath = Path.Combine(PromptsBasePath, "GenericCashier", $"{promptType}.md");
-                if (File.Exists(fallbackPath))
+                var fileTimestamp = File.GetLastWriteTime(promptPath);
+                
+                // Check if we need to reload due to file change
+                var shouldReload = !_promptCache.ContainsKey(cacheKey) || 
+                                   !_promptFileTimestamps.TryGetValue(cacheKey, out var cachedTimestamp) ||
+                                   fileTimestamp > cachedTimestamp;
+                
+                if (shouldReload)
                 {
-                    var fallbackContent = File.ReadAllText(fallbackPath);
-                    _promptCache[cacheKey] = fallbackContent;
-                    return fallbackContent;
+                    var content = File.ReadAllText(promptPath);
+                    _promptCache[cacheKey] = content;
+                    _promptFileTimestamps[cacheKey] = fileTimestamp;
+                    return content;
                 }
                 
-                // Ultimate fallback - inline prompt
-                var inlinePrompt = promptType == "greeting" 
-                    ? "You are a helpful assistant. Greet the customer and ask how you can help them."
-                    : "You are processing a customer order. Help them with their request: '{userInput}'";
-                    
-                _promptCache[cacheKey] = inlinePrompt;
-                return inlinePrompt;
+                // Return cached version if file hasn't changed
+                if (_promptCache.TryGetValue(cacheKey, out var cachedPrompt))
+                {
+                    return cachedPrompt;
+                }
             }
-
-            var content = File.ReadAllText(promptPath);
-            _promptCache[cacheKey] = content;
-            return content;
+            
+            // Fallback to a generic prompt if the specific one doesn't exist
+            var fallbackPath = Path.Combine(PromptsBasePath, "GenericCashier", $"{promptType}.md");
+            if (File.Exists(fallbackPath))
+            {
+                var fallbackContent = File.ReadAllText(fallbackPath);
+                _promptCache[cacheKey] = fallbackContent;
+                _promptFileTimestamps[cacheKey] = File.GetLastWriteTime(fallbackPath);
+                return fallbackContent;
+            }
+            
+            // Ultimate fallback - inline prompt
+            var inlinePrompt = promptType switch
+            {
+                "greeting" => "You are a helpful assistant. Greet the customer and ask how you can help them.",
+                "post-payment" => "You are a helpful assistant. Thank the customer for their payment and offer to help with anything else.",
+                _ => "You are processing a customer order. Help them with their request."
+            };
+                
+            _promptCache[cacheKey] = inlinePrompt;
+            _promptFileTimestamps[cacheKey] = DateTime.Now;
+            return inlinePrompt;
         }
 
         /// <summary>
         /// Loads a prompt template from a Markdown file for the specified personality and prompt type.
         /// </summary>
         /// <param name="personalityType">The personality type.</param>
-        /// <param name="promptType">The prompt type ("greeting" or "ordering").</param>
+        /// <param name="promptType">The prompt type ("greeting", "ordering", or "post-payment").</param>
         /// <returns>The prompt content as a string.</returns>
         public static string LoadPrompt(PersonalityType personalityType, string promptType)
         {
@@ -189,10 +209,10 @@ namespace PosKernel.AI.Services
 
         /// <summary>
         /// Builds a complete prompt by combining the template with dynamic context.
-        /// This is more efficient than string replacement for dynamic content.
+        /// Uses StringBuilder for efficiency, avoiding expensive string replacement.
         /// </summary>
         /// <param name="personalityType">The personality type.</param>
-        /// <param name="promptType">The prompt type ("greeting" or "ordering").</param>
+        /// <param name="promptType">The prompt type ("greeting", "ordering", or "post-payment").</param>
         /// <param name="context">Dynamic context to inject into the prompt.</param>
         /// <returns>The complete prompt with context.</returns>
         public static string BuildPrompt(PersonalityType personalityType, string promptType, PromptContext context)
@@ -205,15 +225,71 @@ namespace PosKernel.AI.Services
                 return BuildOrderingPrompt(template, context);
             }
             
-            // For greeting prompts, simple replacement is fine since it's only done once
+            // For greeting prompts, use StringBuilder instead of string replacement
             if (promptType == "greeting" && context != null)
             {
-                return template
-                    .Replace("{timeOfDay}", context.TimeOfDay ?? "")
-                    .Replace("{currentTime}", context.CurrentTime ?? "");
+                return BuildGreetingPrompt(template, context);
+            }
+            
+            // For post-payment prompts, use simple context injection
+            if (promptType == "post-payment" && context != null)
+            {
+                return BuildPostPaymentPrompt(template, context);
             }
             
             return template;
+        }
+
+        /// <summary>
+        /// Efficiently builds a greeting prompt by appending dynamic context.
+        /// Avoids expensive string replacement operations.
+        /// </summary>
+        private static string BuildGreetingPrompt(string template, PromptContext context)
+        {
+            var sb = new System.Text.StringBuilder(template.Length + 200);
+            
+            // Start with the base template
+            sb.AppendLine(template);
+            sb.AppendLine();
+            
+            // Append dynamic context
+            sb.AppendLine("## CURRENT CONTEXT:");
+            if (!string.IsNullOrEmpty(context.TimeOfDay))
+            {
+                sb.AppendLine($"- Time of day: {context.TimeOfDay}");
+            }
+            if (!string.IsNullOrEmpty(context.CurrentTime))
+            {
+                sb.AppendLine($"- Current time: {context.CurrentTime}");
+            }
+            
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Efficiently builds a post-payment prompt by appending dynamic context.
+        /// Avoids expensive string replacement operations.
+        /// </summary>
+        private static string BuildPostPaymentPrompt(string template, PromptContext context)
+        {
+            var sb = new System.Text.StringBuilder(template.Length + 200);
+            
+            // Start with the base template
+            sb.AppendLine(template);
+            sb.AppendLine();
+            
+            // Append dynamic context
+            sb.AppendLine("## CURRENT CONTEXT:");
+            if (!string.IsNullOrEmpty(context.TimeOfDay))
+            {
+                sb.AppendLine($"- Time of day: {context.TimeOfDay}");
+            }
+            if (!string.IsNullOrEmpty(context.CurrentTime))
+            {
+                sb.AppendLine($"- Current time: {context.CurrentTime}");
+            }
+            
+            return sb.ToString();
         }
 
         /// <summary>
@@ -254,44 +330,13 @@ namespace PosKernel.AI.Services
 
         /// <summary>
         /// Removes placeholder sections from the template since we're building context programmatically.
+        /// This method is now simpler since we removed hardcoded placeholders from markdown files.
         /// </summary>
         private static string RemovePlaceholderSections(string template)
         {
-            // Remove the placeholder sections that we'll replace with programmatic context
-            var lines = template.Split('\n');
-            var result = new System.Text.StringBuilder();
-            bool skipSection = false;
-            
-            foreach (var line in lines)
-            {
-                var trimmedLine = line.Trim();
-                
-                // Skip sections that contain placeholders we're replacing programmatically
-                if (trimmedLine.Contains("{conversationContext}") || 
-                    trimmedLine.Contains("{cartItems}") ||
-                    trimmedLine.Contains("{currentTotal}") ||
-                    trimmedLine.Contains("{currency}") ||
-                    trimmedLine.Contains("{userInput}") ||
-                    trimmedLine == "## Conversation History:" ||
-                    trimmedLine == "## Current Order Status:")
-                {
-                    skipSection = true;
-                    continue;
-                }
-                
-                // End skipping when we hit the next major section
-                if (trimmedLine.StartsWith("## ") && !trimmedLine.Contains("Conversation History") && !trimmedLine.Contains("Current Order Status"))
-                {
-                    skipSection = false;
-                }
-                
-                if (!skipSection && !trimmedLine.Contains("{"))
-                {
-                    result.AppendLine(line);
-                }
-            }
-            
-            return result.ToString();
+            // The template should no longer have placeholder sections since we cleaned up the markdown files
+            // Just return the template as-is since dynamic context is appended, not replaced
+            return template;
         }
 
         private static AiPersonalityConfig CreateAmericanBarista()

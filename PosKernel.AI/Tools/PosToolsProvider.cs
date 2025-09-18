@@ -577,10 +577,12 @@ namespace PosKernel.AI.Tools
             transaction.AddCashTender(amount);
 
             var change = transaction.ChangeDue.ToDecimal();
-            var result = $"Payment processed: ${amount.ToDecimal():F2} cash\n" +
+            
+            // FIXED: Clean payment completion message without asking for more orders
+            var result = $"Payment processed: ${amount.ToDecimal():F2} cash received\n" +
                         $"Total: ${transaction.Total.ToDecimal():F2}\n" +
                         $"Change due: ${change:F2}\n" +
-                        $"Transaction status: {transaction.State}";
+                        $"Transaction completed successfully.";
 
             return result;
         }
