@@ -82,21 +82,41 @@ namespace PosKernel.Extensions.Restaurant
 
         private async Task RunServerLoopAsync()
         {
+            var tasks = new List<Task>();
+            
             while (!_cancellationTokenSource.Token.IsCancellationRequested)
             {
                 try
                 {
                     _logger.LogDebug("Waiting for client connection on pipe: {PipeName}", _pipeName);
                     
-                    using var server = new NamedPipeServerStream(
+                    var server = new NamedPipeServerStream(
                         _pipeName,
                         PipeDirection.InOut,
-                        1); // Single client at a time for simplicity
+                        NamedPipeServerStream.MaxAllowedServerInstances, // Allow multiple clients
+                        PipeTransmissionMode.Byte,
+                        PipeOptions.Asynchronous);
 
                     await server.WaitForConnectionAsync(_cancellationTokenSource.Token);
                     _logger.LogInformation("Client connected to restaurant extension service");
 
-                    await HandleClientAsync(server, _cancellationTokenSource.Token);
+                    // Handle each client in a separate task to allow concurrent connections
+                    var clientTask = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await HandleClientAsync(server, _cancellationTokenSource.Token);
+                        }
+                        finally
+                        {
+                            server.Dispose();
+                        }
+                    });
+                    
+                    tasks.Add(clientTask);
+                    
+                    // Clean up completed tasks
+                    tasks.RemoveAll(t => t.IsCompleted);
                 }
                 catch (OperationCanceledException)
                 {
@@ -107,6 +127,19 @@ namespace PosKernel.Extensions.Restaurant
                 {
                     _logger.LogError(ex, "Error in restaurant extension server loop");
                     // Continue to next iteration
+                }
+            }
+            
+            // Wait for all client tasks to complete
+            if (tasks.Count > 0)
+            {
+                try
+                {
+                    await Task.WhenAll(tasks);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error waiting for client tasks to complete");
                 }
             }
         }

@@ -120,13 +120,12 @@ namespace PosKernel.AI.UI.Terminal {
                                 _inputField.SetFocus();
                             });
 
-                            // ENHANCED: Check for payment completion and generate post-payment message
-                            terminalUI?.LogDisplay?.AddLog($"DEBUG: Checking payment completion - Previous: {previousReceiptStatus}, New: {newReceiptStatus}");
-                            
+                            // CLEAN: Simple post-payment detection
                             if (previousReceiptStatus != PaymentStatus.Completed && newReceiptStatus == PaymentStatus.Completed) {
                                 terminalUI?.LogDisplay?.AddLog("INFO: Payment completed - generating post-payment message");
                                 
-                                // Generate a proper post-payment acknowledgment message
+                                // Wait a moment then generate post-payment message
+                                await Task.Delay(1000);
                                 var postPaymentMessage = await orchestrator.GeneratePostPaymentMessageAsync();
                                 
                                 Application.Invoke(() => {
@@ -144,6 +143,15 @@ namespace PosKernel.AI.UI.Terminal {
                                 ShowError($"Error processing input: {ex.Message}");
                                 terminalUI?.LogDisplay?.AddLog($"ERROR: {ex.Message}");
                                 terminalUI?.LogDisplay?.AddLog($"STACK: {ex.StackTrace}");
+                                
+                                // DEBUGGING: Show a more detailed error message to help diagnose the issue
+                                ShowMessage(new ChatMessage {
+                                    Sender = "System",
+                                    Content = $"🔧 Debug: Processing failed with error: {ex.Message}\n\nCheck the debug logs for details. The system is still ready for your next order.",
+                                    IsSystem = true,
+                                    ShowInCleanMode = true
+                                });
+                                
                                 _inputField.SetFocus();
                             });
                         }
@@ -159,6 +167,7 @@ namespace PosKernel.AI.UI.Terminal {
                     });
                     
                     terminalUI?.LogDisplay?.AddLog($"DEBUG: terminalUI = {(terminalUI != null ? "found" : "NULL")}");
+
                     terminalUI?.LogDisplay?.AddLog($"DEBUG: orchestrator = {(orchestrator != null ? "found" : "NULL")}");
                     terminalUI?.LogDisplay?.AddLog("INFO: User tried to input but orchestrator not ready yet");
                     
@@ -206,13 +215,20 @@ namespace PosKernel.AI.UI.Terminal {
     /// </summary>
     public class TerminalReceiptDisplay : IReceiptDisplay {
         private readonly TextView _receiptView;
+        private readonly ScrollBar _receiptScrollBar;
         private readonly TerminalLogDisplay _logDisplay;
         private readonly Label _statusBar;
 
-        public TerminalReceiptDisplay(TextView receiptView, Label statusBar, TerminalLogDisplay logDisplay) {
+        public TerminalReceiptDisplay(TextView receiptView, ScrollBar receiptScrollBar, Label statusBar, TerminalLogDisplay logDisplay) {
             _receiptView = receiptView ?? throw new ArgumentNullException(nameof(receiptView));
+            _receiptScrollBar = receiptScrollBar ?? throw new ArgumentNullException(nameof(receiptScrollBar));
             _logDisplay = logDisplay ?? throw new ArgumentNullException(nameof(logDisplay));
             _statusBar = statusBar ?? throw new ArgumentNullException(nameof(statusBar));
+            
+            // Connect ScrollBar to TextView
+            _receiptScrollBar.PositionChanged += (sender, args) => {
+                _receiptView.TopRow = args.CurrentValue;
+            };
         }
 
         public void UpdateReceipt(Receipt receipt) {
@@ -246,9 +262,21 @@ namespace PosKernel.AI.UI.Terminal {
             Application.Invoke(() => {
                 _receiptView.Text = content.ToString();
                 
-                // Auto-scroll to bottom if content is long
-                if (content.Length > _receiptView.Maxlength) {
-                    _receiptView.MoveEnd();
+                // Update ScrollBar based on content size
+                var lines = content.ToString().Split('\n').Length;
+                var viewHeight = _receiptView.Frame.Height;
+                
+                if (lines > viewHeight) {
+                    _receiptScrollBar.ScrollableContentSize = lines;
+                    _receiptScrollBar.Visible = true;
+                } else {
+                    _receiptScrollBar.Visible = false;
+                }
+                
+                // Auto-scroll to bottom for new content
+                _receiptView.MoveEnd();
+                if (_receiptScrollBar.Visible) {
+                    _receiptScrollBar.Position = Math.Max(0, lines - viewHeight);
                 }
 
                 var itemCount = receipt.Items.Count;
@@ -427,7 +455,7 @@ namespace PosKernel.AI.UI.Terminal {
         /// </summary>
         public void UpdatePromptDisplay() {
             _logDisplay?.AddLog($"DEBUG: UpdatePromptDisplay called - orchestrator: {(_orchestrator != null ? "YES" : "NO")}, promptDisplay: {(_promptDisplay != null ? "YES" : "NO")}");
-            
+
             if (_orchestrator?.LastPrompt != null && _promptDisplay != null) {
                 _logDisplay?.AddLog($"DEBUG: Showing prompt with length: {_orchestrator.LastPrompt.Length}");
                 _promptDisplay.ShowPrompt(_orchestrator.LastPrompt);
@@ -567,13 +595,29 @@ namespace PosKernel.AI.UI.Terminal {
             var receiptView = new TextView() {
                 X = Pos.Right(chatView) + 1,
                 Y = Pos.Bottom(receiptLabel),
-                Width = Dim.Fill(),
+                Width = Dim.Fill(1), // Leave space for scroll bar
                 Height = Dim.Percent(chatHeightPercent),
                 ReadOnly = true,
                 CanFocus = false,
             };
 
             receiptView.ColorScheme = new ColorScheme() {
+                Normal = new TGAttribute(Color.White, Color.Blue),
+                Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+                HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+                Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            };
+
+            // Add scroll bar for receipt view
+            var receiptScrollBar = new ScrollBar {
+                X = Pos.AnchorEnd(),
+                Y = Pos.Bottom(receiptLabel),
+                Height = Dim.Percent(chatHeightPercent),
+                AutoShow = false
+            };
+
+            receiptScrollBar.ColorScheme = new ColorScheme() {
                 Normal = new TGAttribute(Color.White, Color.Blue),
                 Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
                 HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
@@ -816,7 +860,7 @@ namespace PosKernel.AI.UI.Terminal {
                 }
             };
 
-            _top.Add(inputField, inputPrompt, menuBar, chatLabel, chatView, receiptLabel, receiptView, 
+            _top.Add(inputField, inputPrompt, menuBar, chatLabel, chatView, receiptLabel, receiptView, receiptScrollBar,
                     promptLabel, promptContainer, logLabel, logContainer, statusBar);
 
             // Initialize display components
@@ -824,7 +868,7 @@ namespace PosKernel.AI.UI.Terminal {
             Chat = _terminalChat;
             _logDisplay = new TerminalLogDisplay(logView, logScrollBar);
             _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer);
-            Receipt = new TerminalReceiptDisplay(receiptView, statusBar, _logDisplay);
+            Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay);
             Log = _logDisplay; // Expose log display through ILogDisplay interface
 
             // Redirect console output to debug pane

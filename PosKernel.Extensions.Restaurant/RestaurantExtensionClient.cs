@@ -75,16 +75,35 @@ namespace PosKernel.Extensions.Restaurant.Client
 
             try
             {
-                await _client.ConnectAsync(5000, cancellationToken);
+                _logger.LogInformation("Attempting to connect to restaurant extension service via pipe: {PipeName}", _pipeName);
+                
+                // NO FALLBACKS - fail fast with clear error message
+                await _client.ConnectAsync(15000, cancellationToken);
                 _reader = new StreamReader(_client);
                 _writer = new StreamWriter(_client) { AutoFlush = true };
                 
-                _logger.LogDebug("Connected to restaurant extension service");
+                _logger.LogInformation("✅ Successfully connected to restaurant extension service");
+            }
+            catch (TimeoutException ex)
+            {
+                var errorMessage = $"❌ RESTAURANT EXTENSION SERVICE NOT AVAILABLE: Connection timed out on pipe '{_pipeName}'. " +
+                                 $"Ensure 'dotnet run --project PosKernel.Extensions.Restaurant' is running.";
+                _logger.LogError(ex, errorMessage);
+                throw new InvalidOperationException(errorMessage, ex);
+            }
+            catch (IOException ex)
+            {
+                var errorMessage = $"❌ RESTAURANT EXTENSION SERVICE CONNECTION FAILED: IO error on pipe '{_pipeName}'. " +
+                                 $"Ensure 'dotnet run --project PosKernel.Extensions.Restaurant' is running.";
+                _logger.LogError(ex, errorMessage);
+                throw new InvalidOperationException(errorMessage, ex);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to connect to restaurant extension service");
-                throw new InvalidOperationException("Unable to connect to restaurant extension service. Ensure the service is running.", ex);
+                var errorMessage = $"❌ RESTAURANT EXTENSION SERVICE UNAVAILABLE: {ex.Message} on pipe '{_pipeName}'. " +
+                                 $"Ensure 'dotnet run --project PosKernel.Extensions.Restaurant' is running.";
+                _logger.LogError(ex, errorMessage);
+                throw new InvalidOperationException(errorMessage, ex);
             }
         }
 
@@ -320,7 +339,11 @@ namespace PosKernel.Extensions.Restaurant.Client
 
                 await _writer.WriteLineAsync(requestJson.AsMemory(), cancellationToken);
 
-                var responseJson = await _reader.ReadLineAsync(cancellationToken);
+                // ADD TIMEOUT: Don't wait forever for a response
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(10)); // 10 second timeout
+                
+                var responseJson = await _reader.ReadLineAsync(timeoutCts.Token);
                 if (responseJson == null)
                 {
                     throw new InvalidOperationException("Connection closed by restaurant extension service");
@@ -335,6 +358,17 @@ namespace PosKernel.Extensions.Restaurant.Client
                     Success = false, 
                     Error = "Invalid response format" 
                 };
+            }
+            catch (OperationCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
+            {
+                _logger.LogError("Request timed out waiting for restaurant extension service response");
+                // Force reconnection on next call
+                lock (_lock)
+                {
+                    _client?.Dispose();
+                    _client = null;
+                }
+                throw new InvalidOperationException("Request timed out waiting for restaurant extension service response", ex);
             }
             catch (IOException ex)
             {

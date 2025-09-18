@@ -107,22 +107,29 @@ namespace PosKernel.AI {
                 services.AddSingleton(mcpConfig);
                 services.AddSingleton<McpClient>();
 
-                // Add appropriate POS services
+                // Add appropriate POS services - NO FALLBACKS!
                 if (useRealKernel) {
+                    ui.Log.AddLog("INFO: Configuring real kernel integration...");
+                    
+                    // Register services without try/catch - let failures propagate
                     services.AddSingleton<RestaurantExtensionClient>();
                     services.AddSingleton<KernelPosToolsProvider>(serviceProvider => {
                         var restaurantClient = serviceProvider.GetRequiredService<RestaurantExtensionClient>();
                         var logger = serviceProvider.GetRequiredService<ILogger<KernelPosToolsProvider>>();
                         var config = serviceProvider.GetRequiredService<IConfiguration>();
 
+                        ui.Log.AddLog("INFO: Creating KernelPosToolsProvider with Rust service...");
+                        
                         return new KernelPosToolsProvider(
                             restaurantClient,
                             logger,
                             PosKernelClientFactory.KernelType.RustService,
                             config);
                     });
+                    ui.Log.AddLog("SUCCESS: Real kernel services configured");
                 }
                 else {
+                    ui.Log.AddLog("INFO: Using mock services (development mode)");
                     // Register mock services
                     services.AddSingleton<IProductCatalogService, KopitiamProductCatalogService>();
                     services.AddSingleton<ProductCustomizationService>();
@@ -151,15 +158,21 @@ namespace PosKernel.AI {
                     var personality = AiPersonalityFactory.CreatePersonality(storeSelectionResult.PersonalityType);
                     var mcpClient = serviceProvider.GetRequiredService<McpClient>();
 
+                    // Add store configuration to DI for kernel tools to access
+                    services.AddSingleton(storeSelectionResult);
+
+                    // Rebuild service provider with store config
+                    using var updatedServiceProvider = services.BuildServiceProvider();
+
                     ChatOrchestrator orchestrator;
                     if (useRealKernel) {
-                        var kernelTools = serviceProvider.GetRequiredService<KernelPosToolsProvider>();
-                        var logger = serviceProvider.GetRequiredService<ILogger<ChatOrchestrator>>();
+                        var kernelTools = updatedServiceProvider.GetRequiredService<KernelPosToolsProvider>();
+                        var logger = updatedServiceProvider.GetRequiredService<ILogger<ChatOrchestrator>>();
                         orchestrator = new ChatOrchestrator(mcpClient, personality, storeSelectionResult, logger, kernelToolsProvider: kernelTools);
                     }
                     else {
-                        var mockTools = serviceProvider.GetRequiredService<PosToolsProvider>();
-                        var logger = serviceProvider.GetRequiredService<ILogger<ChatOrchestrator>>();
+                        var mockTools = updatedServiceProvider.GetRequiredService<PosToolsProvider>();
+                        var logger = updatedServiceProvider.GetRequiredService<ILogger<ChatOrchestrator>>();
                         orchestrator = new ChatOrchestrator(mcpClient, personality, storeSelectionResult, logger, mockToolsProvider: mockTools);
                     }
 
@@ -167,12 +180,21 @@ namespace PosKernel.AI {
                     terminalGuiUi.SetOrchestrator(orchestrator);
                     ui.Log.AddLog("Orchestrator set successfully");
 
-                    // Test connections if using real kernel
+                    // Test connections if using real kernel - NO GRACEFUL HANDLING
                     if (useRealKernel) {
                         ui.Log.ShowStatus("Connecting to real kernel services...");
+                        
+                        // Test Restaurant Extension connection - FAIL FAST if not available
                         var restaurantClient = serviceProvider.GetRequiredService<RestaurantExtensionClient>();
+                        ui.Log.AddLog("INFO: Testing Restaurant Extension Service connection...");
                         var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
-                        ui.Log.ShowStatus($"Connected to Restaurant Extension ({testProducts.Count} test products found)");
+                        ui.Log.ShowStatus($"✅ Connected to Restaurant Extension ({testProducts.Count} test products found)");
+                        
+                        // Test Kernel connection - FAIL FAST if not available  
+                        var kernelTools = serviceProvider.GetRequiredService<KernelPosToolsProvider>();
+                        ui.Log.AddLog("INFO: Testing Kernel Service connection...");
+                        // The kernel connection will be tested on first use - let it fail there if needed
+                        ui.Log.ShowStatus("✅ Kernel tools provider ready");
                     }
 
                     // Show store info

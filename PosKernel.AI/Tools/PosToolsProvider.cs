@@ -556,8 +556,15 @@ namespace PosKernel.AI.Tools
 
         private string ExecuteProcessPayment(McpToolCall toolCall, Transaction transaction)
         {
+            // CRITICAL FIX: Handle both "method" and "payment_method" parameter names
             var paymentMethod = toolCall.Arguments.TryGetValue("payment_method", out var methodElement) 
-                ? methodElement.GetString() : "cash";
+                ? methodElement.GetString() : null;
+                
+            if (string.IsNullOrEmpty(paymentMethod))
+            {
+                paymentMethod = toolCall.Arguments.TryGetValue("method", out var altMethodElement) 
+                    ? altMethodElement.GetString() : "cash";
+            }
             
             var amount = toolCall.Arguments.TryGetValue("amount", out var amountElement) 
                 ? new Money((long)(amountElement.GetDecimal() * 100), transaction.Currency)
@@ -568,23 +575,33 @@ namespace PosKernel.AI.Tools
                 return "Cannot process payment: Transaction is empty";
             }
 
-            // For now, only support cash payments in the demo
-            if (paymentMethod?.ToLower() != "cash")
-            {
-                return $"Payment method '{paymentMethod}' not supported in demo. Please use 'cash'";
-            }
-
-            transaction.AddCashTender(amount);
-
-            var change = transaction.ChangeDue.ToDecimal();
+            // CRITICAL FIX: Support both cash and card payments properly
+            var method = paymentMethod?.ToLower() ?? "cash";
             
-            // FIXED: Clean payment completion message without asking for more orders
-            var result = $"Payment processed: ${amount.ToDecimal():F2} cash received\n" +
-                        $"Total: ${transaction.Total.ToDecimal():F2}\n" +
-                        $"Change due: ${change:F2}\n" +
-                        $"Transaction completed successfully.";
-
-            return result;
+            if (method == "cash")
+            {
+                transaction.AddCashTender(amount);
+                var change = transaction.ChangeDue.ToDecimal();
+                
+                return $"Payment processed: ${amount.ToDecimal():F2} cash received\n" +
+                      $"Total: ${transaction.Total.ToDecimal():F2}\n" +
+                      $"Change due: ${change:F2}\n" +
+                      $"Transaction completed successfully.";
+            }
+            else if (method == "card" || method == "credit" || method == "debit")
+            {
+                // For card payments, assume exact amount (no change)
+                transaction.AddCashTender(transaction.Total); // Mock as cash tender internally
+                
+                return $"Payment processed: ${transaction.Total.ToDecimal():F2} card payment\n" +
+                      $"Total: ${transaction.Total.ToDecimal():F2}\n" +
+                      $"Change due: $0.00\n" +
+                      $"Transaction completed successfully.";
+            }
+            else
+            {
+                return $"Payment method '{paymentMethod}' not supported. Please use 'cash' or 'card'.";
+            }
         }
 
         private async Task<string> ExecuteLoadMenuContextAsync(McpToolCall toolCall)

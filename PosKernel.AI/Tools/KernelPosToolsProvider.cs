@@ -31,6 +31,7 @@ namespace PosKernel.AI.Tools
     /// PHASE 3: Real Kernel Integration
     /// MCP tools provider that connects Uncle to the real POS Kernel via IPC.
     /// Replaces mock transactions with actual kernel operations.
+    /// ARCHITECTURAL PRINCIPLE: Defer to kernel and plugins - don't hardcode business logic.
     /// </summary>
     public class KernelPosToolsProvider : IDisposable
     {
@@ -112,17 +113,19 @@ namespace PosKernel.AI.Tools
                 if (!_kernelClient.IsConnected)
                 {
                     await _kernelClient.ConnectAsync(cancellationToken);
-                    _logger.LogInformation("Connected to POS Kernel");
+                    _logger.LogInformation("✅ Connected to POS Kernel");
                 }
 
-                // Create session
+                // Create session - use simple hardcoded values like the working GitHub version
                 _sessionId = await _kernelClient.CreateSessionAsync("AI_TERMINAL", "UNCLE_AI", cancellationToken);
-                _logger.LogInformation("Created kernel session: {SessionId}", _sessionId);
+                _logger.LogInformation("✅ Created kernel session: {SessionId}", _sessionId);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to establish kernel session");
-                throw new InvalidOperationException("Unable to connect to POS Kernel. Ensure the kernel service is running.", ex);
+                var errorMessage = $"❌ POS KERNEL SERVICE NOT AVAILABLE: {ex.Message}. " +
+                                 $"Ensure 'cargo run --bin pos-kernel-service' is running in pos-kernel-rs directory.";
+                _logger.LogError(ex, errorMessage);
+                throw new InvalidOperationException(errorMessage, ex);
             }
         }
 
@@ -264,62 +267,42 @@ namespace PosKernel.AI.Tools
 
             try
             {
-                // Apply cultural translation first
-                var translatedDescription = ApplyCulturalTranslation(itemDescription);
-                var searchTerm = translatedDescription ?? itemDescription;
+                // ARCHITECTURAL FIX: Defer to restaurant extension for search and localization
+                // Don't apply our own cultural translation - let the restaurant extension handle it
+                var searchTerm = itemDescription; // Use raw input - let restaurant extension handle localization
+                
+                _logger.LogDebug("Searching restaurant extension for: '{SearchTerm}'", searchTerm);
 
-                // Search for BASE PRODUCT only - no recipe modifications in the search
+                // Let restaurant extension handle cultural translations and product matching
                 var searchResults = await _restaurantClient.SearchProductsAsync(searchTerm, 10, cancellationToken);
 
-                // If restaurant extension returns no results, this is a real problem - don't mask it
                 if (!searchResults.Any())
                 {
-                    // Try broader search only if exact search fails
+                    _logger.LogDebug("No exact match found, trying broader search through restaurant extension");
+                    // Let restaurant extension handle broader search logic
                     var broadSearchResults = await GetBroaderSearchResults(searchTerm, cancellationToken);
                     if (!broadSearchResults.Any())
                     {
-                        return $"PRODUCT_NOT_FOUND: No products found matching '{itemDescription}' (searched as: '{searchTerm}'). Please check that the Restaurant Extension database is properly initialized.";
+                        return $"PRODUCT_NOT_FOUND: No products found matching '{itemDescription}'. The restaurant extension found no matches.";
                     }
                     searchResults = broadSearchResults;
                 }
 
-                // Apply confidence-based disambiguation logic
-                var exactMatches = searchResults.Where(p => IsExactMatch(searchTerm, p)).ToList();
-                var specificMatches = searchResults.Where(p => IsSpecificProductMatch(searchTerm, p)).ToList();
+                // ARCHITECTURAL FIX: Simplify matching logic - defer complex matching to restaurant extension
+                // The restaurant extension should return products in relevance order
+                var bestMatch = searchResults.First(); // Trust restaurant extension ordering
 
-                // Simple decision logic - let AI handle cultural intelligence
-                if (context == "clarification_response")
+                // For high confidence or clarification responses, use the best match
+                if (context == "clarification_response" || confidence >= 0.8 || searchResults.Count == 1)
                 {
-                    var bestMatch = exactMatches.FirstOrDefault() ?? specificMatches.FirstOrDefault() ?? searchResults.First();
-                    return await AddProductToTransactionAsync(bestMatch, quantity, preparationNotes, cancellationToken);
-                }
-                else if (exactMatches.Count == 1 && searchResults.Count == 1)
-                {
-                    return await AddProductToTransactionAsync(exactMatches.First(), quantity, preparationNotes, cancellationToken);
-                }
-                else if (exactMatches.Count == 1 && confidence >= 0.8)
-                {
-                    return await AddProductToTransactionAsync(exactMatches.First(), quantity, preparationNotes, cancellationToken);
-                }
-                else if (confidence >= 0.9)
-                {
-                    var bestMatch = exactMatches.FirstOrDefault() ?? specificMatches.FirstOrDefault() ?? searchResults.First();
                     return await AddProductToTransactionAsync(bestMatch, quantity, preparationNotes, cancellationToken);
                 }
                 else
                 {
-                    // Return options and let AI decide how to present them
-                    var relevantOptions = GetRelevantDisambiguationOptions(searchTerm, searchResults).Take(3).ToList();
-                    
-                    if (relevantOptions.Any())
-                    {
-                        var optionsList = string.Join(", ", relevantOptions.Select(p => $"{p.Name} (${p.BasePriceCents / 100.0:F2})"));
-                        return $"DISAMBIGUATION_NEEDED: Found {relevantOptions.Count} options for '{itemDescription}': {optionsList}";
-                    }
-                    else
-                    {
-                        return $"PRODUCT_NOT_FOUND: No suitable products found for '{itemDescription}'";
-                    }
+                    // For low confidence, provide options but limit to top 3 from restaurant extension
+                    var options = searchResults.Take(3).ToList();
+                    var optionsList = string.Join(", ", options.Select(p => $"{p.Name} (${p.BasePriceCents / 100.0:F2})"));
+                    return $"DISAMBIGUATION_NEEDED: Found {options.Count} options for '{itemDescription}': {optionsList}";
                 }
             }
             catch (Exception ex)
@@ -344,31 +327,6 @@ namespace PosKernel.AI.Tools
             var totalPrice = unitPrice * quantity;
             var prepNote = !string.IsNullOrEmpty(preparationNotes) ? $" (prep: {preparationNotes})" : "";
             return $"ADDED: {product.Name}{prepNote} x{quantity} @ ${unitPrice:F2} each = ${totalPrice:F2}";
-        }
-
-        private string? ApplyCulturalTranslation(string itemDescription)
-        {
-            var normalized = itemDescription.ToLowerInvariant().Trim();
-            
-            // Cultural translations for kopitiam terms
-            var translations = new Dictionary<string, string>
-            {
-                ["roti kaya"] = "Kaya Toast",
-                ["kaya roti"] = "Kaya Toast", 
-                ["roti butter"] = "Butter Sugar Toast",
-                ["telur separuh masak"] = "Half Boiled Eggs",
-                ["telur setengah masak"] = "Half Boiled Eggs",
-                ["soft boiled egg"] = "Soft Boiled Eggs",
-                ["half boiled egg"] = "Half Boiled Eggs"
-            };
-
-            if (translations.TryGetValue(normalized, out var translation))
-            {
-                _logger.LogDebug("Cultural translation: '{Original}' → '{Translation}'", itemDescription, translation);
-                return translation;
-            }
-
-            return null;
         }
 
         private async Task<string> ExecuteCalculateTotalAsync(CancellationToken cancellationToken)
@@ -420,8 +378,15 @@ namespace PosKernel.AI.Tools
                 return "Cannot process payment: Transaction is empty";
             }
 
+            // ARCHITECTURAL FIX: Defer payment method validation to kernel
             var paymentMethod = toolCall.Arguments.TryGetValue("payment_method", out var methodElement) 
-                ? methodElement.GetString() : "cash";
+                ? methodElement.GetString() : null;
+                
+            if (string.IsNullOrEmpty(paymentMethod))
+            {
+                paymentMethod = toolCall.Arguments.TryGetValue("method", out var altMethodElement) 
+                    ? altMethodElement.GetString() : "cash";
+            }
             
             // Get current total first
             var transactionResult = await _kernelClient.GetTransactionAsync(_sessionId!, _currentTransactionId, cancellationToken);
@@ -433,30 +398,41 @@ namespace PosKernel.AI.Tools
             var amount = toolCall.Arguments.TryGetValue("amount", out var amountElement) 
                 ? amountElement.GetDecimal() : transactionResult.Total;
 
-            // For now, only support cash payments in the demo
-            if (paymentMethod?.ToLower() != "cash")
-            {
-                return $"Payment method '{paymentMethod}' not supported in demo. Please use 'cash'";
-            }
-
-            // Process payment through the kernel
-            var paymentResult = await _kernelClient.ProcessPaymentAsync(_sessionId!, _currentTransactionId, amount, "cash", cancellationToken);
+            // ARCHITECTURAL FIX: Let kernel handle payment method validation and processing
+            // Don't hardcode supported payment methods - defer to kernel
+            var method = paymentMethod?.ToLower() ?? "cash";
             
-            if (!paymentResult.Success)
+            try
             {
-                return $"PAYMENT_FAILED: {paymentResult.Error}";
+                // Attempt to process payment through kernel - let kernel determine if method is supported
+                var paymentResult = await _kernelClient.ProcessPaymentAsync(_sessionId!, _currentTransactionId, amount, method, cancellationToken);
+                
+                if (!paymentResult.Success)
+                {
+                    return $"PAYMENT_FAILED: {paymentResult.Error}";
+                }
+
+                // Let kernel determine the exact payment details and change calculation
+                var change = amount - transactionResult.Total;
+                
+                // Build response based on actual payment method processed by kernel
+                var methodDisplay = method == "card" ? "card payment" : $"{method} received";
+                var changeDisplay = method == "card" ? "$0.00" : $"${(change > 0 ? change : 0):F2}";
+                
+                var result = $"Payment processed: ${amount:F2} {methodDisplay}\n" +
+                            $"Total: ${transactionResult.Total:F2}\n" +
+                            $"Change due: {changeDisplay}\n" +
+                            $"Transaction status: {paymentResult.State}";
+
+                // Clear current transaction since it's complete
+                _currentTransactionId = null;
+                return result;
             }
-
-            var change = amount - transactionResult.Total;
-            var result = $"Payment processed: ${amount:F2} cash\n" +
-                        $"Total: ${transactionResult.Total:F2}\n" +
-                        $"Change due: ${(change > 0 ? change : 0):F2}\n" +
-                        $"Transaction status: {paymentResult.State}";
-
-            // Clear current transaction since it's complete
-            _currentTransactionId = null;
-
-            return result;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Kernel rejected payment method '{PaymentMethod}': {Error}", method, ex.Message);
+                return $"PAYMENT_FAILED: {ex.Message}";
+            }
         }
 
         // Product search methods using restaurant extension
@@ -531,8 +507,9 @@ namespace PosKernel.AI.Tools
                 }
 
                 var menuContext = new StringBuilder();
-                menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
-                menuContext.AppendLine("=============================================================");
+                
+                menuContext.AppendLine($"MENU CONTEXT - Restaurant Product Catalog:");
+                menuContext.AppendLine("=".PadRight(60, '='));
 
                 menuContext.AppendLine($"\nFULL MENU ({allProducts.Count} items):");
                 
@@ -544,7 +521,7 @@ namespace PosKernel.AI.Tools
                     menuContext.AppendLine($"\n{categoryGroup.Key.ToUpper()}:");
                     foreach (var product in categoryGroup.OrderBy(p => p.Name))
                     {
-                        menuContext.AppendLine($"  • {product.Name} - ${product.BasePriceCents / 100.0:F2} (SKU: {product.Sku})");
+                        menuContext.AppendLine($"  • {product.Name} - SGD {product.BasePriceCents / 100.0:F2} (SKU: {product.Sku})");
                         if (!string.IsNullOrEmpty(product.Description))
                         {
                             menuContext.AppendLine($"    {product.Description}");
@@ -552,24 +529,8 @@ namespace PosKernel.AI.Tools
                     }
                 }
 
-                menuContext.AppendLine("\n🧠 AI INTELLIGENCE GUIDANCE:");
-                menuContext.AppendLine("=========================");
-                menuContext.AppendLine("You are Uncle at a traditional kopitiam. You KNOW your complete menu.");
-                menuContext.AppendLine("");
-                menuContext.AppendLine("INTELLIGENT ORDER PROCESSING:");
-                menuContext.AppendLine("1. When customer uses cultural terms → translate using YOUR menu knowledge");
-                menuContext.AppendLine("2. When you KNOW the exact item exists → use high confidence (0.8-0.9)");
-                menuContext.AppendLine("3. Only suggest items from your actual menu above");
-                menuContext.AppendLine("4. Use your intelligence to match customer requests to actual products");
-                menuContext.AppendLine("5. If customer wants something not on menu → explain what you actually have");
-                menuContext.AppendLine("");
-                menuContext.AppendLine("CULTURAL INTELLIGENCE:");
-                menuContext.AppendLine("• Analyze customer language and match to your actual products");
-                menuContext.AppendLine("• Use menu knowledge to suggest appropriate alternatives");
-                menuContext.AppendLine("• Be honest about what you can and cannot serve");
-                menuContext.AppendLine("• Let your personality guide the conversation naturally");
-                menuContext.AppendLine("");
-                menuContext.AppendLine("You now have complete menu knowledge and can serve customers intelligently!");
+                menuContext.AppendLine("\nMENU LOADED: Use natural language to match customer requests to these products.");
+                menuContext.AppendLine("The restaurant extension will handle cultural translations and product matching.");
                 
                 return menuContext.ToString();
             }
@@ -580,74 +541,40 @@ namespace PosKernel.AI.Tools
             }
         }
 
-        // Helper methods (exact matching, broader search, etc.)
+        // Helper methods (broader search, etc.)
         private async Task<List<RestaurantProductInfo>> GetBroaderSearchResults(string searchTerm, CancellationToken cancellationToken)
         {
-            // Try generic broader searches based on the actual search term, not hard-coded categories
-            var broaderTerms = new List<string>();
+            // ARCHITECTURAL FIX: Defer to restaurant extension's built-in broader search capability
+            // Don't implement our own search logic - let the restaurant extension handle this
             
-            // Extract meaningful words from the search term for broader matching
-            var words = searchTerm.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var word in words)
-            {
-                if (word.Length > 2) // Only meaningful words
-                {
-                    broaderTerms.Add(word);
-                }
-            }
+            _logger.LogDebug("Requesting broader search from restaurant extension for: '{SearchTerm}'", searchTerm);
+            
+            // The restaurant extension should handle broader search logic internally
+            // We'll try a few simple variations but defer the real intelligence to the extension
+            var variations = new[] { searchTerm.Split(' ').FirstOrDefault(), searchTerm.ToLowerInvariant() }
+                .Where(v => !string.IsNullOrEmpty(v) && v != searchTerm)
+                .Distinct()
+                .ToList();
 
-            // Try each word individually
-            foreach (var term in broaderTerms)
+            foreach (var variation in variations)
             {
-                var results = await _restaurantClient.SearchProductsAsync(term, 10, cancellationToken);
-                if (results.Any())
+                if (!string.IsNullOrEmpty(variation))
                 {
-                    return results;
+                    var results = await _restaurantClient.SearchProductsAsync(variation, 10, cancellationToken);
+                    if (results.Any())
+                    {
+                        _logger.LogDebug("Broader search found {Count} results for variation: '{Variation}'", results.Count, variation);
+                        return results;
+                    }
                 }
             }
             
+            _logger.LogDebug("No broader search results found for: '{SearchTerm}'", searchTerm);
             return new List<RestaurantProductInfo>();
         }
-
-        private bool IsExactMatch(string searchTerm, RestaurantProductInfo product)
-        {
-            var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
-            var normalizedProductName = product.Name.ToLowerInvariant().Trim();
-            
-            // Direct exact matches (SKU or full name match)
-            if (normalizedSearch == normalizedProductName || normalizedSearch == product.Sku.ToLowerInvariant())
-            {
-                return true;
-            }
-            
-            // Partial name match for compound products
-            if (normalizedProductName.Contains(normalizedSearch) && normalizedSearch.Length > 3)
-            {
-                return true;
-            }
-            
-            return false;
-        }
-
-        private bool IsSpecificProductMatch(string searchTerm, RestaurantProductInfo product)
-        {
-            var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
-            var normalizedProductName = product.Name.ToLowerInvariant().Trim();
-            
-            // Exact matches - always specific
-            if (normalizedSearch == normalizedProductName || normalizedSearch == product.Sku.ToLowerInvariant())
-            {
-                return true;
-            }
-            
-            // Strong partial matches for longer search terms
-            if (normalizedSearch.Length > 4 && normalizedProductName.Contains(normalizedSearch))
-            {
-                return true;
-            }
-            
-            return false;
-        }
+        
+        // ARCHITECTURAL CLEANUP: Removed ApplyCulturalTranslation method
+        // Cultural translations are now handled by the restaurant extension's localization services
 
         // Tool creation methods for other tools
         private McpTool CreateSearchProductsTool() => new()
@@ -716,8 +643,17 @@ namespace PosKernel.AI.Tools
                 type = "object",
                 properties = new
                 {
-                    payment_method = new { type = "string", description = "Payment method: cash, card, or mobile", @enum = new[] { "cash", "card", "mobile" }, @default = "cash" },
-                    amount = new { type = "number", description = "Payment amount (defaults to transaction total)", minimum = 0 }
+                    // ARCHITECTURAL FIX: Don't hardcode supported payment methods
+                    // Let the AI and kernel determine what's supported dynamically
+                    payment_method = new { 
+                        type = "string", 
+                        description = "Payment method (kernel will validate supported methods)" 
+                    },
+                    amount = new { 
+                        type = "number", 
+                        description = "Payment amount (defaults to transaction total)", 
+                        minimum = 0 
+                    }
                 }
             }
         };
@@ -733,12 +669,6 @@ namespace PosKernel.AI.Tools
             }
         };
 
-        private List<RestaurantProductInfo> GetRelevantDisambiguationOptions(string searchTerm, IEnumerable<RestaurantProductInfo> allResults)
-        {
-            // Simply return the search results - let the AI decide what's relevant based on the actual data
-            return allResults.OrderBy(p => p.Name).ToList();
-        }
-        
         /// <summary>
         /// Cleans up kernel session and disposes resources.
         /// </summary>
