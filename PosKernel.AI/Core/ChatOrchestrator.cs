@@ -218,14 +218,27 @@ namespace PosKernel.AI.Core {
                 case OrderIntent.Question:
                     return await ProcessUserRequestAsync(userInput, "ordering"); // Questions go through normal ordering flow
                     
-                default:
+                // ARCHITECTURAL FIX: Handle all completion-related intents properly
+                case OrderIntent.EmptyOrderCompletion:
+                    _thoughtLogger.LogThought("EMPTY_ORDER_COMPLETION: Customer indicating completion but no items - ask what they want");
+                    return await ProcessUserRequestAsync("What would you like to order?", "ordering");
+                    
+                case OrderIntent.ChangedMindAddMore:
+                    _thoughtLogger.LogThought("CHANGED_MIND: Customer changing mind after completion indication - continue ordering");
+                    return await ProcessUserRequestAsync(userInput, "ordering");
+                    
+                case OrderIntent.Ambiguous:
+                    _thoughtLogger.LogThought("AMBIGUOUS_INTENT: Let AI semantic analysis determine intent");
                     // Enhanced: Consider conversation context for ambiguous inputs
                     if (intentAnalysis.IsOrderSummaryResponse && _receipt.Status == PaymentStatus.ReadyForPayment)
                     {
                         _thoughtLogger.LogThought("CONTEXT_BASED_PAYMENT: Ambiguous input after order summary - treating as potential payment method");
                         return await ProcessUserRequestAsync(userInput, "payment");
                     }
+                    return await ProcessUserRequestAsync(userInput, "ordering");
                     
+                default:
+                    // ARCHITECTURAL FIX: Better fallback logic
                     // CRITICAL FIX: If we have items and user says something payment-related, treat as payment
                     if (_receipt.Items.Any() && LooksLikePaymentMethod(userInput))
                     {
@@ -281,8 +294,12 @@ namespace PosKernel.AI.Core {
                 _thoughtLogger.LogThought($"TWO_PHASE_PATTERN: Starting Phase 1 - Tool Analysis and Execution");
                 
                 var toolAnalysisPrompt = BuildToolAnalysisPrompt(promptContext, contextHint);
+                _thoughtLogger.LogThought($"PHASE_1_PROMPT_LENGTH: {toolAnalysisPrompt.Length} chars");
+                _thoughtLogger.LogThought($"PHASE_1_PROMPT_PREVIEW: {toolAnalysisPrompt.Substring(Math.Max(0, toolAnalysisPrompt.Length - 200))}");
+                
                 LastPrompt = toolAnalysisPrompt;
                 var availableTools = _useRealKernel ? _kernelToolsProvider!.GetAvailableTools() : _mockToolsProvider!.GetAvailableTools();
+                _thoughtLogger.LogThought($"AVAILABLE_TOOLS_COUNT: {availableTools?.Count ?? 0}");
                 
                 var toolResponse = await _mcpClient.CompleteWithToolsAsync(toolAnalysisPrompt, availableTools);
                 
@@ -386,6 +403,7 @@ namespace PosKernel.AI.Core {
         private string BuildToolAnalysisPrompt(PosKernel.AI.Services.PromptContext promptContext, string contextHint)
         {
             var prompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering", promptContext);
+            _thoughtLogger.LogThought($"BASE_PROMPT_LENGTH: {prompt?.Length ?? 0} chars");
             
             // Add context-specific tool guidance
             if (contextHint == "payment")

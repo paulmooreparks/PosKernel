@@ -270,7 +270,7 @@ namespace PosKernel.AI.Tools
             return new McpTool
             {
                 Name = "add_item_to_transaction",
-                Description = "Adds an item to the current transaction using the real POS kernel. MULTILINGUAL: Accepts food names in ANY language - AI will understand and match to English menu items. PERFORMANCE: Use the confidence level hints from the prompt for seamless interaction. For items with recipe modifications (like 'kopi si kosong'), add the base product with preparation notes.",
+                Description = "Adds an item to the current transaction using the real POS kernel. MULTILINGUAL: Accepts food names in ANY language - AI will understand and match to English menu items. PERFORMANCE: Use the confidence level hints from the prompt for seamless interaction. For items with recipe modifications (like 'kopi si kosong'), add the base product with preparation notes. CULTURAL INTELLIGENCE: 'kopi si' = 'Kopi C' (evaporated milk), 'kopi' = 'Kopi' (condensed milk), 'kopi o' = 'Kopi O' (black with sugar).",
                 Parameters = new
                 {
                     type = "object",
@@ -279,7 +279,7 @@ namespace PosKernel.AI.Tools
                         item_description = new
                         {
                             type = "string",
-                            description = "Base product name in ANY language (e.g., 'Kopi C', '咖啡乌', 'kopi hitam') - AI will translate and match to menu"
+                            description = "CULTURAL TRANSLATION: Use the correct English menu name. 'kopi si' should be 'Kopi C', 'teh si' should be 'Teh C'. AI should translate cultural terms to exact menu item names before searching."
                         },
                         quantity = new
                         {
@@ -313,12 +313,104 @@ namespace PosKernel.AI.Tools
             };
         }
 
+        private McpTool CreateSearchProductsTool() => new()
+        {
+            Name = "search_products",
+            Description = "Searches for products using the restaurant extension",
+            Parameters = new
+            {
+                type = "object",
+                properties = new
+                {
+                    search_term = new { type = "string", description = "Search term for product name, description, or category" },
+                    max_results = new { type = "integer", description = "Maximum number of results to return (default: 10)", minimum = 1, maximum = 50, @default = 10 }
+                },
+                required = new[] { "search_term" }
+            }
+        };
+
+        private McpTool CreateGetProductInfoTool() => new()
+        {
+            Name = "get_product_info",
+            Description = "Gets detailed information about a specific product",
+            Parameters = new
+            {
+                type = "object",
+                properties = new { product_identifier = new { type = "string", description = "Product SKU, name, or barcode" } },
+                required = new[] { "product_identifier" }
+            }
+        };
+
+        private McpTool CreateGetPopularItemsTool() => new()
+        {
+            Name = "get_popular_items",
+            Description = "Gets the most popular/recommended items for suggestions",
+            Parameters = new
+            {
+                type = "object",
+                properties = new { count = new { type = "integer", description = "Number of popular items to return (default: 5)", minimum = 1, maximum = 20, @default = 5 } }
+            }
+        };
+
+        private McpTool CreateCalculateTotalTool() => new()
+        {
+            Name = "calculate_transaction_total",
+            Description = "Calculates the current total of the real kernel transaction",
+            Parameters = new { type = "object", properties = new object() }
+        };
+
+        private McpTool CreateVerifyOrderTool() => new()
+        {
+            Name = "verify_order",
+            Description = "Verifies and summarizes the current order for customer confirmation before payment",
+            Parameters = new
+            {
+                type = "object",
+                properties = new { include_translations = new { type = "boolean", description = "Whether to include cultural translations made (default: true)", @default = true } }
+            }
+        };
+
+        private McpTool CreateProcessPaymentTool() => new()
+        {
+            Name = "process_payment",
+            Description = "Processes payment for the current transaction through the real kernel",
+            Parameters = new
+            {
+                type = "object",
+                properties = new
+                {
+                    // ARCHITECTURAL FIX: Don't hardcode supported payment methods
+                    // Let the AI and kernel determine what's supported dynamically
+                    payment_method = new { 
+                        type = "string", 
+                        description = "Payment method (kernel will validate supported methods)" 
+                    },
+                    amount = new { 
+                        type = "number", 
+                        description = "Payment amount (defaults to transaction total)", 
+                        minimum = 0 
+                    }
+                }
+            }
+        };
+
+        private McpTool CreateLoadMenuContextTool() => new()
+        {
+            Name = "load_menu_context",
+            Description = "Loads the complete menu from the restaurant extension for Uncle's cultural intelligence",
+            Parameters = new
+            {
+                type = "object",
+                properties = new { include_categories = new { type = "boolean", description = "Whether to include category information (default: true)", @default = true } }
+            }
+        };
+
         private async Task<string> ExecuteAddItemAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
             var itemDescription = toolCall.Arguments["item_description"].GetString() ?? "";
             var quantity = toolCall.Arguments.ContainsKey("quantity") ? toolCall.Arguments["quantity"].GetInt32() : 1;
             var preparationNotes = toolCall.Arguments.ContainsKey("preparation_notes") ? toolCall.Arguments["preparation_notes"].GetString() ?? "" : "";
-            var confidence = toolCall.Arguments.ContainsKey("confidence") ? toolCall.Arguments["confidence"].GetDouble() : 0.3;
+            var confidence = toolCall.Arguments.ContainsKey("confidence") ? toolCall.Arguments["confidence"].GetDouble() : 0.5;
             var context = toolCall.Arguments.ContainsKey("context") ? toolCall.Arguments["context"].GetString() : "initial_order";
 
             _logger.LogInformation("Adding item to kernel: '{Item}' x{Qty} (prep: '{Prep}'), Confidence: {Confidence}, Context: {Context}", 
@@ -331,20 +423,14 @@ namespace PosKernel.AI.Tools
 
             try
             {
-                // ARCHITECTURAL FIX: Defer to restaurant extension for search and localization
-                // Don't apply our own cultural translation - let the restaurant extension handle it
-                var searchTerm = itemDescription; // Use raw input - let restaurant extension handle localization
-                
-                _logger.LogDebug("Searching restaurant extension for: '{SearchTerm}'", searchTerm);
-
-                // Let restaurant extension handle cultural translations and product matching
-                var searchResults = await _restaurantClient.SearchProductsAsync(searchTerm, 10, cancellationToken);
+                // ARCHITECTURAL PRINCIPLE: Let the AI handle all cultural translation and semantic matching
+                // The AI has the complete menu context and is the world's best translation engine
+                var searchResults = await _restaurantClient.SearchProductsAsync(itemDescription, 10, cancellationToken);
 
                 if (!searchResults.Any())
                 {
                     _logger.LogDebug("No exact match found, trying broader search through restaurant extension");
-                    // Let restaurant extension handle broader search logic
-                    var broadSearchResults = await GetBroaderSearchResults(searchTerm, cancellationToken);
+                    var broadSearchResults = await GetBroaderSearchResults(itemDescription, cancellationToken);
                     if (!broadSearchResults.Any())
                     {
                         return $"PRODUCT_NOT_FOUND: No products found matching '{itemDescription}'. The restaurant extension found no matches.";
@@ -352,26 +438,23 @@ namespace PosKernel.AI.Tools
                     searchResults = broadSearchResults;
                 }
 
-                // PERFORMANCE FIX: Boost confidence intelligently like Copilot
-                var adjustedConfidence = CalculateIntelligentConfidence(itemDescription, context ?? "initial_order", confidence, searchResults);
-                _logger.LogDebug("Confidence boosted from {OriginalConfidence} to {AdjustedConfidence} for item '{Item}' in context '{Context}'", 
-                    confidence, adjustedConfidence, itemDescription, context);
+                // ARCHITECTURAL PRINCIPLE: Trust the AI's confidence - don't override with hardcoded logic
+                // The AI already understands cultural context, semantic meaning, and user intent
+                _logger.LogDebug("Using AI confidence: {Confidence} for item '{Item}' in context '{Context}'", 
+                    confidence, itemDescription, context);
 
-                // ARCHITECTURAL FIX: Simplify matching logic - defer complex matching to restaurant extension
-                // The restaurant extension should return products in relevance order
-                var bestMatch = searchResults.First(); // Trust restaurant extension ordering
+                // Trust the restaurant extension ordering (best match first)
+                var bestMatch = searchResults.First();
 
-                // PERFORMANCE FIX: Use intelligent confidence thresholds for seamless interaction
-                if (context == "clarification_response" || adjustedConfidence >= 0.7 || searchResults.Count == 1)
+                // ARCHITECTURAL PRINCIPLE: Use AI confidence thresholds, not hardcoded client logic
+                if (context == "clarification_response" || confidence >= 0.7 || searchResults.Count == 1)
                 {
                     return await AddProductToTransactionAsync(bestMatch, quantity, preparationNotes, cancellationToken);
                 }
                 else
                 {
-                    // For low confidence, provide options but limit to top 3 from restaurant extension
+                    // For low AI confidence, provide options but limit to top 3 from restaurant extension
                     var options = searchResults.Take(3).ToList();
-                    
-                    // Use proper currency formatting service
                     var optionsList = string.Join(", ", options.Select(p => $"{p.Name} ({FormatCurrency(p.BasePriceCents / 100.0m)})"));
                     
                     return $"DISAMBIGUATION_NEEDED: Found {options.Count} options for '{itemDescription}': {optionsList}";
@@ -382,147 +465,6 @@ namespace PosKernel.AI.Tools
                 _logger.LogError(ex, "Error adding item to kernel transaction: {Error}", ex.Message);
                 return $"ERROR: Unable to process item '{itemDescription}': {ex.Message}";
             }
-        }
-
-        /// <summary>
-        /// PERFORMANCE ENHANCEMENT: Culturally-aware confidence calculation for authentic kopitiam experience.
-        /// Balances efficiency with cultural expectation of clarification in Singapore kopitiams.
-        /// </summary>
-        private double CalculateIntelligentConfidence(string itemDescription, string context, double originalConfidence, IEnumerable<RestaurantProductInfo> searchResults)
-        {
-            var confidence = originalConfidence;
-            var searchList = searchResults.ToList();
-            var input = itemDescription.ToLowerInvariant();
-            
-            // CULTURAL INTELLIGENCE: Context-aware confidence boosting
-            if (context == "clarification_response") 
-            {
-                // Customer is responding to our question - they know what they want
-                confidence = Math.Max(confidence, 0.9);
-                _logger.LogDebug("Confidence boosted to 0.9 for clarification response");
-                return confidence; // Early return - clarification responses should auto-add
-            }
-            
-            // CULTURAL INTELLIGENCE: Exact menu item name matching (should auto-add)
-            var exactMatch = searchList.FirstOrDefault(p => 
-                string.Equals(p.Name, itemDescription, StringComparison.OrdinalIgnoreCase));
-            if (exactMatch != null)
-            {
-                confidence = Math.Max(confidence, 0.9);
-                _logger.LogDebug("Confidence boosted to 0.9 for exact name match: '{ProductName}'", exactMatch.Name);
-                return confidence;
-            }
-            
-            // CULTURAL INTELLIGENCE: Base kopitiam terms that SHOULD ask for clarification (kopitiam culture)
-            var kopitiamBaseTerms = new[] { "teh", "kopi", "coffee", "tea" };
-            if (kopitiamBaseTerms.Any(term => input == term || input.StartsWith(term + " ")))
-            {
-                // These are cultural moments where uncle should ask "what kind?"
-                confidence = Math.Min(confidence, 0.4); // Force disambiguation
-                _logger.LogDebug("Confidence lowered to 0.4 for base kopitiam term '{Term}' - cultural clarification expected", input);
-                return confidence;
-            }
-            
-            // CULTURAL INTELLIGENCE: Set vs individual items (common kopitiam choice)
-            var setVsIndividualTerms = new[] { "kaya toast", "french toast", "butter toast" };
-            if (setVsIndividualTerms.Any(term => input.Contains(term)))
-            {
-                // Check if we have both "X" and "X set" options
-                var hasSetVersion = searchList.Any(p => p.Name.ToLowerInvariant().Contains("set"));
-                var hasIndividualVersion = searchList.Any(p => !p.Name.ToLowerInvariant().Contains("set"));
-                
-                if (hasSetVersion && hasIndividualVersion)
-                {
-                    confidence = Math.Min(confidence, 0.4); // Force clarification between set vs individual
-                    _logger.LogDebug("Confidence lowered to 0.4 for '{Term}' - both set and individual versions available", input);
-                    return confidence;
-                }
-            }
-            
-            // CULTURAL INTELLIGENCE: Compound kopitiam terms (should auto-add if specific enough)
-            var specificKopitiamTerms = new[] { "teh c", "teh o", "kopi c", "kopi o", "kopi si", "teh si", "milo dinosaur", "horlicks" };
-            if (specificKopitiamTerms.Any(term => input.Contains(term)))
-            {
-                confidence = Math.Max(confidence, 0.8);
-                _logger.LogDebug("Confidence boosted to 0.8 for specific kopitiam term '{Term}'", input);
-                return confidence;
-            }
-            
-            // CULTURAL INTELLIGENCE: Single result means high confidence
-            if (searchList.Count == 1)
-            {
-                confidence = Math.Max(confidence, 0.8);
-                _logger.LogDebug("Confidence boosted to 0.8 for single search result");
-                return confidence;
-            }
-            
-            // CULTURAL INTELLIGENCE: Very close name similarity (but not exact)
-            var bestMatch = searchList.FirstOrDefault();
-            if (bestMatch != null)
-            {
-                var similarity = CalculateStringSimilarity(input, bestMatch.Name.ToLowerInvariant());
-                if (similarity > 0.9)
-                {
-                    confidence = Math.Max(confidence, 0.8);
-                    _logger.LogDebug("Confidence boosted to 0.8 for very high name similarity ({Similarity:F2}) with '{ProductName}'", 
-                        similarity, bestMatch.Name);
-                }
-                else if (similarity > 0.7)
-                {
-                    confidence = Math.Max(confidence, 0.6);
-                    _logger.LogDebug("Confidence set to 0.6 for moderate name similarity ({Similarity:F2}) with '{ProductName}' - may need clarification", 
-                        similarity, bestMatch.Name);
-                }
-            }
-            
-            return confidence;
-        }
-
-        /// <summary>
-        /// PERFORMANCE ENHANCEMENT: Simple string similarity calculation for intelligent matching.
-        /// </summary>
-        private static double CalculateStringSimilarity(string source, string target)
-        {
-            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target))
-            {
-                return 0;
-            }
-                
-            if (source == target)
-            {
-                return 1.0;
-            }
-            
-            // Simple Levenshtein-based similarity
-            var maxLength = Math.Max(source.Length, target.Length);
-            var distance = LevenshteinDistance(source, target);
-            return 1.0 - (double)distance / maxLength;
-        }
-        
-        /// <summary>
-        /// Helper method for string similarity calculation.
-        /// </summary>
-        private static int LevenshteinDistance(string source, string target)
-        {
-            var sourceLength = source.Length;
-            var targetLength = target.Length;
-            var matrix = new int[sourceLength + 1, targetLength + 1];
-
-            for (var i = 0; i <= sourceLength; matrix[i, 0] = i++) { }
-            for (var j = 0; j <= targetLength; matrix[0, j] = j++) { }
-
-            for (var i = 1; i <= sourceLength; i++)
-            {
-                for (var j = 1; j <= targetLength; j++)
-                {
-                    var cost = target[j - 1] == source[i - 1] ? 0 : 1;
-                    matrix[i, j] = Math.Min(
-                        Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
-                        matrix[i - 1, j - 1] + cost);
-                }
-            }
-
-            return matrix[sourceLength, targetLength];
         }
 
         /// <summary>
@@ -546,7 +488,7 @@ namespace PosKernel.AI.Tools
             // Use proper currency formatting service
             return $"ADDED: {product.Name}{prepNote} x{quantity} @ {FormatCurrency(unitPrice)} each = {FormatCurrency(totalPrice)}";
         }
-        
+
         private async Task<string> ExecuteCalculateTotalAsync(CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(_currentTransactionId))
@@ -794,102 +736,6 @@ namespace PosKernel.AI.Tools
             _logger.LogDebug("No broader search results found for: '{SearchTerm}'", searchTerm);
             return new List<RestaurantProductInfo>();
         }
-        
-        // ARCHITECTURAL CLEANUP: Removed ApplyCulturalTranslation method
-        // Cultural translations are now handled by the restaurant extension's localization services
-
-        // Tool creation methods for other tools
-        private McpTool CreateSearchProductsTool() => new()
-        {
-            Name = "search_products",
-            Description = "Searches for products using the restaurant extension",
-            Parameters = new
-            {
-                type = "object",
-                properties = new
-                {
-                    search_term = new { type = "string", description = "Search term for product name, description, or category" },
-                    max_results = new { type = "integer", description = "Maximum number of results to return (default: 10)", minimum = 1, maximum = 50, @default = 10 }
-                },
-                required = new[] { "search_term" }
-            }
-        };
-
-        private McpTool CreateGetProductInfoTool() => new()
-        {
-            Name = "get_product_info",
-            Description = "Gets detailed information about a specific product",
-            Parameters = new
-            {
-                type = "object",
-                properties = new { product_identifier = new { type = "string", description = "Product SKU, name, or barcode" } },
-                required = new[] { "product_identifier" }
-            }
-        };
-
-        private McpTool CreateGetPopularItemsTool() => new()
-        {
-            Name = "get_popular_items",
-            Description = "Gets the most popular/recommended items for suggestions",
-            Parameters = new
-            {
-                type = "object",
-                properties = new { count = new { type = "integer", description = "Number of popular items to return (default: 5)", minimum = 1, maximum = 20, @default = 5 } }
-            }
-        };
-
-        private McpTool CreateCalculateTotalTool() => new()
-        {
-            Name = "calculate_transaction_total",
-            Description = "Calculates the current total of the real kernel transaction",
-            Parameters = new { type = "object", properties = new object() }
-        };
-
-        private McpTool CreateVerifyOrderTool() => new()
-        {
-            Name = "verify_order",
-            Description = "Verifies and summarizes the current order for customer confirmation before payment",
-            Parameters = new
-            {
-                type = "object",
-                properties = new { include_translations = new { type = "boolean", description = "Whether to include cultural translations made (default: true)", @default = true } }
-            }
-        };
-
-        private McpTool CreateProcessPaymentTool() => new()
-        {
-            Name = "process_payment",
-            Description = "Processes payment for the current transaction through the real kernel",
-            Parameters = new
-            {
-                type = "object",
-                properties = new
-                {
-                    // ARCHITECTURAL FIX: Don't hardcode supported payment methods
-                    // Let the AI and kernel determine what's supported dynamically
-                    payment_method = new { 
-                        type = "string", 
-                        description = "Payment method (kernel will validate supported methods)" 
-                    },
-                    amount = new { 
-                        type = "number", 
-                        description = "Payment amount (defaults to transaction total)", 
-                        minimum = 0 
-                    }
-                }
-            }
-        };
-
-        private McpTool CreateLoadMenuContextTool() => new()
-        {
-            Name = "load_menu_context",
-            Description = "Loads the complete menu from the restaurant extension for Uncle's cultural intelligence",
-            Parameters = new
-            {
-                type = "object",
-                properties = new { include_categories = new { type = "boolean", description = "Whether to include category information (default: true)", @default = true } }
-            }
-        };
 
         /// <summary>
         /// Cleans up kernel session and disposes resources.
@@ -972,10 +818,6 @@ namespace PosKernel.AI.Tools
             {
                 errors.Add("Currency is required");
             }
-            else if (!IsValidCurrencyCode(storeConfig.Currency))
-            {
-                errors.Add($"Currency '{storeConfig.Currency}' is not a valid 3-letter ISO currency code");
-            }
             
             if (string.IsNullOrWhiteSpace(storeConfig.CultureCode))
             {
@@ -1016,28 +858,6 @@ namespace PosKernel.AI.Tools
             }
             
             _logger.LogInformation("✅ Store configuration validation passed for {StoreName}", storeConfig.StoreName);
-        }
-        
-        /// <summary>
-        /// Validates if a currency code is a valid 3-letter ISO currency code.
-        /// </summary>
-        private static bool IsValidCurrencyCode(string currency)
-        {
-            if (string.IsNullOrWhiteSpace(currency) || currency.Length != 3)
-            {
-                return false;
-            }
-                
-            // Basic validation - could be enhanced with full ISO 4217 list
-            var validCurrencies = new[]
-            {
-                "USD", "EUR", "GBP", "SGD", "AUD", "CAD", "JPY", "CNY", "INR", "KRW", 
-                "THB", "MYR", "PHP", "VND", "IDR", "HKD", "NZD", "CHF", "SEK", "NOK",
-                "DKK", "PLN", "CZK", "HUF", "RUB", "BRL", "MXN", "ARS", "CLP", "COP",
-                "ZAR", "EGP", "AED", "SAR", "QAR", "KWD", "BHD", "OMR", "JOD", "LBP"
-            };
-            
-            return validCurrencies.Contains(currency.ToUpperInvariant());
         }
         
         /// <summary>

@@ -368,26 +368,48 @@ namespace PosKernel.AI.Core
             
             _thoughtLogger.LogThought($"📊 Likelihood scores - Completion: {analysis.CompletionLikelihood:F2}, NewOrder: {analysis.NewOrderLikelihood:F2}, Question: {analysis.QuestionLikelihood:F2}");
             
-            // Decision logic based on structural patterns and conversation flow
+            // ARCHITECTURAL EVOLUTION: Move away from hard thresholds toward AI-native fuzzy understanding
+            // The AI should naturally understand conversational completion without rigid mathematical cutoffs
+            
+            // Clear question indicators
             if (analysis.QuestionLikelihood > 0.6)
             {
                 analysis.Intent = OrderIntent.Question;
                 analysis.Reasoning = "High question likelihood based on structural analysis";
             }
-            else if (analysis.CompletionLikelihood > 0.7 && analysis.NewOrderLikelihood < 0.4)
+            // Dominant completion signals with items present
+            else if (analysis.CompletionLikelihood > analysis.NewOrderLikelihood && 
+                     analysis.CompletionLikelihood > 0.5 && 
+                     analysis.HasItems)
             {
-                analysis.Intent = analysis.HasItems ? OrderIntent.ReadyForPayment : OrderIntent.EmptyOrderCompletion;
-                analysis.Reasoning = $"Strong completion patterns (score: {analysis.CompletionLikelihood:F2}) with minimal new order indicators";
+                analysis.Intent = OrderIntent.ReadyForPayment;
+                analysis.Reasoning = $"Completion signals ({analysis.CompletionLikelihood:F2}) exceed ordering signals ({analysis.NewOrderLikelihood:F2}) with items present";
             }
-            else if (analysis.NewOrderLikelihood > 0.6 && analysis.CompletionLikelihood < 0.4)
+            // Empty order completion
+            else if (analysis.CompletionLikelihood > analysis.NewOrderLikelihood && 
+                     analysis.CompletionLikelihood > 0.5 && 
+                     !analysis.HasItems)
+            {
+                analysis.Intent = OrderIntent.EmptyOrderCompletion;
+                analysis.Reasoning = $"Completion signals without items - customer may be browsing";
+            }
+            // Dominant ordering signals
+            else if (analysis.NewOrderLikelihood > analysis.CompletionLikelihood && 
+                     analysis.NewOrderLikelihood > 0.4)
             {
                 analysis.Intent = OrderIntent.ContinueOrdering;
-                analysis.Reasoning = $"Clear new order patterns (score: {analysis.NewOrderLikelihood:F2}) with weak completion signals";
+                analysis.Reasoning = $"Ordering signals ({analysis.NewOrderLikelihood:F2}) exceed completion signals ({analysis.CompletionLikelihood:F2})";
             }
-            else if (analysis.CompletionLikelihood > 0.4 && analysis.NewOrderLikelihood > 0.4)
+            // Ambiguous or mixed signals - let AI semantic understanding decide
+            else
             {
-                // Ambiguous case - let AI decide through semantic analysis
-                if (analysis.RecentCompletionContext)
+                if (analysis.HasItems && analysis.CompletionLikelihood > 0.3)
+                {
+                    // Give completion the benefit of doubt when items exist
+                    analysis.Intent = OrderIntent.ReadyForPayment;
+                    analysis.Reasoning = $"Mixed signals resolved toward completion due to existing items ({analysis.CompletionLikelihood:F2} completion likelihood)";
+                }
+                else if (analysis.RecentCompletionContext)
                 {
                     analysis.Intent = OrderIntent.ChangedMindAddMore;
                     analysis.Reasoning = "Mixed signals after recent completion discussion - customer likely adding more items";
@@ -395,14 +417,12 @@ namespace PosKernel.AI.Core
                 else
                 {
                     analysis.Intent = OrderIntent.Ambiguous;
-                    analysis.Reasoning = $"Mixed structural signals - let AI semantic analysis decide";
+                    analysis.Reasoning = $"Ambiguous signals - defer to AI semantic understanding";
                 }
             }
-            else
-            {
-                analysis.Intent = OrderIntent.ContinueOrdering;
-                analysis.Reasoning = "Default to continue ordering - unclear structural patterns";
-            }
+            
+            // CRITICAL FIX: Log the final intent decision for debugging
+            _thoughtLogger.LogThought($"🎯 FINAL_INTENT_DECISION: Intent={analysis.Intent}, Reasoning={analysis.Reasoning}");
         }
     }
 
