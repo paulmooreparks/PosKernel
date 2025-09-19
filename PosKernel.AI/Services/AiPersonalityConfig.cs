@@ -102,9 +102,46 @@ namespace PosKernel.AI.Services
     /// </summary>
     public static class AiPersonalityFactory
     {
-        private static readonly string PromptsBasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Prompts");
+        private static readonly string PromptsBasePath = GetPromptsPath();
         private static readonly Dictionary<string, string> _promptCache = new();
         private static readonly Dictionary<string, DateTime> _promptFileTimestamps = new();
+
+        /// <summary>
+        /// Gets the correct path to the Prompts directory.
+        /// ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks if prompts directory not found.
+        /// </summary>
+        private static string GetPromptsPath()
+        {
+            // Try multiple possible locations for the Prompts directory
+            var possiblePaths = new[]
+            {
+                // In the project source directory (development scenario)
+                Path.Combine(Directory.GetCurrentDirectory(), "Prompts"),
+                
+                // From solution root
+                Path.Combine(Directory.GetCurrentDirectory(), "PosKernel.AI", "Prompts"),
+                
+                // In the output directory (if prompts were copied)
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Prompts")
+            };
+
+            foreach (var path in possiblePaths)
+            {
+                if (Directory.Exists(path))
+                {
+                    return path;
+                }
+            }
+
+            // ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks
+            var searchedPaths = string.Join("\n  - ", possiblePaths);
+            throw new DirectoryNotFoundException(
+                $"DESIGN DEFICIENCY: Prompts directory not found. AI personality system requires prompt files to function.\n" +
+                $"Searched locations:\n  - {searchedPaths}\n\n" +
+                $"Fix: Ensure Prompts directory exists with personality markdown files.\n" +
+                $"Current directory: {Directory.GetCurrentDirectory()}\n" +
+                $"Base directory: {AppDomain.CurrentDomain.BaseDirectory}");
+        }
 
         /// <summary>
         /// Creates a personality configuration based on the specified type.
@@ -136,8 +173,8 @@ namespace PosKernel.AI.Services
         }
 
         /// <summary>
-        /// Loads a prompt template from a Markdown file with caching and live editing support.
-        /// Automatically detects file changes and reloads when files are modified.
+        /// Loads a prompt template from a Markdown file.
+        /// ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks if prompt files missing.
         /// </summary>
         /// <param name="personalityFolder">The personality folder name (e.g., "AmericanBarista").</param>
         /// <param name="promptType">The prompt type ("greeting", "ordering", or "post-payment").</param>
@@ -172,31 +209,43 @@ namespace PosKernel.AI.Services
                 }
             }
             
-            // Fallback to a generic prompt if the specific one doesn't exist
-            var fallbackPath = Path.Combine(PromptsBasePath, "GenericCashier", $"{promptType}.md");
-            if (File.Exists(fallbackPath))
+            // ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks to other personalities or inline prompts
+            throw new FileNotFoundException(
+                $"DESIGN DEFICIENCY: Personality prompt file not found: {promptPath}\n" +
+                $"AI personality system requires specific prompt files for each personality type.\n\n" +
+                $"Fix: Create the missing prompt file:\n" +
+                $"  - Personality: {personalityFolder}\n" +
+                $"  - Prompt type: {promptType}\n" +
+                $"  - Expected path: {promptPath}\n\n" +
+                $"Prompts directory: {PromptsBasePath}\n" +
+                $"Directory exists: {Directory.Exists(Path.Combine(PromptsBasePath, personalityFolder))}\n" +
+                $"Available files: {GetAvailableFiles(personalityFolder)}");
+        }
+
+        /// <summary>
+        /// Helper method to list available files for debugging.
+        /// </summary>
+        private static string GetAvailableFiles(string personalityFolder)
+        {
+            try
             {
-                var fallbackContent = File.ReadAllText(fallbackPath);
-                _promptCache[cacheKey] = fallbackContent;
-                _promptFileTimestamps[cacheKey] = File.GetLastWriteTime(fallbackPath);
-                return fallbackContent;
+                var personalityPath = Path.Combine(PromptsBasePath, personalityFolder);
+                if (Directory.Exists(personalityPath))
+                {
+                    var files = Directory.GetFiles(personalityPath, "*.md");
+                    return files.Length > 0 ? string.Join(", ", files.Select(Path.GetFileName)) : "No .md files found";
+                }
+                return "Directory does not exist";
             }
-            
-            // Ultimate fallback - inline prompt
-            var inlinePrompt = promptType switch
+            catch (Exception ex)
             {
-                "greeting" => "You are a helpful assistant. Greet the customer and ask how you can help them.",
-                "post-payment" => "You are a helpful assistant. Thank the customer for their payment and offer to help with anything else.",
-                _ => "You are processing a customer order. Help them with their request."
-            };
-                
-            _promptCache[cacheKey] = inlinePrompt;
-            _promptFileTimestamps[cacheKey] = DateTime.Now;
-            return inlinePrompt;
+                return $"Error listing files: {ex.Message}";
+            }
         }
 
         /// <summary>
         /// Loads a prompt template from a Markdown file for the specified personality and prompt type.
+        /// ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks.
         /// </summary>
         /// <param name="personalityType">The personality type.</param>
         /// <param name="promptType">The prompt type ("greeting", "ordering", or "post-payment").</param>
@@ -210,6 +259,7 @@ namespace PosKernel.AI.Services
         /// <summary>
         /// Builds a complete prompt by combining the template with dynamic context.
         /// Uses StringBuilder for efficiency, avoiding expensive string replacement.
+        /// ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks.
         /// </summary>
         /// <param name="personalityType">The personality type.</param>
         /// <param name="promptType">The prompt type ("greeting", "ordering", or "post-payment").</param>
@@ -298,11 +348,10 @@ namespace PosKernel.AI.Services
         /// </summary>
         private static string BuildOrderingPrompt(string template, PromptContext context)
         {
-            var sb = new System.Text.StringBuilder(template.Length + 500); // Pre-allocate reasonable size
+            var sb = new System.Text.StringBuilder(template.Length + 500);
             
-            // Start with the base template (remove placeholder sections)
-            var cleanTemplate = RemovePlaceholderSections(template);
-            sb.AppendLine(cleanTemplate);
+            // Start with the base template
+            sb.AppendLine(template);
             sb.AppendLine();
             
             // Append dynamic context header
@@ -317,7 +366,7 @@ namespace PosKernel.AI.Services
             
             sb.AppendLine("### Current Order Status:");
             sb.AppendLine($"- Items in cart: {context.CartItems ?? "none"}");
-            sb.AppendLine($"- Current total: ${context.CurrentTotal ?? "0.00"}");
+            sb.AppendLine($"- Current total: {context.CurrentTotal ?? "0.00"}");
             sb.AppendLine($"- Currency: {context.Currency ?? "USD"}");
             sb.AppendLine();
             
@@ -326,17 +375,6 @@ namespace PosKernel.AI.Services
             sb.AppendLine("Process this request using your cultural knowledge and tools.");
             
             return sb.ToString();
-        }
-
-        /// <summary>
-        /// Removes placeholder sections from the template since we're building context programmatically.
-        /// This method is now simpler since we removed hardcoded placeholders from markdown files.
-        /// </summary>
-        private static string RemovePlaceholderSections(string template)
-        {
-            // The template should no longer have placeholder sections since we cleaned up the markdown files
-            // Just return the template as-is since dynamic context is appended, not replaced
-            return template;
         }
 
         private static AiPersonalityConfig CreateAmericanBarista()

@@ -39,7 +39,6 @@ namespace PosKernel.AI.Tools
         private readonly IPosKernelClient _kernelClient;
         private readonly RestaurantExtensionClient _restaurantClient;
         private readonly ILogger<KernelPosToolsProvider> _logger;
-        private readonly ProductCustomizationService _customizationService;
         private readonly IConfiguration? _configuration;
         private readonly StoreConfig? _storeConfig;
         private readonly ICurrencyFormattingService? _currencyFormatter;
@@ -56,20 +55,15 @@ namespace PosKernel.AI.Tools
         /// <param name="restaurantClient">The restaurant extension client for product catalog operations.</param>
         /// <param name="logger">Logger for diagnostics and debugging.</param>
         /// <param name="configuration">Application configuration for kernel selection.</param>
-        /// <param name="customizationService">Service for parsing product customizations.</param>
-        /// <param name="currencyFormatter">Currency formatting service for proper locale-specific formatting.</param>
         public KernelPosToolsProvider(
             RestaurantExtensionClient restaurantClient,
             ILogger<KernelPosToolsProvider> logger,
-            IConfiguration? configuration = null,
-            ProductCustomizationService? customizationService = null,
-            ICurrencyFormattingService? currencyFormatter = null)
+            IConfiguration? configuration = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration;
-            _customizationService = customizationService ?? new ProductCustomizationService();
-            _currencyFormatter = currencyFormatter; // Optional - falls back to generic formatting if not provided
+            _currencyFormatter = null; // Removed parameter from constructor
             _storeConfig = null; // Will be injected later if available
             
             // Use factory to create the best available kernel client
@@ -85,21 +79,16 @@ namespace PosKernel.AI.Tools
         /// <param name="logger">Logger for diagnostics and debugging.</param>
         /// <param name="kernelType">Specific kernel type to use.</param>
         /// <param name="configuration">Application configuration for kernel settings.</param>
-        /// <param name="customizationService">Service for parsing product customizations.</param>
-        /// <param name="currencyFormatter">Currency formatting service for proper locale-specific formatting.</param>
         public KernelPosToolsProvider(
             RestaurantExtensionClient restaurantClient,
             ILogger<KernelPosToolsProvider> logger,
             PosKernelClientFactory.KernelType kernelType,
-            IConfiguration? configuration = null,
-            ProductCustomizationService? customizationService = null,
-            ICurrencyFormattingService? currencyFormatter = null)
+            IConfiguration? configuration = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration;
-            _customizationService = customizationService ?? new ProductCustomizationService();
-            _currencyFormatter = currencyFormatter; // Optional - falls back to generic formatting if not provided
+            _currencyFormatter = null; // Removed parameter from constructor
             _storeConfig = null; // Will be injected later if available
             
             // Use factory to create specific kernel type
@@ -116,7 +105,6 @@ namespace PosKernel.AI.Tools
         /// <param name="storeConfig">Store configuration for currency and settings.</param>
         /// <param name="kernelType">Specific kernel type to use.</param>
         /// <param name="configuration">Application configuration for kernel settings.</param>
-        /// <param name="customizationService">Service for parsing product customizations.</param>
         /// <param name="currencyFormatter">Currency formatting service for proper locale-specific formatting.</param>
         public KernelPosToolsProvider(
             RestaurantExtensionClient restaurantClient,
@@ -124,15 +112,13 @@ namespace PosKernel.AI.Tools
             StoreConfig storeConfig,
             PosKernelClientFactory.KernelType kernelType,
             IConfiguration? configuration = null,
-            ProductCustomizationService? customizationService = null,
             ICurrencyFormattingService? currencyFormatter = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _storeConfig = storeConfig ?? throw new ArgumentNullException(nameof(storeConfig));
             _configuration = configuration;
-            _customizationService = customizationService ?? new ProductCustomizationService();
-            _currencyFormatter = currencyFormatter; // Optional - falls back to generic formatting if not provided
+            _currencyFormatter = currencyFormatter;
             
             // ARCHITECTURAL PRINCIPLE: Validate store configuration completeness at construction time
             ValidateStoreConfiguration(storeConfig);
@@ -284,7 +270,7 @@ namespace PosKernel.AI.Tools
             return new McpTool
             {
                 Name = "add_item_to_transaction",
-                Description = "Adds an item to the current transaction using the real POS kernel. For items with recipe modifications (like 'kopi si kosong'), add the base product with preparation notes.",
+                Description = "Adds an item to the current transaction using the real POS kernel. MULTILINGUAL: Accepts food names in ANY language - AI will understand and match to English menu items. PERFORMANCE: Use the confidence level hints from the prompt for seamless interaction. For items with recipe modifications (like 'kopi si kosong'), add the base product with preparation notes.",
                 Parameters = new
                 {
                     type = "object",
@@ -293,7 +279,7 @@ namespace PosKernel.AI.Tools
                         item_description = new
                         {
                             type = "string",
-                            description = "Base product name (e.g., 'Kopi C' not 'Kopi C Kosong')"
+                            description = "Base product name in ANY language (e.g., 'Kopi C', '咖啡乌', 'kopi hitam') - AI will translate and match to menu"
                         },
                         quantity = new
                         {
@@ -310,15 +296,15 @@ namespace PosKernel.AI.Tools
                         confidence = new
                         {
                             type = "number",
-                            description = "Confidence level: 0.0-0.4 (disambiguate), 0.5-0.7 (context-aware), 0.8-1.0 (auto-add)",
-                            @default = 0.3,
+                            description = "CRITICAL: Use the confidence hint from the prompt for seamless interaction. 0.0-0.4 (disambiguate), 0.5-0.6 (context-aware), 0.7+ (auto-add). For confirmations and exact matches, use 0.8-0.9.",
+                            @default = 0.5,
                             minimum = 0.0,
                             maximum = 1.0
                         },
                         context = new
                         {
                             type = "string",
-                            description = "Context: 'initial_order', 'clarification_response', 'follow_up_order'",
+                            description = "CRITICAL: Use 'clarification_response' when customer is responding to your question, otherwise 'initial_order' or 'follow_up_order'",
                             @default = "initial_order"
                         }
                     },
@@ -366,12 +352,17 @@ namespace PosKernel.AI.Tools
                     searchResults = broadSearchResults;
                 }
 
+                // PERFORMANCE FIX: Boost confidence intelligently like Copilot
+                var adjustedConfidence = CalculateIntelligentConfidence(itemDescription, context ?? "initial_order", confidence, searchResults);
+                _logger.LogDebug("Confidence boosted from {OriginalConfidence} to {AdjustedConfidence} for item '{Item}' in context '{Context}'", 
+                    confidence, adjustedConfidence, itemDescription, context);
+
                 // ARCHITECTURAL FIX: Simplify matching logic - defer complex matching to restaurant extension
                 // The restaurant extension should return products in relevance order
                 var bestMatch = searchResults.First(); // Trust restaurant extension ordering
 
-                // For high confidence or clarification responses, use the best match
-                if (context == "clarification_response" || confidence >= 0.8 || searchResults.Count == 1)
+                // PERFORMANCE FIX: Use intelligent confidence thresholds for seamless interaction
+                if (context == "clarification_response" || adjustedConfidence >= 0.7 || searchResults.Count == 1)
                 {
                     return await AddProductToTransactionAsync(bestMatch, quantity, preparationNotes, cancellationToken);
                 }
@@ -393,6 +384,150 @@ namespace PosKernel.AI.Tools
             }
         }
 
+        /// <summary>
+        /// PERFORMANCE ENHANCEMENT: Culturally-aware confidence calculation for authentic kopitiam experience.
+        /// Balances efficiency with cultural expectation of clarification in Singapore kopitiams.
+        /// </summary>
+        private double CalculateIntelligentConfidence(string itemDescription, string context, double originalConfidence, IEnumerable<RestaurantProductInfo> searchResults)
+        {
+            var confidence = originalConfidence;
+            var searchList = searchResults.ToList();
+            var input = itemDescription.ToLowerInvariant();
+            
+            // CULTURAL INTELLIGENCE: Context-aware confidence boosting
+            if (context == "clarification_response") 
+            {
+                // Customer is responding to our question - they know what they want
+                confidence = Math.Max(confidence, 0.9);
+                _logger.LogDebug("Confidence boosted to 0.9 for clarification response");
+                return confidence; // Early return - clarification responses should auto-add
+            }
+            
+            // CULTURAL INTELLIGENCE: Exact menu item name matching (should auto-add)
+            var exactMatch = searchList.FirstOrDefault(p => 
+                string.Equals(p.Name, itemDescription, StringComparison.OrdinalIgnoreCase));
+            if (exactMatch != null)
+            {
+                confidence = Math.Max(confidence, 0.9);
+                _logger.LogDebug("Confidence boosted to 0.9 for exact name match: '{ProductName}'", exactMatch.Name);
+                return confidence;
+            }
+            
+            // CULTURAL INTELLIGENCE: Base kopitiam terms that SHOULD ask for clarification (kopitiam culture)
+            var kopitiamBaseTerms = new[] { "teh", "kopi", "coffee", "tea" };
+            if (kopitiamBaseTerms.Any(term => input == term || input.StartsWith(term + " ")))
+            {
+                // These are cultural moments where uncle should ask "what kind?"
+                confidence = Math.Min(confidence, 0.4); // Force disambiguation
+                _logger.LogDebug("Confidence lowered to 0.4 for base kopitiam term '{Term}' - cultural clarification expected", input);
+                return confidence;
+            }
+            
+            // CULTURAL INTELLIGENCE: Set vs individual items (common kopitiam choice)
+            var setVsIndividualTerms = new[] { "kaya toast", "french toast", "butter toast" };
+            if (setVsIndividualTerms.Any(term => input.Contains(term)))
+            {
+                // Check if we have both "X" and "X set" options
+                var hasSetVersion = searchList.Any(p => p.Name.ToLowerInvariant().Contains("set"));
+                var hasIndividualVersion = searchList.Any(p => !p.Name.ToLowerInvariant().Contains("set"));
+                
+                if (hasSetVersion && hasIndividualVersion)
+                {
+                    confidence = Math.Min(confidence, 0.4); // Force clarification between set vs individual
+                    _logger.LogDebug("Confidence lowered to 0.4 for '{Term}' - both set and individual versions available", input);
+                    return confidence;
+                }
+            }
+            
+            // CULTURAL INTELLIGENCE: Compound kopitiam terms (should auto-add if specific enough)
+            var specificKopitiamTerms = new[] { "teh c", "teh o", "kopi c", "kopi o", "kopi si", "teh si", "milo dinosaur", "horlicks" };
+            if (specificKopitiamTerms.Any(term => input.Contains(term)))
+            {
+                confidence = Math.Max(confidence, 0.8);
+                _logger.LogDebug("Confidence boosted to 0.8 for specific kopitiam term '{Term}'", input);
+                return confidence;
+            }
+            
+            // CULTURAL INTELLIGENCE: Single result means high confidence
+            if (searchList.Count == 1)
+            {
+                confidence = Math.Max(confidence, 0.8);
+                _logger.LogDebug("Confidence boosted to 0.8 for single search result");
+                return confidence;
+            }
+            
+            // CULTURAL INTELLIGENCE: Very close name similarity (but not exact)
+            var bestMatch = searchList.FirstOrDefault();
+            if (bestMatch != null)
+            {
+                var similarity = CalculateStringSimilarity(input, bestMatch.Name.ToLowerInvariant());
+                if (similarity > 0.9)
+                {
+                    confidence = Math.Max(confidence, 0.8);
+                    _logger.LogDebug("Confidence boosted to 0.8 for very high name similarity ({Similarity:F2}) with '{ProductName}'", 
+                        similarity, bestMatch.Name);
+                }
+                else if (similarity > 0.7)
+                {
+                    confidence = Math.Max(confidence, 0.6);
+                    _logger.LogDebug("Confidence set to 0.6 for moderate name similarity ({Similarity:F2}) with '{ProductName}' - may need clarification", 
+                        similarity, bestMatch.Name);
+                }
+            }
+            
+            return confidence;
+        }
+
+        /// <summary>
+        /// PERFORMANCE ENHANCEMENT: Simple string similarity calculation for intelligent matching.
+        /// </summary>
+        private static double CalculateStringSimilarity(string source, string target)
+        {
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(target))
+            {
+                return 0;
+            }
+                
+            if (source == target)
+            {
+                return 1.0;
+            }
+            
+            // Simple Levenshtein-based similarity
+            var maxLength = Math.Max(source.Length, target.Length);
+            var distance = LevenshteinDistance(source, target);
+            return 1.0 - (double)distance / maxLength;
+        }
+        
+        /// <summary>
+        /// Helper method for string similarity calculation.
+        /// </summary>
+        private static int LevenshteinDistance(string source, string target)
+        {
+            var sourceLength = source.Length;
+            var targetLength = target.Length;
+            var matrix = new int[sourceLength + 1, targetLength + 1];
+
+            for (var i = 0; i <= sourceLength; matrix[i, 0] = i++) { }
+            for (var j = 0; j <= targetLength; matrix[0, j] = j++) { }
+
+            for (var i = 1; i <= sourceLength; i++)
+            {
+                for (var j = 1; j <= targetLength; j++)
+                {
+                    var cost = target[j - 1] == source[i - 1] ? 0 : 1;
+                    matrix[i, j] = Math.Min(
+                        Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1),
+                        matrix[i - 1, j - 1] + cost);
+                }
+            }
+
+            return matrix[sourceLength, targetLength];
+        }
+
+        /// <summary>
+        /// PERFORMANCE ENHANCEMENT: Adds a product to the kernel transaction with proper error handling.
+        /// </summary>
         private async Task<string> AddProductToTransactionAsync(RestaurantProductInfo product, int quantity, string preparationNotes, CancellationToken cancellationToken)
         {
             var transactionId = await EnsureTransactionAsync(cancellationToken);
@@ -411,7 +546,7 @@ namespace PosKernel.AI.Tools
             // Use proper currency formatting service
             return $"ADDED: {product.Name}{prepNote} x{quantity} @ {FormatCurrency(unitPrice)} each = {FormatCurrency(totalPrice)}";
         }
-
+        
         private async Task<string> ExecuteCalculateTotalAsync(CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(_currentTransactionId))

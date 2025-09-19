@@ -1,0 +1,41 @@
+# Rust Service Currency Logging Fix
+# File: pos-kernel-rs/src/bin/service.rs
+# 
+# PROBLEM: Hardcoded $ symbols violate culture-neutral architecture
+# SOLUTION: Structured logging with currency context
+
+## Required Changes:
+
+Replace hardcoded currency formatting in logging statements:
+
+### BEFORE (Architectural Violation):
+```rust
+info!("Added line item to transaction {}, new total: ${:.2}", transaction_id, total);
+info!("Processed payment for transaction {}, change due: ${:.2}", transaction_id, change);
+```
+
+### AFTER (Architecturally Correct):
+```rust
+info!("Added line item to transaction {}, new total: {:.2} (currency: {})", 
+      transaction_id, total, transaction.currency);
+info!("Processed payment for transaction {}, change due: {:.2} (currency: {})", 
+      transaction_id, change, transaction.currency);
+```
+
+## Architectural Benefits:
+- ✅ Culture-neutral: No hardcoded currency symbols
+- ✅ Contextually accurate: Shows actual transaction currency
+- ✅ Debug-friendly: Clear what currency amounts represent
+- ✅ Architecture-compliant: Kernel stays culture-neutral
+
+## Implementation Notes:
+1. Find all log statements with hardcoded $ formatting
+2. Replace with structured logging format: "amount (currency: CODE)"
+3. Use the transaction's stored currency field for context
+4. Keep raw decimal precision - let user-space handle display formatting
+
+## Expected Log Output After Fix:
+```
+Added line item to transaction ca79f7ba-9768-4169-ba4a-394452169cce, new total: 1.40 (currency: SGD)
+Processed payment for transaction ca79f7ba-9768-4169-ba4a-394452169cce, change due: 0.00 (currency: SGD)
+```

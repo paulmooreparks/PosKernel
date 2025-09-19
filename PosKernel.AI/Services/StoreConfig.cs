@@ -22,19 +22,9 @@ namespace PosKernel.AI.Services
     public class StoreConfig
     {
         /// <summary>
-        /// Gets or sets the store type.
+        /// Gets or sets the unique store identifier.
         /// </summary>
-        public StoreType StoreType { get; set; }
-
-        /// <summary>
-        /// Gets or sets the personality type for this store.
-        /// </summary>
-        public PersonalityType PersonalityType { get; set; }
-
-        /// <summary>
-        /// Gets or sets the catalog provider type.
-        /// </summary>
-        public CatalogProviderType CatalogProvider { get; set; }
+        public string StoreId { get; set; } = "";
 
         /// <summary>
         /// Gets or sets the store name.
@@ -42,29 +32,133 @@ namespace PosKernel.AI.Services
         public string StoreName { get; set; } = "";
 
         /// <summary>
-        /// Gets or sets the store description.
+        /// Gets or sets the store type.
         /// </summary>
-        public string Description { get; set; } = "";
+        public StoreType StoreType { get; set; }
 
         /// <summary>
-        /// Gets or sets the primary currency for this store.
+        /// Gets or sets the AI personality type for this store.
         /// </summary>
-        public string Currency { get; set; } = "USD";
+        public PersonalityType PersonalityType { get; set; }
 
         /// <summary>
-        /// Gets or sets the store location/culture code.
+        /// Gets or sets the primary currency code (ISO 4217).
         /// </summary>
-        public string CultureCode { get; set; } = "en-US";
+        public string Currency { get; set; } = "";
 
         /// <summary>
-        /// Gets or sets whether to use the real kernel integration.
+        /// Gets or sets the culture code for localization.
         /// </summary>
-        public bool UseRealKernel { get; set; } = false;
+        public string CultureCode { get; set; } = "";
 
         /// <summary>
-        /// Gets or sets additional store-specific configuration.
+        /// Gets or sets the catalog provider type.
+        /// </summary>
+        public CatalogProviderType CatalogProvider { get; set; }
+
+        /// <summary>
+        /// ARCHITECTURAL ENHANCEMENT: Store-specific payment methods configuration.
+        /// PRINCIPLE: Each store defines what payment methods it accepts - no hardcoded assumptions.
+        /// </summary>
+        public PaymentMethodsConfiguration PaymentMethods { get; set; } = new();
+
+        /// <summary>
+        /// Gets or sets additional store configuration.
         /// </summary>
         public Dictionary<string, object> AdditionalConfig { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Configuration for payment methods accepted by a store.
+    /// ARCHITECTURAL PRINCIPLE: Payment methods are store-specific configuration, not universal constants.
+    /// </summary>
+    public class PaymentMethodsConfiguration
+    {
+        /// <summary>
+        /// Gets or sets the list of accepted payment methods for this store.
+        /// ARCHITECTURAL PRINCIPLE: Each store explicitly defines what it accepts.
+        /// </summary>
+        public List<PaymentMethodConfig> AcceptedMethods { get; set; } = new();
+
+        /// <summary>
+        /// Gets or sets the default payment method (optional).
+        /// Used for suggestions, not assumptions.
+        /// </summary>
+        public string? DefaultMethod { get; set; }
+
+        /// <summary>
+        /// Gets or sets whether cash is accepted (most stores accept cash, but some may not).
+        /// </summary>
+        public bool AcceptsCash { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets whether digital payments are accepted.
+        /// </summary>
+        public bool AcceptsDigitalPayments { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets store-specific payment instructions or requirements.
+        /// </summary>
+        public string? PaymentInstructions { get; set; }
+    }
+
+    /// <summary>
+    /// Configuration for a specific payment method.
+    /// ARCHITECTURAL PRINCIPLE: Payment methods are configurable, not hardcoded constants.
+    /// </summary>
+    public class PaymentMethodConfig
+    {
+        /// <summary>
+        /// Gets or sets the payment method identifier (e.g., "cash", "visa", "apple_pay").
+        /// </summary>
+        public string MethodId { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the display name for this payment method.
+        /// </summary>
+        public string DisplayName { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the payment method type category.
+        /// </summary>
+        public PaymentMethodType Type { get; set; }
+
+        /// <summary>
+        /// Gets or sets whether this payment method is currently enabled.
+        /// </summary>
+        public bool IsEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets the minimum amount for this payment method (if any).
+        /// </summary>
+        public decimal? MinimumAmount { get; set; }
+
+        /// <summary>
+        /// Gets or sets the maximum amount for this payment method (if any).
+        /// </summary>
+        public decimal? MaximumAmount { get; set; }
+
+        /// <summary>
+        /// Gets or sets additional configuration for this payment method.
+        /// </summary>
+        public Dictionary<string, object> AdditionalConfig { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Categories of payment methods for organizational purposes.
+    /// ARCHITECTURAL PRINCIPLE: Categories are configurable organizational tools, not business logic.
+    /// </summary>
+    public enum PaymentMethodType
+    {
+        Cash,
+        CreditCard,
+        DebitCard,
+        DigitalWallet,
+        BankTransfer,
+        Cryptocurrency,
+        StoreCredit,
+        GiftCard,
+        Other
     }
 
     /// <summary>
@@ -169,14 +263,13 @@ namespace PosKernel.AI.Services
         {
             return new StoreConfig
             {
+                StoreId = "coffee-shop-01",
                 StoreType = StoreType.CoffeeShop,
                 PersonalityType = PersonalityType.AmericanBarista,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.InMemory,
                 StoreName = "Brew & Bean Coffee",
-                Description = "Artisan coffee shop with fresh roasted beans and homemade pastries",
                 Currency = "USD",
                 CultureCode = "en-US",
-                UseRealKernel = useRealKernel,
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Third-wave coffee",
@@ -190,14 +283,13 @@ namespace PosKernel.AI.Services
         {
             return new StoreConfig
             {
+                StoreId = "kopitiam-01",
                 StoreType = StoreType.Kopitiam,
                 PersonalityType = PersonalityType.SingaporeanKopitiamUncle,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.Mock,
                 StoreName = "Uncle's Traditional Kopitiam",
-                Description = "Authentic Singaporean kopitiam with traditional drinks and local favorites",
                 Currency = "SGD",
                 CultureCode = "en-SG",
-                UseRealKernel = useRealKernel,
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Traditional kopitiam culture",
@@ -212,14 +304,13 @@ namespace PosKernel.AI.Services
         {
             return new StoreConfig
             {
+                StoreId = "boulangerie-01",
                 StoreType = StoreType.Boulangerie,
                 PersonalityType = PersonalityType.FrenchBoulanger,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.InMemory,
                 StoreName = "La Belle Boulangerie",
-                Description = "Traditional French bakery with artisanal breads and pastries",
                 Currency = "EUR",
                 CultureCode = "fr-FR",
-                UseRealKernel = useRealKernel,
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Artisanal French baking",
@@ -234,14 +325,13 @@ namespace PosKernel.AI.Services
         {
             return new StoreConfig
             {
+                StoreId = "convenience-01",
                 StoreType = StoreType.ConvenienceStore,
                 PersonalityType = PersonalityType.JapaneseConbiniClerk,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.InMemory,
                 StoreName = "Daily Mart",
-                Description = "24/7 convenience store with fresh food and essentials",
                 Currency = "JPY",
                 CultureCode = "ja-JP",
-                UseRealKernel = useRealKernel,
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Convenience and efficiency",
@@ -256,14 +346,13 @@ namespace PosKernel.AI.Services
         {
             return new StoreConfig
             {
+                StoreId = "chai-stall-01",
                 StoreType = StoreType.ChaiStall,
                 PersonalityType = PersonalityType.IndianChaiWala,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.InMemory,
                 StoreName = "Raj's Chai Corner",
-                Description = "Authentic Indian chai stall with fresh tea and local snacks",
                 Currency = "INR",
                 CultureCode = "hi-IN",
-                UseRealKernel = useRealKernel,
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Fresh masala chai",
@@ -278,19 +367,83 @@ namespace PosKernel.AI.Services
         {
             return new StoreConfig
             {
+                StoreId = "generic-01",
                 StoreType = StoreType.GenericStore,
                 PersonalityType = PersonalityType.GenericCashier,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.InMemory,
                 StoreName = "Quick Stop Market",
-                Description = "General retail store with diverse products and professional service",
                 Currency = "USD",
                 CultureCode = "en-US",
-                UseRealKernel = useRealKernel,
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "General retail",
                     ["atmosphere"] = "Professional and efficient",
                     ["target_service_time"] = "2-4 minutes"
+                }
+            };
+        }
+        
+        /// <summary>
+        /// Creates a sample Singapore kopitiam store configuration with realistic payment methods.
+        /// ARCHITECTURAL PRINCIPLE: Each store explicitly configures its accepted payment methods.
+        /// </summary>
+        private static StoreConfig CreateSingaporeKopitiamConfig(bool useRealKernel)
+        {
+            return new StoreConfig
+            {
+                StoreId = "kopitiam-01",
+                StoreName = "Uncle Lim's Traditional Kopitiam",
+                StoreType = StoreType.Kopitiam,
+                PersonalityType = PersonalityType.SingaporeanKopitiamUncle,
+                Currency = "SGD",
+                CultureCode = "en-SG",
+                CatalogProvider = CatalogProviderType.RestaurantExtension,
+                
+                // ARCHITECTURAL ENHANCEMENT: Store-specific payment methods configuration
+                PaymentMethods = new PaymentMethodsConfiguration
+                {
+                    AcceptsCash = true,
+                    AcceptsDigitalPayments = true,
+                    DefaultMethod = "cash", // Most kopitiam customers pay cash
+                    PaymentInstructions = "Cash preferred, digital payments accepted for orders above S$5",
+                    AcceptedMethods = new List<PaymentMethodConfig>
+                    {
+                        new() { 
+                            MethodId = "cash", 
+                            DisplayName = "Cash", 
+                            Type = PaymentMethodType.Cash, 
+                            IsEnabled = true 
+                        },
+                        new() { 
+                            MethodId = "nets", 
+                            DisplayName = "NETS", 
+                            Type = PaymentMethodType.DebitCard, 
+                            IsEnabled = true,
+                            MinimumAmount = 5.00m
+                        },
+                        new() { 
+                            MethodId = "grabpay", 
+                            DisplayName = "GrabPay", 
+                            Type = PaymentMethodType.DigitalWallet, 
+                            IsEnabled = true,
+                            MinimumAmount = 2.00m
+                        },
+                        new() { 
+                            MethodId = "paynow", 
+                            DisplayName = "PayNow QR", 
+                            Type = PaymentMethodType.BankTransfer, 
+                            IsEnabled = true,
+                            MinimumAmount = 1.00m
+                        }
+                    }
+                },
+
+                AdditionalConfig = new Dictionary<string, object>
+                {
+                    {"terminal_id", "KOPITIAM_01_T1"},
+                    {"operator_id", "UNCLE_LIM"},
+                    {"table_service", false},
+                    {"language_support", new[] {"en", "zh", "ms", "ta"}}
                 }
             };
         }

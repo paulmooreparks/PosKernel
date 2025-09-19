@@ -21,6 +21,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>NU1608</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,8 +37,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PosKernel.Abstractions\PosKernel.Abstractions.csproj" />
-    <ProjectReference Include="..\PosKernel.Configuration\PosKernel.Configuration.csproj" />
     <ProjectReference Include="..\PosKernel.Client\PosKernel.Client.csproj" />
+    <ProjectReference Include="..\PosKernel.Configuration\PosKernel.Configuration.csproj" />
     <ProjectReference Include="..\PosKernel.Extensions.Restaurant\PosKernel.Extensions.Restaurant.csproj" />
   </ItemGroup>
 

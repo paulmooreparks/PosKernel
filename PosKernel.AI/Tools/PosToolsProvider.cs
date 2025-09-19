@@ -19,6 +19,8 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PosKernel.Abstractions;
 using PosKernel.Abstractions.Services;
+using PosKernel.Extensions.Restaurant.Client;
+using PosKernel.Extensions.Restaurant;
 using PosKernel.AI.Services;
 
 namespace PosKernel.AI.Tools
@@ -29,21 +31,37 @@ namespace PosKernel.AI.Tools
     /// </summary>
     public class PosToolsProvider
     {
-        private readonly IProductCatalogService _productCatalog;
+        private readonly IProductCatalogService? _productCatalog;
+        private readonly RestaurantExtensionClient? _restaurantClient;
         private readonly ILogger<PosToolsProvider> _logger;
-        private readonly ProductCustomizationService _customizationService;
+        private readonly StoreConfig? _storeConfig;
 
         /// <summary>
-        /// Initializes a new instance of the PosToolsProvider.
+        /// Initializes a new instance of the PosToolsProvider with IProductCatalogService.
         /// </summary>
         /// <param name="productCatalog">The product catalog service for database access.</param>
         /// <param name="logger">Logger for diagnostics and debugging.</param>
-        /// <param name="customizationService">Service for parsing product customizations.</param>
-        public PosToolsProvider(IProductCatalogService productCatalog, ILogger<PosToolsProvider> logger, ProductCustomizationService? customizationService = null)
+        /// <param name="storeConfig">Store configuration for currency and locale information.</param>
+        public PosToolsProvider(IProductCatalogService productCatalog, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null)
         {
             _productCatalog = productCatalog ?? throw new ArgumentNullException(nameof(productCatalog));
+            _restaurantClient = null;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _customizationService = customizationService ?? new ProductCustomizationService();
+            _storeConfig = storeConfig;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the PosToolsProvider with RestaurantExtensionClient.
+        /// </summary>
+        /// <param name="restaurantClient">The restaurant extension client for product operations.</param>
+        /// <param name="logger">Logger for diagnostics and debugging.</param>
+        /// <param name="storeConfig">Store configuration for currency and locale information.</param>
+        public PosToolsProvider(RestaurantExtensionClient restaurantClient, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null)
+        {
+            _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
+            _productCatalog = null;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _storeConfig = storeConfig;
         }
 
         /// <summary>
@@ -60,7 +78,8 @@ namespace PosKernel.AI.Tools
                 CreateCalculateTotalTool(),
                 CreateVerifyOrderTool(),
                 CreateProcessPaymentTool(),
-                CreateLoadMenuContextTool()
+                CreateLoadMenuContextTool(),
+                CreateLoadPaymentMethodsContextTool()
             };
         }
 
@@ -84,6 +103,7 @@ namespace PosKernel.AI.Tools
                     "verify_order" => ExecuteVerifyOrder(transaction),
                     "process_payment" => ExecuteProcessPayment(toolCall, transaction),
                     "load_menu_context" => await ExecuteLoadMenuContextAsync(toolCall),
+                    "load_payment_methods_context" => await ExecuteLoadPaymentMethodsContextAsync(toolCall),
                     _ => $"Unknown tool: {toolCall.FunctionName}"
                 };
             }
@@ -153,18 +173,13 @@ namespace PosKernel.AI.Tools
 
             try
             {
-                var productCatalog = _productCatalog ?? throw new InvalidOperationException("Product catalog not configured");
-
-                // First, try cultural translation for kopitiam terms
-                var translatedTerm = ApplyKopitiamCulturalTranslation(itemDescription);
-                
-                // Search for products in the catalog
-                var searchResults = await productCatalog.SearchProductsAsync(translatedTerm, maxResults: 10);
+                // Search for products using available service
+                var searchResults = await SearchProductsAsync(itemDescription, 10);
 
                 if (!searchResults.Any())
                 {
                     // Try broader search
-                    var broadSearchResults = await GetBroaderSearchResults(translatedTerm);
+                    var broadSearchResults = await GetBroaderSearchResults(itemDescription);
                     if (!broadSearchResults.Any())
                     {
                         return $"PRODUCT_NOT_FOUND: I don't recognize '{itemDescription}'. Could you try describing it differently?";
@@ -173,8 +188,8 @@ namespace PosKernel.AI.Tools
                 }
 
                 // Apply confidence-based disambiguation logic
-                var exactMatches = searchResults.Where(p => IsExactMatch(translatedTerm, p)).ToList();
-                var specificMatches = searchResults.Where(p => IsSpecificProductMatch(translatedTerm, p)).ToList();
+                var exactMatches = searchResults.Where(p => IsExactMatch(itemDescription, p)).ToList();
+                var specificMatches = searchResults.Where(p => IsSpecificProductMatch(itemDescription, p)).ToList();
 
                 // FIXED DECISION LOGIC - Proper confidence handling  
                 if (context == "clarification_response")
@@ -203,7 +218,7 @@ namespace PosKernel.AI.Tools
                 {
                     // Low/Medium confidence OR multiple valid options - require disambiguation
                     var disambiguationOptions = searchResults.Take(3).ToList(); // Limit to 3 options
-                    var optionsList = string.Join(", ", disambiguationOptions.Select(p => $"{p.Name} (${GetProductPrice(p):F2})"));
+                    var optionsList = string.Join(", ", disambiguationOptions.Select(p => $"{p.Name} ({FormatCurrency(GetProductPrice(p))})"));
                     
                     return $"DISAMBIGUATION_NEEDED: Found {disambiguationOptions.Count} options for '{itemDescription}': {optionsList}";
                 }
@@ -215,83 +230,52 @@ namespace PosKernel.AI.Tools
             }
         }
 
-        private string AddProductToTransaction(IProductInfo product, int quantity, Transaction transaction)
+        /// <summary>
+        /// Search products using available service (either catalog or restaurant extension).
+        /// </summary>
+        private async Task<List<IProductInfo>> SearchProductsAsync(string searchTerm, int maxResults)
         {
-            var price = GetProductPrice(product);
-            var unitPrice = new Money((long)(price * 100), "SGD"); // Convert to minor units
-            
-            for (int i = 0; i < quantity; i++)
+            if (_productCatalog != null)
             {
-                transaction.AddLine(new ProductId(product.Name), 1, unitPrice);
+                var results = await _productCatalog.SearchProductsAsync(searchTerm, maxResults);
+                return results.ToList();
             }
-            
-            var totalPrice = price * quantity;
-            return $"ADDED: {product.Name} x{quantity} @ ${price:F2} each = ${totalPrice:F2}";
+            else if (_restaurantClient != null)
+            {
+                var results = await _restaurantClient.SearchProductsAsync(searchTerm, maxResults);
+                // Convert RestaurantProductInfo to IProductInfo compatible format
+                return results.Select(p => new ProductInfoAdapter(p)).Cast<IProductInfo>().ToList();
+            }
+            else
+            {
+                throw new InvalidOperationException("DESIGN DEFICIENCY: No product catalog service available");
+            }
         }
 
-        private decimal GetProductPrice(IProductInfo product)
+        /// <summary>
+        /// Adapter to convert RestaurantExtension ProductInfo to IProductInfo interface.
+        /// </summary>
+        private class ProductInfoAdapter : IProductInfo
         {
-            // Try to get price from different possible properties
-            var productType = product.GetType();
-            
-            // Try BasePrice property
-            var basePriceProperty = productType.GetProperty("BasePrice");
-            if (basePriceProperty != null && basePriceProperty.PropertyType == typeof(decimal))
-            {
-                return (decimal)basePriceProperty.GetValue(product)!;
-            }
-            
-            // Try Price property
-            var priceProperty = productType.GetProperty("Price");
-            if (priceProperty != null && priceProperty.PropertyType == typeof(decimal))
-            {
-                return (decimal)priceProperty.GetValue(product)!;
-            }
-            
-            // Default fallback price
-            return 2.50m;
-        }
+            private readonly PosKernel.Extensions.Restaurant.ProductInfo _restaurantProduct;
 
-        private bool IsExactMatch(string searchTerm, IProductInfo product)
-        {
-            var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
-            var normalizedProductName = product.Name.ToLowerInvariant().Trim();
-            
-            // KOPITIAM INTELLIGENCE: Handle base product matching
-            // "teh c kosong" should match "Teh C" (base product)
-            // The "kosong" is a preparation instruction, not part of the product name
-            
-            // Remove preparation instructions from SEARCH TERM only
-            var baseSearchTerm = RemovePreparationInstructions(normalizedSearch);
-            
-            // Direct exact matches (SKU or full name match)
-            if (normalizedSearch == normalizedProductName || normalizedSearch == product.Sku.ToLowerInvariant())
+            public ProductInfoAdapter(PosKernel.Extensions.Restaurant.ProductInfo restaurantProduct)
             {
-                return true;
+                _restaurantProduct = restaurantProduct;
             }
-            
-            // BASE PRODUCT MATCH: "teh c kosong" → matches "teh c" 
-            if (baseSearchTerm == normalizedProductName)
-            {
-                return true;
-            }
-            
-            return false;
-        }
-        
-        private string RemovePreparationInstructions(string term)
-        {
-            var baseTerm = term;
-            
-            // Remove preparation modifiers to get base product
-            var modifiers = new[] { "kosong", "siew dai", "gao", "poh", "peng" };
-            
-            foreach (var modifier in modifiers)
-            {
-                baseTerm = baseTerm.Replace($" {modifier}", "").Replace($"{modifier} ", "");
-            }
-            
-            return baseTerm.Trim();
+
+            public string Sku => _restaurantProduct.Sku;
+            public string Name => _restaurantProduct.Name;
+            public string Description => _restaurantProduct.Description;
+            public string Category => _restaurantProduct.CategoryName; // Use CategoryName property
+            public decimal BasePrice => _restaurantProduct.BasePriceCents / 100.0m;
+            public long BasePriceCents => _restaurantProduct.BasePriceCents;
+            public bool IsActive => _restaurantProduct.IsActive;
+            public bool RequiresPreparation => false;
+            public int PreparationTimeMinutes => 0;
+            public string? NameLocalizationKey => null;
+            public string? DescriptionLocalizationKey => null;
+            public IReadOnlyDictionary<string, object> Attributes => new Dictionary<string, object>();
         }
 
         private McpTool CreateSearchProductsTool()
@@ -440,19 +424,25 @@ namespace PosKernel.AI.Tools
             return new McpTool
             {
                 Name = "load_menu_context",
-                Description = "Loads the complete menu for Uncle's cultural intelligence and product knowledge",
+                Description = "Loads the complete menu from the restaurant extension for Uncle's cultural intelligence",
                 Parameters = new
                 {
                     type = "object",
-                    properties = new
-                    {
-                        include_categories = new
-                        {
-                            type = "boolean",
-                            description = "Whether to include category information (default: true)",
-                            @default = true
-                        }
-                    }
+                    properties = new { include_categories = new { type = "boolean", description = "Whether to include category information (default: true)", @default = true } }
+                }
+            };
+        }
+
+        private McpTool CreateLoadPaymentMethodsContextTool()
+        {
+            return new McpTool
+            {
+                Name = "load_payment_methods_context", 
+                Description = "Loads the accepted payment methods for this store - ARCHITECTURAL PRINCIPLE: Payment methods are store-specific configuration, not universal constants",
+                Parameters = new
+                {
+                    type = "object",
+                    properties = new { include_limits = new { type = "boolean", description = "Whether to include amount limits and restrictions (default: true)", @default = true } } 
                 }
             };
         }
@@ -462,7 +452,7 @@ namespace PosKernel.AI.Tools
             var searchTerm = toolCall.Arguments["search_term"].GetString()!;
             var maxResults = toolCall.Arguments.TryGetValue("max_results", out var maxElement) ? maxElement.GetInt32() : 10;
 
-            var products = await _productCatalog.SearchProductsAsync(searchTerm, maxResults);
+            var products = await SearchProductsAsync(searchTerm, maxResults);
             
             if (!products.Any())
             {
@@ -470,7 +460,7 @@ namespace PosKernel.AI.Tools
             }
 
             var results = products.Select(p => 
-                $"• {p.Name} - ${p.BasePriceCents / 100.0:F2} ({p.Category})").ToList();
+                $"• {p.Name} - {FormatCurrency(p.BasePrice)} ({p.Category})").ToList();
 
             return $"Found {products.Count} products:\n" + string.Join("\n", results);
         }
@@ -479,7 +469,7 @@ namespace PosKernel.AI.Tools
         {
             var productId = toolCall.Arguments["product_identifier"].GetString()!;
 
-            var products = await _productCatalog.SearchProductsAsync(productId, 1);
+            var products = await SearchProductsAsync(productId, 1);
             if (!products.Any())
             {
                 return $"Product not found: {productId}";
@@ -487,7 +477,7 @@ namespace PosKernel.AI.Tools
 
             var product = products.First();
             return $"Product: {product.Name}\n" +
-                   $"Price: ${product.BasePriceCents / 100.0:F2}\n" +
+                   $"Price: {FormatCurrency(product.BasePrice)}\n" +
                    $"Category: {product.Category}\n" +
                    $"Description: {product.Description}\n" +
                    $"SKU: {product.Sku}\n" +
@@ -498,7 +488,23 @@ namespace PosKernel.AI.Tools
         {
             var count = toolCall.Arguments.TryGetValue("count", out var countElement) ? countElement.GetInt32() : 5;
 
-            var products = await _productCatalog.GetPopularItemsAsync();
+            List<IProductInfo> products;
+            
+            if (_productCatalog != null)
+            {
+                var catalogProducts = await _productCatalog.GetPopularItemsAsync();
+                products = catalogProducts.ToList();
+            }
+            else if (_restaurantClient != null)
+            {
+                var restaurantProducts = await _restaurantClient.GetPopularItemsAsync();
+                products = restaurantProducts.Select(p => new ProductInfoAdapter(p)).Cast<IProductInfo>().ToList();
+            }
+            else
+            {
+                return "No product service available";
+            }
+            
             var popularItems = products.Take(count);
 
             if (!popularItems.Any())
@@ -507,7 +513,7 @@ namespace PosKernel.AI.Tools
             }
 
             var results = popularItems.Select(p => 
-                $"• {p.Name} - ${p.BasePriceCents / 100.0:F2}").ToList();
+                $"• {p.Name} - {FormatCurrency(p.BasePrice)}").ToList();
 
             return $"Top {popularItems.Count()} popular items:\n" + string.Join("\n", results);
         }
@@ -612,8 +618,8 @@ namespace PosKernel.AI.Tools
             try
             {
                 // Load the complete menu for Uncle's context
-                var allProducts = await _productCatalog.SearchProductsAsync("", maxResults: 100);
-                var categories = includeCategories ? await _productCatalog.GetCategoriesAsync() : new List<string>();
+                var allProducts = await _productCatalog!.SearchProductsAsync("", maxResults: 100);
+                var categories = includeCategories ? await _productCatalog!.GetCategoriesAsync() : new List<string>();
 
                 var menuContext = new StringBuilder();
                 menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
@@ -647,16 +653,6 @@ namespace PosKernel.AI.Tools
                     }
                 }
 
-                menuContext.AppendLine("\nCULTURAL TRANSLATIONS Uncle Should Know:");
-                menuContext.AppendLine("• roti kaya → Kaya Toast");
-                menuContext.AppendLine("• teh si → Teh C (tea with evaporated milk)");
-                menuContext.AppendLine("• kopi si → Kopi C (coffee with evaporated milk)");
-                menuContext.AppendLine("• kosong → no sugar (for drinks), plain (for food)");
-                menuContext.AppendLine("• siew dai → less sugar");
-                menuContext.AppendLine("• gao → strong/thick");
-                menuContext.AppendLine("• poh → weak/diluted");
-                menuContext.AppendLine("• peng → iced");
-                
                 menuContext.AppendLine("\nUncle now has complete menu knowledge for intelligent order processing!");
                 
                 return menuContext.ToString();
@@ -665,6 +661,85 @@ namespace PosKernel.AI.Tools
             {
                 _logger.LogError(ex, "Error loading menu context: {Error}", ex.Message);
                 return $"ERROR: Unable to load menu context: {ex.Message}";
+            }
+        }
+
+        private async Task<string> ExecuteLoadPaymentMethodsContextAsync(McpToolCall toolCall)
+        {
+            var includeLimits = toolCall.Arguments.TryGetValue("include_limits", out var limitsElement) 
+                ? limitsElement.GetBoolean() : true;
+
+            try
+            {
+                // ARCHITECTURAL PRINCIPLE: Payment methods are loaded from store configuration, just like menu items
+                if (_storeConfig == null)
+                {
+                    return "ERROR: Store configuration not available. Cannot load payment methods without store context.";
+                }
+
+                var paymentMethodsContext = new StringBuilder();
+                
+                paymentMethodsContext.AppendLine("PAYMENT METHODS CONTEXT - Store-Specific Payment Configuration:");
+                paymentMethodsContext.AppendLine("=".PadRight(70, '='));
+                paymentMethodsContext.AppendLine();
+                paymentMethodsContext.AppendLine($"Store: {_storeConfig.StoreName} (ID: {_storeConfig.StoreId})");
+                paymentMethodsContext.AppendLine($"Currency: {_storeConfig.Currency}");
+                paymentMethodsContext.AppendLine();
+
+                if (_storeConfig.PaymentMethods.AcceptedMethods.Any())
+                {
+                    paymentMethodsContext.AppendLine("ACCEPTED PAYMENT METHODS:");
+                    
+                    foreach (var method in _storeConfig.PaymentMethods.AcceptedMethods.Where(m => m.IsEnabled))
+                    {
+                        paymentMethodsContext.AppendLine($"  • {method.DisplayName} ({method.MethodId})");
+                        paymentMethodsContext.AppendLine($"    Type: {method.Type}");
+                        
+                        if (includeLimits)
+                        {
+                            if (method.MinimumAmount.HasValue)
+                            {
+                                paymentMethodsContext.AppendLine($"    Minimum: {FormatCurrency(method.MinimumAmount.Value)}");
+                            }
+                            if (method.MaximumAmount.HasValue)
+                            {
+                                paymentMethodsContext.AppendLine($"    Maximum: {FormatCurrency(method.MaximumAmount.Value)}");
+                            }
+                        }
+                        paymentMethodsContext.AppendLine();
+                    }
+                }
+                else
+                {
+                    // ARCHITECTURAL PRINCIPLE: Fail fast if no payment methods configured
+                    return "ERROR: No payment methods configured for this store. " +
+                           "Store configuration must include accepted payment methods. " +
+                           "Contact system administrator to configure payment methods.";
+                }
+
+                if (!string.IsNullOrEmpty(_storeConfig.PaymentMethods.PaymentInstructions))
+                {
+                    paymentMethodsContext.AppendLine("PAYMENT INSTRUCTIONS:");
+                    paymentMethodsContext.AppendLine(_storeConfig.PaymentMethods.PaymentInstructions);
+                    paymentMethodsContext.AppendLine();
+                }
+
+                if (!string.IsNullOrEmpty(_storeConfig.PaymentMethods.DefaultMethod))
+                {
+                    paymentMethodsContext.AppendLine($"SUGGESTED DEFAULT: {_storeConfig.PaymentMethods.DefaultMethod}");
+                    paymentMethodsContext.AppendLine();
+                }
+
+                paymentMethodsContext.AppendLine("ARCHITECTURAL PRINCIPLE: Only process payments using methods listed above.");
+                paymentMethodsContext.AppendLine("If customer requests unlisted payment method, inform them it's not accepted.");
+                
+                return paymentMethodsContext.ToString();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading payment methods context: {Error}", ex.Message);
+                return $"ERROR: Unable to load payment methods context: {ex.Message}. " +
+                       "Please check store configuration and ensure payment methods are properly configured.";
             }
         }
 
@@ -697,60 +772,20 @@ namespace PosKernel.AI.Tools
             return Array.Empty<IProductInfo>();
         }
 
-        private string ApplyKopitiamCulturalTranslation(string input)
+        private async Task<List<IProductInfo>> GetBroaderSearchResults(string searchTerm)
         {
-            if (string.IsNullOrWhiteSpace(input))
+            // Simple broader search without hardcoded language assumptions
+            var searchWords = searchTerm.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            
+            foreach (var word in searchWords)
             {
-                return input;
-            }
-            
-            var translated = input.ToLowerInvariant().Trim();
-            
-            // CULTURAL INTELLIGENCE: Extract preparation instructions
-            // These are instructions for the drink maker, not separate products
-            
-            // Core translations: "si" means evaporated milk (C)
-            translated = translated.Replace("teh si", "teh c");
-            translated = translated.Replace("kopi si", "kopi c"); 
-            translated = translated.Replace("roti kaya", "kaya toast");
-            translated = translated.Replace("roti", "toast");
-            
-            // IMPORTANT: Keep modifiers for cultural context but search for base product
-            // Uncle will understand "teh c kosong" means:
-            // - Add "Teh C" to cart
-            // - Tell drink maker: "kosong" (no sugar)
-            
-            return translated;
-        }
-
-        private async Task<IReadOnlyList<IProductInfo>> GetBroaderSearchResults(string searchTerm)
-        {
-            // Try searching for broader terms
-            var broaderTerms = new List<string>();
-            
-            if (searchTerm.Contains("kaya"))
-            {
-                broaderTerms.Add("kaya");
-            }
-            
-            if (searchTerm.Contains("teh") || searchTerm.Contains("tea"))
-            {
-                broaderTerms.Add("teh");
-                broaderTerms.Add("tea");
-            }
-            
-            if (searchTerm.Contains("kopi") || searchTerm.Contains("coffee"))
-            {
-                broaderTerms.Add("kopi");
-                broaderTerms.Add("coffee");
-            }
-
-            foreach (var term in broaderTerms)
-            {
-                var results = await _productCatalog.SearchProductsAsync(term, maxResults: 5);
-                if (results.Any())
+                if (word.Length > 2) // Skip very short words
                 {
-                    return results;
+                    var results = await SearchProductsAsync(word, 5);
+                    if (results.Any())
+                    {
+                        return results;
+                    }
                 }
             }
             
@@ -899,6 +934,79 @@ namespace PosKernel.AI.Tools
                 var t when t.Contains("teh") => 3, // Tea options
                 _ => 5 // Default max
             };
+        }
+
+        /// <summary>
+        /// ARCHITECTURAL PRINCIPLE: Currency formatting uses store configuration - no hardcoded assumptions.
+        /// </summary>
+        private string FormatCurrency(decimal amount) {
+            if (_storeConfig?.Currency == null) {
+                throw new InvalidOperationException(
+                    $"DESIGN DEFICIENCY: Store configuration missing currency. " +
+                    $"Cannot format {amount} without valid currency in store config. " +
+                    $"Ensure StoreConfig has valid Currency property.");
+            }
+            
+            // Use store currency configuration for basic formatting
+            return _storeConfig.Currency.ToUpperInvariant() switch {
+                "USD" => $"${amount:F2}",
+                "SGD" => $"S${amount:F2}",
+                "EUR" => $"€{amount:F2}",
+                "GBP" => $"£{amount:F2}",
+                "JPY" => $"¥{amount:F0}",
+                _ => $"{amount:F2} {_storeConfig.Currency}"
+            };
+        }
+
+        private string AddProductToTransaction(IProductInfo product, int quantity, Transaction transaction)
+        {
+            var price = GetProductPrice(product);
+            var unitPrice = new Money((long)(price * 100), "SGD"); // Convert to minor units
+            
+            for (int i = 0; i < quantity; i++)
+            {
+                transaction.AddLine(new ProductId(product.Name), 1, unitPrice);
+            }
+            
+            var totalPrice = price * quantity;
+            return $"ADDED: {product.Name} x{quantity} @ {FormatCurrency(price)} each = {FormatCurrency(totalPrice)}";
+        }
+
+        private decimal GetProductPrice(IProductInfo product)
+        {
+            // Try to get price from different possible properties
+            var productType = product.GetType();
+            
+            // Try BasePrice property
+            var basePriceProperty = productType.GetProperty("BasePrice");
+            if (basePriceProperty != null && basePriceProperty.PropertyType == typeof(decimal))
+            {
+                return (decimal)basePriceProperty.GetValue(product)!;
+            }
+            
+            // Try Price property
+            var priceProperty = productType.GetProperty("Price");
+            if (priceProperty != null && priceProperty.PropertyType == typeof(decimal))
+            {
+                return (decimal)priceProperty.GetValue(product)!;
+            }
+            
+            // Default fallback price
+            return 2.50m;
+        }
+
+        private bool IsExactMatch(string searchTerm, IProductInfo product)
+        {
+            var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
+            var normalizedProductName = product.Name.ToLowerInvariant().Trim();
+            
+            // Direct exact matches (SKU or full name match)
+            if (normalizedSearch == normalizedProductName || normalizedSearch == product.Sku.ToLowerInvariant())
+            {
+                return true;
+            }
+            
+            return false;
         }
 
         // Simple business context data structure

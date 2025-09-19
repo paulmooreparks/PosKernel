@@ -304,12 +304,12 @@ namespace PosKernel.AI.UI.Terminal {
                 }
 
                 var itemCount = receipt.Items.Count;
-                var status = receipt.Status switch {
-                    PaymentStatus.Building => $"Building Order ({itemCount} items)",
-                    PaymentStatus.ReadyForPayment => $"Ready for Payment - {FormatCurrency(receipt.Total)}",
-                    PaymentStatus.Completed => "✅ PAID",
-                    _ => receipt.Status.ToString()
-                };
+                string status = receipt.Status switch {
+                        PaymentStatus.Building => $"Building Order ({itemCount} items)",
+                        PaymentStatus.ReadyForPayment => $"Ready for Payment - {FormatCurrency(receipt.Total)}",
+                        PaymentStatus.Completed => "✅ PAID",
+                        _ => receipt.Status.ToString()
+                    };
                 _statusBar.Text = $"Status: {status}";
             });
         }
@@ -317,7 +317,7 @@ namespace PosKernel.AI.UI.Terminal {
         public void ShowPaymentStatus(string status) {
             Application.Invoke(() => {
                 // Only update if we're not currently showing a focus hint
-                if (!_statusBar.Text.ToString().Contains("Viewing")) {
+                if(!_statusBar.Text.ToString().Contains("Viewing")) {
                     _statusBar.Text = $"Status: {status}";
                 }
             });
@@ -481,6 +481,12 @@ namespace PosKernel.AI.UI.Terminal {
         public void SetOrchestrator(ChatOrchestrator orchestrator) {
             _orchestrator = orchestrator;
             
+            // Enable thought logging with the UI log display
+            if (_logDisplay != null) {
+                _orchestrator.SetLogDisplay(_logDisplay);
+                _logDisplay.AddLog("INFO: Thought logging enabled");
+            }
+            
             // When orchestrator is set, show a ready message to let user know they can type
             if (_terminalChat != null) {
                 _terminalChat.ShowMessage(new ChatMessage {
@@ -564,7 +570,7 @@ namespace PosKernel.AI.UI.Terminal {
 
             // Calculate layout dimensions
             var inputHeight = 3;
-            var chatHeightPercent = 50; // Fixed width for chat area to match screenshot
+            var chatHeightPercent = 20; // Fixed width for chat area to match screenshot
             var chatWidthPercent = 60; // Fixed width for chat area to match screenshot
             var promptHeightPercent = 20; // Height when expanded, 1 when collapsed
 
@@ -891,7 +897,7 @@ namespace PosKernel.AI.UI.Terminal {
                 
                 // Update prompt container size based on debug pane state
                 var newPromptHeight = logCollapsed ? Dim.Fill(3) : Dim.Percent(promptHeightPercent);
-                _promptDisplay?.UpdateContainerSize(newPromptHeight);
+                _promptDisplay?.UpdateContainerSize(newPromptHeight!);
                 
                 logContainer.SetNeedsLayout();
                 e.Handled = true;
@@ -918,7 +924,7 @@ namespace PosKernel.AI.UI.Terminal {
                     
                     // Update prompt container size based on debug pane state
                     var newPromptHeight = logCollapsed ? Dim.Fill(3) : Dim.Percent(promptHeightPercent);
-                    _promptDisplay?.UpdateContainerSize(newPromptHeight);
+                    _promptDisplay?.UpdateContainerSize(newPromptHeight!);
                     
                     logContainer.SetNeedsLayout();
                     e.Handled = true;
@@ -944,7 +950,7 @@ namespace PosKernel.AI.UI.Terminal {
             _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer);
             
             // Receipt display needs currency service - this will be updated later when store config is available
-            Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay);
+            Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay!);
             Log = _logDisplay; // Expose log display through ILogDisplay interface
 
             // Redirect console output to debug pane

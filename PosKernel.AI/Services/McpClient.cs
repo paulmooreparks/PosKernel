@@ -58,7 +58,7 @@ namespace PosKernel.AI.Services
                     model = _config.DefaultParameters.GetValueOrDefault("model", "gpt-4o"),
                     messages = new[]
                     {
-                        new { role = "system", content = "You are an AI assistant for a Point-of-Sale system. Use the provided tools to help with transactions and customer service. Only use tools when necessary to complete the user's request." },
+                        new { role = "system", content = "You are an AI assistant for a Point-of-Sale system. Use the provided tools to help with transactions and customer service. CRITICAL: When you use any tool, you MUST ALWAYS provide a conversational response alongside the tool execution. Never execute tools silently. Always respond naturally to show you understand and completed the action." },
                         new { role = "user", content = prompt }
                     },
                     tools = availableTools.Select(tool => new
@@ -73,7 +73,9 @@ namespace PosKernel.AI.Services
                     }).ToArray(),
                     tool_choice = "auto",
                     temperature = _config.DefaultParameters.GetValueOrDefault("temperature", 0.3),
-                    max_tokens = _config.DefaultParameters.GetValueOrDefault("max_tokens", 1000)
+                    max_tokens = _config.DefaultParameters.GetValueOrDefault("max_tokens", 1000),
+                    // ARCHITECTURAL FIX: Force the model to provide conversational content alongside tools
+                    response_format = new { type = "text" }
                 };
 
                 var jsonRequest = JsonSerializer.Serialize(request, _config.JsonOptions);
