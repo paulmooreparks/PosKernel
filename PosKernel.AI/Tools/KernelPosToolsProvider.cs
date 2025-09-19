@@ -231,7 +231,8 @@ namespace PosKernel.AI.Tools
                 CreateCalculateTotalTool(),
                 CreateVerifyOrderTool(),
                 CreateProcessPaymentTool(),
-                CreateLoadMenuContextTool()
+                CreateLoadMenuContextTool(),
+                CreateLoadPaymentMethodsContextTool()
             };
         }
 
@@ -255,6 +256,7 @@ namespace PosKernel.AI.Tools
                     "verify_order" => await ExecuteVerifyOrderAsync(cancellationToken),
                     "process_payment" => await ExecuteProcessPaymentAsync(toolCall, cancellationToken),
                     "load_menu_context" => await ExecuteLoadMenuContextAsync(toolCall, cancellationToken),
+                    "load_payment_methods_context" => await ExecuteLoadPaymentMethodsContextAsync(toolCall, cancellationToken),
                     _ => $"Unknown tool: {toolCall.FunctionName}"
                 };
             }
@@ -402,6 +404,17 @@ namespace PosKernel.AI.Tools
             {
                 type = "object",
                 properties = new { include_categories = new { type = "boolean", description = "Whether to include category information (default: true)", @default = true } }
+            }
+        };
+
+        private McpTool CreateLoadPaymentMethodsContextTool() => new()
+        {
+            Name = "load_payment_methods_context",
+            Description = "Loads the payment methods accepted by this store for payment processing intelligence",
+            Parameters = new
+            {
+                type = "object",
+                properties = new { include_details = new { type = "boolean", description = "Whether to include payment method details (default: true)", @default = true } }
             }
         };
 
@@ -704,6 +717,58 @@ namespace PosKernel.AI.Tools
                 return $"ERROR: Unable to load menu context: {ex.Message}. Please check that the Restaurant Extension service is running and the database is properly initialized.";
             }
         }
+
+        private async Task<string> ExecuteLoadPaymentMethodsContextAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (_storeConfig == null)
+                {
+                    return "ERROR: Store configuration not available.";
+                }
+
+                var context = new StringBuilder();
+                context.AppendLine($"PAYMENT METHODS CONTEXT - Store: {_storeConfig.StoreName}");
+                context.AppendLine("=".PadRight(60, '='));
+
+                var methods = GetSupportedPaymentMethodsForStoreType(_storeConfig.StoreType);
+                context.AppendLine($"\nSUPPORTED PAYMENT METHODS ({methods.Count} methods):");
+                
+                foreach (var method in methods)
+                {
+                    context.AppendLine($"  • {method.Name} ({method.Type})");
+                }
+
+                context.AppendLine($"\nCURRENCY: {_storeConfig.Currency}");
+                return context.ToString();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading payment methods context");
+                return $"ERROR: Unable to load payment methods context: {ex.Message}";
+            }
+        }
+
+        private List<PaymentMethodInfo> GetSupportedPaymentMethodsForStoreType(StoreType storeType)
+        {
+            return storeType switch
+            {
+                StoreType.Kopitiam => new List<PaymentMethodInfo>
+                {
+                    new("Cash", "Physical", "Singapore dollars"),
+                    new("PayNow", "Digital", "QR code payments"),
+                    new("NETS", "Card", "Singapore electronic payment"),
+                    new("Credit Card", "Card", "Visa, MasterCard")
+                },
+                _ => new List<PaymentMethodInfo>
+                {
+                    new("Cash", "Physical", "Local currency"),
+                    new("Card", "Card", "Credit/debit cards")
+                }
+            };
+        }
+
+        private record PaymentMethodInfo(string Name, string Type, string Description);
 
         // Helper methods (broader search, etc.)
         private async Task<List<RestaurantProductInfo>> GetBroaderSearchResults(string searchTerm, CancellationToken cancellationToken)

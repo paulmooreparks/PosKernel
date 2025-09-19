@@ -105,23 +105,62 @@ namespace PosKernel.AI.Core {
             try {
                 var timeOfDay = DateTime.Now.Hour < 12 ? "morning" : DateTime.Now.Hour < 17 ? "afternoon" : "evening";
                 var context = new PosKernel.AI.Services.PromptContext { TimeOfDay = timeOfDay, CurrentTime = DateTime.Now.ToString("HH:mm") };
-                var greetingPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "greeting", context);
+                
+                // ARCHITECTURAL FIX: Handle initialization differently for Real Kernel vs Mock
+                if (_useRealKernel && _kernelToolsProvider != null)
+                {
+                    var availableTools = _kernelToolsProvider.GetAvailableTools();
+                    
+                    // STEP 1: Load contexts silently (tools only, no conversational response needed)
+                    var contextLoadPrompt = "Load menu context and payment methods context for this store. " +
+                                          "Execute the load_menu_context and load_payment_methods_context tools. " +
+                                          "Do not provide conversational responses - just execute the tools to initialize your knowledge.";
+                    
+                    _logger.LogInformation("Loading store context at initialization...");
+                    LastPrompt = contextLoadPrompt;
+                    await _mcpClient.CompleteWithToolsAsync(contextLoadPrompt, availableTools);
+                    
+                    // STEP 2: Generate proper greeting using personality (no tools needed)
+                    var greetingPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "greeting", context);
+                    _logger.LogInformation("Generating greeting message...");
+                    
+                    LastPrompt = greetingPrompt;
+                    var emptyToolsList = new List<McpTool>(); // No tools for greeting
+                    var greetingResponse = await _mcpClient.CompleteWithToolsAsync(greetingPrompt, emptyToolsList);
 
-                LastPrompt = greetingPrompt;
-                var availableTools = _useRealKernel ? _kernelToolsProvider!.GetAvailableTools() : _mockToolsProvider!.GetAvailableTools();
-                var response = await _mcpClient.CompleteWithToolsAsync(greetingPrompt, availableTools);
+                    var greetingMessage = new ChatMessage {
+                        Sender = _personality.StaffTitle,
+                        Content = greetingResponse.Content ?? $"Welcome to {_storeConfig.StoreName}! How can I help you today?",
+                        IsSystem = false
+                    };
 
-                var greetingMessage = new ChatMessage {
-                    Sender = _personality.StaffTitle,
-                    Content = response.Content,
-                    IsSystem = false
-                };
+                    _conversationHistory.Add(greetingMessage);
+                    return greetingMessage;
+                }
+                else if (_mockToolsProvider != null)
+                {
+                    // Mock initialization - just greeting, no context loading needed
+                    var greetingPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "greeting", context);
+                    LastPrompt = greetingPrompt;
+                    var emptyToolsList = new List<McpTool>(); // No tools for mock greeting
+                    var response = await _mcpClient.CompleteWithToolsAsync(greetingPrompt, emptyToolsList);
 
-                _conversationHistory.Add(greetingMessage);
-                return greetingMessage;
+                    var greetingMessage = new ChatMessage {
+                        Sender = _personality.StaffTitle,
+                        Content = response.Content ?? $"Welcome to {_storeConfig.StoreName}! How can I help you today?",
+                        IsSystem = false
+                    };
+
+                    _conversationHistory.Add(greetingMessage);
+                    return greetingMessage;
+                }
+                else
+                {
+                    throw new InvalidOperationException("No tools provider available for initialization");
+                }
             }
             catch (Exception ex) {
-                _logger.LogError(ex, "Error during initialization");
+                _logger.LogError(ex, "Error during initialization: {Error}", ex.Message);
                 var fallbackMessage = new ChatMessage {
                     Sender = _personality.StaffTitle,
                     Content = $"Welcome to {_storeConfig.StoreName}! How can I help you today?",
@@ -185,7 +224,8 @@ namespace PosKernel.AI.Core {
             }
 
             // ARCHITECTURAL ENHANCEMENT: Prioritize conversation context over structural analysis
-            if (intentAnalysis.IsPaymentMethodResponse && intentAnalysis.Intent == OrderIntent.ProcessPayment)
+            if (intentAnalysis.IsPaymentMethodResponse && 
+                (intentAnalysis.Intent == OrderIntent.ProcessPayment || intentAnalysis.Intent == OrderIntent.ReadyForPayment))
             {
                 _thoughtLogger.LogThought("PAYMENT_CONTEXT_DETECTED: User responding to payment method question - processing payment immediately");
                 return await ProcessUserRequestAsync(userInput, "payment");
@@ -216,6 +256,9 @@ namespace PosKernel.AI.Core {
                     return await ProcessUserRequestAsync(userInput, "payment");
                     
                 case OrderIntent.Question:
+                    _thoughtLogger.LogThought("QUESTION_INTENT: Customer asking question - provide information, don't automatically process");
+                    // ARCHITECTURAL FIX: Questions should be answered, not processed as actions
+                    // Even payment-related questions should be informational first
                     return await ProcessUserRequestAsync(userInput, "ordering"); // Questions go through normal ordering flow
                     
                 // ARCHITECTURAL FIX: Handle all completion-related intents properly
@@ -347,7 +390,7 @@ namespace PosKernel.AI.Core {
                 if (toolResponse.ToolCalls?.Any() == true)
                 {
                     // Generate tool acknowledgment response using personality templates
-                    conversationalResponse = await GenerateToolAcknowledgmentAsync(toolResponse.ToolCalls, userInput, promptContext);
+                    conversationalResponse = await GenerateToolAcknowledgmentAsync(toolResponse.ToolCalls, userInput, promptContext, toolResults);
                     _thoughtLogger.LogThought($"PHASE_2_TOOL_ACKNOWLEDGMENT: Generated response length={conversationalResponse.Length}");
                 }
                 else
@@ -408,26 +451,55 @@ namespace PosKernel.AI.Core {
             // Add context-specific tool guidance
             if (contextHint == "payment")
             {
-                prompt += "\n\nTOOL_ANALYSIS_CONTEXT: User is responding to payment method question or indicating payment intent.";
+                prompt += "\n\nTOOL_ANALYSIS_CONTEXT: User is specifying their payment method.";
                 
                 if (_receipt.Items.Any())
                 {
                     prompt += $"\nCURRENT_ORDER: {string.Join(", ", _receipt.Items.Select(i => $"{i.Quantity}x {i.ProductName}"))}";
                     prompt += $"\nORDER_TOTAL: {FormatCurrency(_receipt.Total)}";
-                    prompt += "\nThe order is READY for payment. Execute process_payment tool if customer specified payment method.";
+                    prompt += "\nCRITICAL: The customer has specified their payment method. Execute process_payment tool immediately with their specified method.";
+                    prompt += "\nDO NOT load payment methods context - the customer has already chosen their method.";
                 }
             }
             else if (_receipt.Status == PaymentStatus.ReadyForPayment)
             {
-                prompt += "\n\nTOOL_ANALYSIS_CONTEXT: Order is complete and ready for payment. No tools needed unless customer specifies payment method.";
+                prompt += "\n\nTOOL_ANALYSIS_CONTEXT: Order is complete and ready for payment. If customer asks about payment methods, use load_payment_methods_context tool.";
             }
 
             // Add tool execution instruction
-            prompt += "\n\nTOOL_EXECUTION_PHASE: Analyze the customer's request and execute appropriate tools. " +
-                     "Do not provide conversational responses - focus only on tool execution. " +
-                     "The conversational response will be generated in a separate phase. " +
-                     "IMPORTANT: You MUST use tools when the customer is ordering items or requesting actions. " +
-                     "For example: 'kopi C' should trigger add_item_to_transaction tool.";
+            prompt += "\n\n## TOOL_EXECUTION_PHASE: Analyze and Execute Tools Only\n" +
+                     "**CRITICAL**: This is the tool execution phase. Do NOT provide conversational responses here.\n" +
+                     "**FOCUS**: Determine which tools to execute based on the customer's request, then execute them.\n\n" +
+                     "### TOOL SELECTION RULES (FOLLOW EXACTLY):\n" +
+                     "1. **Customer mentions food/drink items** (like 'roti kaya', 'kopi', 'teh', specific product names):\n" +
+                     "   → **ALWAYS use `add_item_to_transaction` tool**\n" +
+                     "   → **NEVER use `load_menu_context` tool**\n" +
+                     "   → The menu context is already loaded at session start!\n\n" +
+                     "2. **Customer asks comprehensive menu questions** ('what food do you have?', 'show me the full menu', 'what's available?'):\n" +
+                     "   → **Use `search_products` tool with empty search term** to get comprehensive results\n" +
+                     "   → **Alternative: Use `load_menu_context` tool** for complete menu display\n" +
+                     "   → **DO NOT use `get_popular_items`** for comprehensive menu requests\n\n" +
+                     "3. **Customer asks for recommendations** ('what's popular?', 'what's good?', 'what do you recommend?'):\n" +
+                     "   → **Use `get_popular_items` tool** to show recommendations\n" +
+                     "   → This is different from asking for the complete menu\n\n" +
+                     "4. **Customer indicates completion** ('that's all', 'finish', 'done'):\n" +
+                     "   → **DO NOT use any tools** - just ask for payment method\n" +
+                     "   → Conversational response will be handled in next phase\n\n" +
+                     "5. **Customer specifies payment method** (after you asked how they want to pay):\n" +
+                     "   → **Use `process_payment` tool with their specified method**\n" +
+                     "   → **DO NOT use `load_payment_methods_context` tool**\n\n" +
+                     "6. **Customer asks about payment methods** ('can I pay cash?', 'what payment methods?'):\n" +
+                     "   → **Use `load_payment_methods_context` tool**\n\n" +
+                     "### CRITICAL DISTINCTION:\n" +
+                     "**'What food do you have?'** = Customer wants to see ALL available items → Use `search_products` or `load_menu_context`\n" +
+                     "**'What's popular?'** = Customer wants recommendations → Use `get_popular_items`\n\n" +
+                     "### CRITICAL ARCHITECTURAL RULE:\n" +
+                     "**NEVER use `load_menu_context` during customer ordering for item lookups!**\n" +
+                     "The menu was loaded once at session initialization. Your job now is to:\n" +
+                     "- Take orders using `add_item_to_transaction`\n" +
+                     "- Answer menu questions using `search_products` or display knowledge\n" +
+                     "- Process payments using `process_payment`\n\n" +
+                     "**Execute the appropriate tools now, then stop. No conversational content in this phase.**";
 
             return prompt;
         }
@@ -436,7 +508,7 @@ namespace PosKernel.AI.Core {
         /// ARCHITECTURAL COMPONENT: Generates tool acknowledgment using personality-specific templates.
         /// This ensures authentic personality responses that acknowledge what tools were executed.
         /// </summary>
-        private async Task<string> GenerateToolAcknowledgmentAsync(IReadOnlyList<McpToolCall> toolCalls, string originalUserInput, PosKernel.AI.Services.PromptContext baseContext)
+        private async Task<string> GenerateToolAcknowledgmentAsync(IReadOnlyList<McpToolCall> toolCalls, string originalUserInput, PosKernel.AI.Services.PromptContext baseContext, List<string>? toolResults = null)
         {
             // Update context with tool execution details
             var acknowledgmentContext = new PosKernel.AI.Services.PromptContext
@@ -459,6 +531,17 @@ namespace PosKernel.AI.Core {
             acknowledgmentPrompt = acknowledgmentPrompt.Replace("{UserInput}", originalUserInput ?? "");
             acknowledgmentPrompt = acknowledgmentPrompt.Replace("{CartItems}", acknowledgmentContext.CartItems ?? "none");
             acknowledgmentPrompt = acknowledgmentPrompt.Replace("{CurrentTotal}", acknowledgmentContext.CurrentTotal ?? "");
+            
+            // CRITICAL FIX: Add tool results so AI knows what the tools returned
+            if (toolResults?.Any() == true)
+            {
+                acknowledgmentPrompt += "\n\n## TOOL EXECUTION RESULTS:\n";
+                for (int i = 0; i < toolCalls.Count && i < toolResults.Count; i++)
+                {
+                    acknowledgmentPrompt += $"\n### {toolCalls[i].FunctionName} returned:\n{toolResults[i]}\n";
+                }
+                acknowledgmentPrompt += "\n**CRITICAL**: You must share these detailed results with the customer in your response!";
+            }
             
             _thoughtLogger.LogThought($"TOOL_ACKNOWLEDGMENT_PROMPT: {acknowledgmentPrompt}");
 
@@ -506,35 +589,48 @@ namespace PosKernel.AI.Core {
             AiPersonalityFactory.ClearPromptCache();
         }
 
-        public Task<ChatMessage> GeneratePostPaymentMessageAsync() {
+        public async Task<ChatMessage> GeneratePostPaymentMessageAsync() {
             try {
                 _paymentState.Reset();
                 _receipt.Items.Clear();
                 _receipt.Status = PaymentStatus.Building;
                 _receipt.TransactionId = Guid.NewGuid().ToString()[..8];
 
-                // Let personality handle the next customer greeting - no hardcoded responses
-                var nextCustomerPrompt = AiPersonalityFactory.LoadPrompt(_personality.Type, "next_customer");
+                // ARCHITECTURAL FIX: Use AI to generate next customer greeting, not raw file content
+                var timeOfDay = DateTime.Now.Hour < 12 ? "morning" : DateTime.Now.Hour < 17 ? "afternoon" : "evening";
+                var context = new PosKernel.AI.Services.PromptContext { 
+                    TimeOfDay = timeOfDay, 
+                    CurrentTime = DateTime.Now.ToString("HH:mm") 
+                };
                 
+                // Generate proper next customer greeting using AI (same as initialization)
+                var nextCustomerPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "next_customer", context);
+                
+                _logger.LogInformation("Generating next customer greeting...");
+                var emptyToolsList = new List<McpTool>(); // No tools for greeting
+                var greetingResponse = await _mcpClient.CompleteWithToolsAsync(nextCustomerPrompt, emptyToolsList);
+
                 var message = new ChatMessage {
                     Sender = _personality.StaffTitle,
-                    Content = nextCustomerPrompt,
+                    Content = greetingResponse.Content ?? "Next customer! What you want?",
                     IsSystem = false
                 };
 
                 _conversationHistory.Clear();
                 _conversationHistory.Add(message);
-                return Task.FromResult(message);
+                return message;
             }
             catch (Exception ex) {
-                _logger.LogError(ex, "Error generating post-payment message");
-                // Fallback to generic greeting if personality prompt fails
+                _logger.LogError(ex, "Error generating post-payment message: {Error}", ex.Message);
+                // Fallback to simple greeting if AI fails
                 var fallbackMessage = new ChatMessage {
                     Sender = _personality.StaffTitle,
-                    Content = "Welcome! How can I help you today?",
+                    Content = "Next customer! What you want?",
                     IsSystem = false
                 };
-                return Task.FromResult(fallbackMessage);
+                _conversationHistory.Clear();
+                _conversationHistory.Add(fallbackMessage);
+                return fallbackMessage;
             }
         }
 

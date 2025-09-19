@@ -119,7 +119,7 @@ namespace PosKernel.AI.UI.Terminal {
                                 // Update prompt display with the last prompt sent to AI
                                 terminalUI?.UpdatePromptDisplay();
                                 
-                                _inputField.SetFocus();
+                                // _inputField.SetFocus();
                             });
 
                             // CLEAN: Simple post-payment detection
@@ -134,7 +134,7 @@ namespace PosKernel.AI.UI.Terminal {
                                     ShowMessage(postPaymentMessage);
                                     terminalUI?.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
                                     terminalUI?.UpdatePromptDisplay();
-                                    _inputField.SetFocus();
+                                    // _inputField.SetFocus();
                                 });
                             } else {
                                 terminalUI?.LogDisplay?.AddLog($"DEBUG: No payment completion detected - Previous: {previousReceiptStatus}, New: {newReceiptStatus}");
@@ -172,13 +172,6 @@ namespace PosKernel.AI.UI.Terminal {
 
                     terminalUI?.LogDisplay?.AddLog($"DEBUG: orchestrator = {(orchestrator != null ? "found" : "NULL")}");
                     terminalUI?.LogDisplay?.AddLog("INFO: User tried to input but orchestrator not ready yet");
-                    
-                    // Re-enable input after a short delay and refocus
-                    Task.Delay(1000).ContinueWith(_ => {
-                        Application.Invoke(() => {
-                            _inputField.SetFocus();
-                        });
-                    });
                 }
             }
 
@@ -646,7 +639,7 @@ namespace PosKernel.AI.UI.Terminal {
                 Height = Dim.Percent(chatHeightPercent),
                 ReadOnly = true,
                 WordWrap = false,
-                CanFocus = false,
+                CanFocus = true,
             };
 
             chatView.ColorScheme = new ColorScheme() {
@@ -678,7 +671,7 @@ namespace PosKernel.AI.UI.Terminal {
                 Width = Dim.Fill(1), // Leave space for scroll bar
                 Height = Dim.Percent(chatHeightPercent),
                 ReadOnly = true,
-                CanFocus = false,
+                CanFocus = true,
             };
 
             receiptView.ColorScheme = new ColorScheme() {
@@ -728,6 +721,7 @@ namespace PosKernel.AI.UI.Terminal {
                 Y = Pos.Bottom(promptLabel),
                 Width = Dim.Fill(),
                 Height = Dim.Percent(promptHeightPercent),
+                CanFocus = true,
             };
 
             var promptView = new TextView() {
@@ -790,7 +784,8 @@ namespace PosKernel.AI.UI.Terminal {
                 X = 0,
                 Y = Pos.Bottom(logLabel),
                 Width = Dim.Fill(),
-                Height = Dim.Fill(1) // Fill all remaining space, leaving room for status bar
+                Height = Dim.Fill(1), // Fill all remaining space, leaving room for status bar
+                CanFocus = true,
             };
 
             var logView = new TextView() {
