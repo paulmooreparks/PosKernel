@@ -10,7 +10,10 @@
 
 POS Kernel is a culture-neutral transaction processing kernel designed for global deployment. Built with Rust for security and performance, it provides both HTTP service and FFI interfaces. 
 
-### Current Status: Service Foundation Complete + Currency-Aware Architecture
+## Demo Video
+[![POS Kernel Demo](https://img.youtube.com/vi/OvtzOJsVfEg/0.jpg)](https://www.youtube.com/watch?v=OvtzOJsVfEg)
+
+## Current Status: Service Foundation Complete + Currency-Aware Architecture
 
 HTTP service with comprehensive void functionality and multi-currency support
 ```bash
@@ -23,7 +26,7 @@ cd PosKernel.AI && dotnet run
 # Result: Terminal.GUI interface communicating with Rust service
 ```
 
-### Key Achievements
+## Key Achievements
 
 - **Service Architecture**: HTTP service with RESTful API
 - **Currency-Aware Operations**: Proper decimal handling for multiple currencies (SGD, USD, JPY, BHD)
@@ -197,3 +200,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+
