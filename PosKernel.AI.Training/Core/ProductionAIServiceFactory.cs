@@ -1,0 +1,234 @@
+/*
+Copyright 2025 Paul Moore Parks and contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
+using PosKernel.AI.Core;
+using PosKernel.AI.Services;
+using PosKernel.AI.Tools;
+using PosKernel.Extensions.Restaurant.Client;
+using PosKernel.Configuration;
+using PosKernel.Configuration.Services;
+using PosKernel.Abstractions.Services;
+
+namespace PosKernel.AI.Training.Core;
+
+/// <summary>
+/// Factory that creates production ChatOrchestrator instances using the EXACT same setup as PosKernel.AI demo
+/// ARCHITECTURAL PRINCIPLE: No duplication - reuse the proven service configuration pattern
+/// ARCHITECTURAL PRINCIPLE: FAIL FAST - no hardcoded defaults, no silent fallbacks
+/// </summary>
+public static class ProductionAIServiceFactory
+{
+    /// <summary>
+    /// Creates a ServiceProvider with the EXACT same configuration as PosKernel.AI
+    /// ARCHITECTURAL PRINCIPLE: Training uses identical infrastructure as production
+    /// ARCHITECTURAL PRINCIPLE: All configuration must come from services - no client defaults
+    /// </summary>
+    public static async Task<ServiceProvider> CreateProductionServicesAsync(
+        StoreConfig storeConfig,
+        AiPersonalityConfig personalityConfig,
+        ILoggerProvider? customLoggerProvider = null)
+    {
+        // ARCHITECTURAL PRINCIPLE: Validate required configuration - FAIL FAST if missing
+        if (storeConfig == null)
+        {
+            throw new ArgumentNullException(nameof(storeConfig),
+                "DESIGN DEFICIENCY: ProductionAIServiceFactory requires StoreConfig. " +
+                "Training cannot decide store configuration defaults. " +
+                "Provide StoreConfig from proper configuration service.");
+        }
+
+        if (personalityConfig == null)
+        {
+            throw new ArgumentNullException(nameof(personalityConfig),
+                "DESIGN DEFICIENCY: ProductionAIServiceFactory requires AiPersonalityConfig. " +
+                "Training cannot decide personality defaults. " +
+                "Provide AiPersonalityConfig from proper configuration service.");
+        }
+
+        // ARCHITECTURAL PRINCIPLE: Validate currency configuration - FAIL FAST if missing
+        if (string.IsNullOrEmpty(storeConfig.Currency))
+        {
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: StoreConfig must provide Currency configuration. " +
+                "Training cannot decide currency defaults. " +
+                "Ensure StoreConfig.Currency is set through proper configuration service.");
+        }
+
+        if (string.IsNullOrEmpty(storeConfig.CultureCode))
+        {
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: StoreConfig must provide CultureCode configuration. " +
+                "Training cannot decide culture defaults. " +
+                "Ensure StoreConfig.CultureCode is set through proper configuration service.");
+        }
+
+        // Initialize configuration system (same as PosKernel.AI)
+        var config = PosKernelConfiguration.Initialize();
+        
+        // Get OpenAI API key (same validation as PosKernel.AI) - FAIL FAST if missing
+        var openAiKey = config.GetValue<string>("OPENAI_API_KEY") ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrEmpty(openAiKey))
+        {
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Training requires OpenAI API key to test production AI system. " +
+                "Training cannot decide API configuration defaults. " +
+                "Set OPENAI_API_KEY environment variable or add to ~/.poskernel/.env file. " +
+                $"Config directory: {PosKernelConfiguration.ConfigDirectory}");
+        }
+
+        var services = new ServiceCollection();
+
+        // Add logging (same as PosKernel.AI)
+        services.AddLogging(builder =>
+        {
+            builder.ClearProviders();
+            if (customLoggerProvider != null)
+            {
+                builder.AddProvider(customLoggerProvider);
+            }
+            else
+            {
+                builder.AddConsole();
+            }
+            builder.SetMinimumLevel(LogLevel.Information);
+        });
+
+        // Add configuration services (same as PosKernel.AI)
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection()
+            .Build();
+
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton<ICurrencyFormattingService, CurrencyFormattingService>();
+        services.AddSingleton<IStoreConfigurationService>(provider => new ConfiguredStoreConfigurationService(storeConfig));
+
+        // Add MCP configuration (EXACT same as PosKernel.AI)
+        var mcpConfig = new McpConfiguration
+        {
+            BaseUrl = "https://api.openai.com/v1",
+            CompletionEndpoint = "chat/completions",
+            ApiKey = openAiKey,
+            TimeoutSeconds = 30,
+            DefaultParameters = new Dictionary<string, object>
+            {
+                ["model"] = "gpt-4o", // EXACT same model as production
+                ["temperature"] = 0.3, // EXACT same parameters
+                ["max_tokens"] = 1000
+            }
+        };
+
+        services.AddSingleton(mcpConfig);
+        services.AddSingleton<McpClient>();
+
+        // Add store configurations (same pattern as PosKernel.AI) - NO DEFAULTS
+        services.AddSingleton(storeConfig);
+        services.AddSingleton(personalityConfig);
+
+        // Real kernel integration (EXACT same pattern as PosKernel.AI) - FAIL FAST if not available
+        try
+        {
+            // Test RestaurantExtensionClient connection (same validation as PosKernel.AI)
+            using var tempServiceProvider = services.BuildServiceProvider();
+            var tempLogger = tempServiceProvider.GetRequiredService<ILogger<RestaurantExtensionClient>>();
+            var restaurantClient = new RestaurantExtensionClient(tempLogger);
+            
+            // Test connection (same test as PosKernel.AI) - FAIL FAST if not available
+            var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
+            
+            // Register real services (EXACT same registrations as PosKernel.AI)
+            services.AddSingleton<RestaurantExtensionClient>(_ => restaurantClient);
+            services.AddSingleton<KernelPosToolsProvider>(provider =>
+                new KernelPosToolsProvider(
+                    restaurantClient,
+                    provider.GetRequiredService<ILogger<KernelPosToolsProvider>>(),
+                    storeConfig,
+                    PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
+                    configuration,
+                    provider.GetRequiredService<ICurrencyFormattingService>()));
+            
+            // Register ChatOrchestrator for real kernel mode (EXACT same as PosKernel.AI)
+            services.AddSingleton<ChatOrchestrator>(provider => new ChatOrchestrator(
+                provider.GetRequiredService<McpClient>(),
+                provider.GetRequiredService<AiPersonalityConfig>(),
+                provider.GetRequiredService<StoreConfig>(),
+                provider.GetRequiredService<ILogger<ChatOrchestrator>>(),
+                kernelToolsProvider: provider.GetRequiredService<KernelPosToolsProvider>(),
+                mockToolsProvider: null,
+                currencyFormatter: provider.GetRequiredService<ICurrencyFormattingService>()));
+        }
+        catch (Exception ex)
+        {
+            // ARCHITECTURAL PRINCIPLE: FAIL FAST (same as PosKernel.AI) - no silent fallbacks
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Training requires real kernel services but they are not available. " +
+                "Training cannot fall back to mock systems - must use EXACT same infrastructure as production AI. " +
+                $"Error: {ex.Message}\n\n" +
+                "To use training with production AI:\n" +
+                "1. Start the Rust kernel service: cd pos-kernel-rs && cargo run --bin service\n" +
+                "2. Ensure Restaurant Extension Service is running and accessible\n" +
+                "3. Verify SQLite database exists: data/catalog/restaurant_catalog.db\n\n" +
+                "Training requires the EXACT same infrastructure as the AI demo.");
+        }
+
+        var serviceProvider = services.BuildServiceProvider();
+        
+        // Validate ChatOrchestrator creation (same validation as PosKernel.AI) - FAIL FAST if not working
+        try
+        {
+            var orchestrator = serviceProvider.GetRequiredService<ChatOrchestrator>();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Failed to create production ChatOrchestrator for training. " +
+                "Training requires functional production AI infrastructure. " +
+                $"Error: {ex.Message}");
+        }
+        
+        return serviceProvider;
+    }
+}
+
+/// <summary>
+/// Store configuration service that uses provided configuration instead of defaults
+/// ARCHITECTURAL PRINCIPLE: No defaults - use configuration provided by caller
+/// </summary>
+internal class ConfiguredStoreConfigurationService : IStoreConfigurationService
+{
+    private readonly StoreConfig _storeConfig;
+
+    public ConfiguredStoreConfigurationService(StoreConfig storeConfig)
+    {
+        _storeConfig = storeConfig ?? throw new ArgumentNullException(nameof(storeConfig),
+            "DESIGN DEFICIENCY: ConfiguredStoreConfigurationService requires StoreConfig. " +
+            "Cannot create store configuration service without store configuration. " +
+            "Provide proper StoreConfig instance.");
+    }
+
+    public StoreConfiguration GetStoreConfiguration(string storeId)
+    {
+        // ARCHITECTURAL PRINCIPLE: Use provided configuration - no hardcoded defaults
+        return new StoreConfiguration
+        {
+            StoreId = storeId,
+            Currency = _storeConfig.Currency, // From provided configuration
+            Locale = _storeConfig.CultureCode  // From provided configuration
+        };
+    }
+}
