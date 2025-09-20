@@ -8,11 +8,11 @@
 
 ## Overview
 
-POS Kernel is a culture-neutral transaction processing kernel designed for global deployment. Built with Rust for security and performance, it provides both HTTP service and FFI interfaces. **Major Achievement**: Service foundation complete with currency-aware architecture and comprehensive void functionality.
+POS Kernel is a culture-neutral transaction processing kernel designed for global deployment. Built with Rust for security and performance, it provides both HTTP service and FFI interfaces. 
 
 ### Current Status: Service Foundation Complete + Currency-Aware Architecture
 
-**Production Ready**: HTTP service with comprehensive void functionality and multi-currency support
+HTTP service with comprehensive void functionality and multi-currency support
 ```bash
 # Start Rust HTTP service
 cd pos-kernel-rs && cargo run --bin pos-kernel-service
@@ -25,67 +25,43 @@ cd PosKernel.AI && dotnet run
 
 ### Key Achievements
 
-- **Service Architecture**: Production-ready HTTP service with RESTful API
-- **Currency-Aware Operations**: Proper decimal handling for all world currencies (SGD, USD, JPY, BHD)
+- **Service Architecture**: HTTP service with RESTful API
+- **Currency-Aware Operations**: Proper decimal handling for multiple currencies (SGD, USD, JPY, BHD)
 - **Comprehensive Void Functionality**: Audit-compliant void operations with reversing entries
 - **ACID Compliance**: Write-ahead logging with transaction recovery
 - **Multi-Process Support**: Terminal coordination with exclusive locking
 - **AI Integration**: Natural language processing with cultural intelligence
-- **Professional Interface**: Terminal.Gui with real-time receipt updates
+- **Portable Interface**: Terminal.Gui demo interface with real-time receipt updates
 
-## Architecture Achievements
+## Architecture Status
 
 ### Current v0.4.0 Stack (Service Foundation Complete)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    .NET AI Client Layer                        │
-│  • Terminal.Gui professional interface                         │
-│  • Cultural AI personalities (Singaporean, American)           │
-│  • Real-time receipt updates with void operations              │
-│  • Multi-kernel support (HTTP service + in-process)            │
+│                    .NET AI Client Layer                         │
+│  • Terminal.Gui portable interface                              │
+│  • Cultural AI personalities (Singaporean, American, etc.)      │
+│  • Real-time receipt updates with void operations               │
+│  • Multi-kernel support (HTTP service + in-process)             │
 └─────────────────────────────────────────────────────────────────┘
                               ↓ HTTP API
 ┌─────────────────────────────────────────────────────────────────┐
-│                  Rust HTTP Service Layer                       │
-│  • RESTful API with session management                         │
-│  • Currency-aware conversions (no hardcoded assumptions)       │  
-│  • Void operations: DELETE and PUT endpoints                   │
-│  • Error handling with descriptive messages                    │
+│                  Rust HTTP Service Layer                        │
+│  • RESTful API with session management                          │
+│  • Currency-aware conversions (no hardcoded assumptions)        │  
+│  • Void operations: DELETE and PUT endpoints                    │
+│  • Error handling with descriptive messages                     │
 └─────────────────────────────────────────────────────────────────┘
                               ↓ FFI calls
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Rust Kernel Core                            │
-│  • Currency-aware decimal arithmetic (queries metadata)        │
-│  • ACID-compliant Write-Ahead Logging                          │
-│  • Multi-process terminal coordination                         │
-│  • Void operations: pk_void_line_item(), pk_update_line_qty()  │
-│  • Precise i64 storage (no floating-point errors)             │
+│                    Rust Kernel Core                             │
+│  • Currency-aware decimal arithmetic (queries metadata)         │
+│  • ACID-compliant Write-Ahead Logging                           │
+│  • Multi-process terminal coordination                          │
+│  • Void operations: pk_void_line_item(), pk_update_line_qty()   │
+│  • Precise i64 storage (no floating-point errors)               │
 └─────────────────────────────────────────────────────────────────┘
-```
-
-## Currency Architecture Fix - Major Achievement
-
-### Problem Solved
-**Architectural Violation Fixed**: HTTP service previously used hardcoded `* 100.0` and `/ 100.0` conversions, violating culture neutrality.
-
-### Solution Implemented
-**Currency-aware conversion functions** that query kernel for currency metadata:
-
-```rust
-// Service layer queries kernel for currency decimal places
-fn major_to_minor(amount: f64, handle: u64) -> i64 {
-    let mut decimal_places: u8 = 2; // Fallback only
-    let decimal_result = pk_get_currency_decimal_places(handle, &mut decimal_places);
-    
-    if pk_result_get_code(decimal_result) != 0 {
-        eprintln!("WARNING: Could not get currency decimal places, using fallback");
-        decimal_places = 2;
-    }
-    
-    let multiplier = 10_i64.pow(decimal_places as u32) as f64;
-    (amount * multiplier) as i64
-}
 ```
 
 ### Multi-Currency Support Verified
@@ -126,20 +102,10 @@ Response: {
 ## AI Integration with Cultural Intelligence
 
 ### Enhanced Intent Classification
-**Problem Solved**: AI previously misclassified "change X to Y" requests as completion instead of modification.
-
-**Solution Implemented**: Enhanced prompts with comprehensive modification patterns:
-```markdown
-### SUBSTITUTION OPERATIONS - Use void_line_item + add_item_to_transaction:
-- "change the [item A] to [item B]" → void [item A] + add [item B]
-- "replace the [item A] with [item B]" → void [item A] + add [item B]
-- "make that [item B] instead of [item A]" → void [item A] + add [item B]
-```
 
 ### Cultural Intelligence Support
-- **Singapore kopitiam**: "kopi si kosong" → Kopi C no sugar
-- **Multi-language**: English, Chinese, Malay, Tamil contextual understanding
-- **Cultural patterns**: Traditional kopitiam vs modern coffee shop behavior
+- **Multi-language**: Contextual interpretation and understanding
+- **Cultural patterns**: For example, traditional Singaporean kopitiam vs coffee shop behavior
 - **Modification handling**: Natural language item substitutions
 
 ## Quick Start
@@ -151,53 +117,18 @@ cd pos-kernel-rs
 cargo run --bin pos-kernel-service
 # Service starts at http://localhost:8080
 
-# Terminal 2: Start .NET AI client
-cd PosKernel.AI  
-dotnet run
-# Choose "Uncle's Traditional Kopitiam" 
-# Experience: AI communicates with Rust service
+# Terminal 2: Start restaurant extension service
+dotnet run --project PosKernel.Extensions.Restaurant
+
+# Start .NET AI client
+dotnet run --project PosKernel.AI
 ```
 
-### Core Transaction Processing
-```csharp
-// Multi-kernel client support
-var kernelClient = KernelClientFactory.CreateClient(KernelType.RustService);
-// or: CreateClient(KernelType.InProcess)
-
-var transaction = await kernelClient.BeginTransactionAsync("STORE_001", "SGD");
-await kernelClient.AddLineAsync(transaction.Id, "kopi_c", 1, 1.40m);
-await kernelClient.VoidLineItemAsync(transaction.Id, 1, "customer requested");
-
-// Currency-aware formatting based on kernel metadata
-Console.WriteLine($"Total: {FormatCurrency(transaction.Total, "SGD")}");
-```
-
-## Performance Results (Measured)
-
-### Kernel Operations
-- **Transaction creation**: < 5ms average
-- **Line item operations**: < 10ms average  
-- **Void operations**: < 15ms average
-- **Currency conversion queries**: < 2ms average
-
-### HTTP Service Performance  
-- **API response times**: 20-50ms average
-- **Session management**: < 5ms overhead
-- **End-to-end void operation**: 30-60ms total
-- **Error handling**: Immediate response with detailed messages
-
-### AI Integration Performance
-- **Intent classification**: < 10ms average
-- **Tool execution**: 50-200ms average  
-- **End-to-end conversation**: 1-3 seconds (dominated by LLM API calls)
-- **Receipt updates**: < 100ms after void operations
-
-## Architecture Compliance Achieved
+## Architecture Goals
 
 ### Currency Neutrality ✅
 - **No hardcoded currency symbols**: All formatting deferred to services
 - **No decimal place assumptions**: Uses kernel currency metadata
-- **Multi-currency transaction support**: SGD, USD, JPY, BHD verified
 - **Proper minor unit handling**: Currency-specific precision arithmetic
 
 ### Audit Compliance ✅  
@@ -212,27 +143,6 @@ Console.WriteLine($"Total: {FormatCurrency(transaction.Total, "SGD")}");
 - **Clear error messages**: "DESIGN DEFICIENCY" pattern for missing services
 - **Configuration validation**: Services must be properly registered
 - **Architectural violation detection**: Clear failures when boundaries crossed
-
-## Development Phases
-
-### Phase 1 Complete: Service Foundation (v0.4.0) ✅
-- **Service architecture**: HTTP API with comprehensive functionality
-- **Currency-aware operations**: Multi-currency support with kernel metadata
-- **Void functionality**: Audit-compliant void operations with reversing entries
-- **AI integration**: Cultural intelligence with modification handling
-- **Multi-process support**: Terminal coordination and session isolation
-
-### Phase 2 Ready: Protocol Expansion (v0.5.0)
-- **gRPC support**: High-performance binary protocol
-- **WebSocket events**: Real-time notifications for multi-client scenarios
-- **Service discovery**: Multi-instance deployment coordination
-- **Load balancing**: Horizontal scaling architecture
-
-### Phase 3 Ready: Multi-Client Ecosystem (v0.6.0)
-- **Python client library**: Analytics and reporting integration
-- **Node.js client library**: Web application ecosystem support  
-- **C++ client library**: High-performance embedded systems
-- **Protocol abstraction**: Unified client interface across languages
 
 ## Development
 
@@ -275,51 +185,6 @@ cargo run --bin pos-kernel-service &
 cd ../PosKernel.AI && dotnet run
 ```
 
-## Recent Architectural Fixes
-
-### Currency Conversion Architecture Fix ✅
-- **Problem**: Hardcoded `* 100.0` / `/ 100.0` violated culture neutrality
-- **Solution**: Currency-aware helper functions query kernel for decimal places
-- **Impact**: Supports JPY (0 decimals), BHD (3 decimals), all world currencies
-
-### Void Implementation Architecture ✅  
-- **Problem**: No audit-compliant void functionality
-- **Solution**: Reversing entry pattern with operator tracking and reasons
-- **Impact**: Full compliance with accounting standards and audit requirements
-
-### AI Intent Classification Fix ✅
-- **Problem**: "change X to Y" misclassified as completion instead of modification  
-- **Solution**: Enhanced prompts with comprehensive modification patterns
-- **Impact**: AI properly handles substitution requests and complex modifications
-
-## Documentation Updated
-
-All documentation reflects current implementation status:
-- **docs/SUMMARY.md**: Current implementation achievements and performance metrics
-- **docs/rust-void-implementation-plan.md**: Completion status and architectural results
-- **docs/service-architecture-recommendation.md**: Service foundation achievements  
-- **docs/next-steps-analysis.md**: Prioritized development phases based on solid foundation
-
-## Success Criteria Achievement
-
-### Service Architecture Success ✅
-- **Response times**: < 50ms API operations (achieved: 20-30ms average)  
-- **Multi-currency**: Supports all world currencies (verified: SGD, USD, JPY, BHD)
-- **Void operations**: Full audit compliance (implemented with reversing entries)
-- **AI integration**: Natural language void operations (working with cultural context)
-
-### Business Validation ✅
-- **Real transactions**: Complete order-to-payment lifecycle  
-- **Cultural intelligence**: Singapore kopitiam personality working
-- **Professional interface**: Terminal.Gui with real-time receipt updates
-- **Multi-kernel support**: Same client works with HTTP service and in-process kernel
-
-### Technical Excellence ✅
-- **Architectural compliance**: No currency assumptions, proper fail-fast behavior
-- **Performance targets**: All measured performance requirements met
-- **Error handling**: Comprehensive error handling without exception swallowing  
-- **Code quality**: Zero warnings, clean separation of concerns
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
@@ -332,7 +197,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
-
----
-
-**POS Kernel v0.4.0**: Production-ready service architecture with currency-aware operations, comprehensive void functionality, and AI integration. Foundation complete for enterprise POS deployment.
