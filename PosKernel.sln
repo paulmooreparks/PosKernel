@@ -10,6 +10,12 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.Host", "PosKernel.Host\PosKernel.Host.csproj", "{D5C7D169-7943-4306-B136-9B38D795EC2C}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+	ProjectSection(SolutionItems) = preProject
+		CONTRIBUTING.md = CONTRIBUTING.md
+		copilot-instructions.md = copilot-instructions.md
+		DEV_LOG.md = DEV_LOG.md
+		README.md = README.md
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.AI", "PosKernel.AI\PosKernel.AI.csproj", "{3E0110EC-EAC5-00F1-9FED-AB5EFAA06BF9}"
 EndProject
@@ -20,6 +26,106 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.Service", "PosKernel.Service\PosKernel.Service.csproj", "{C326F90B-8FAF-4F0C-8B6B-32FD1EA22532}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.Client", "PosKernel.Client\PosKernel.Client.csproj", "{DBA8E960-D449-43CD-852F-0CA011422B52}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE}"
+	ProjectSection(SolutionItems) = preProject
+		docs\ai-cashier-live-training-design.md = docs\ai-cashier-live-training-design.md
+		docs\ai-demo-technical-overview.md = docs\ai-demo-technical-overview.md
+		docs\ai-driven-prompt-optimization-design.md = docs\ai-driven-prompt-optimization-design.md
+		docs\ai-integration-architecture.md = docs\ai-integration-architecture.md
+		docs\ai-setup-guide.md = docs\ai-setup-guide.md
+		docs\architecture-harmonization-plan.md = docs\architecture-harmonization-plan.md
+		docs\ARCHITECTURE_INDEX.md = docs\ARCHITECTURE_INDEX.md
+		docs\BUILD_RULES.md = docs\BUILD_RULES.md
+		docs\catalog-architecture.md = docs\catalog-architecture.md
+		docs\CLEANUP.md = docs\CLEANUP.md
+		docs\domain-extension-architecture.md = docs\domain-extension-architecture.md
+		docs\exception-handling-report.md = docs\exception-handling-report.md
+		docs\extensibility-architecture.md = docs\extensibility-architecture.md
+		docs\internationalization-strategy.md = docs\internationalization-strategy.md
+		docs\kernel-boundary-architecture.md = docs\kernel-boundary-architecture.md
+		docs\kernel-function-granularity-analysis.md = docs\kernel-function-granularity-analysis.md
+		docs\legal-compliance.md = docs\legal-compliance.md
+		docs\multi-process-architecture.md = docs\multi-process-architecture.md
+		docs\next-steps-analysis.md = docs\next-steps-analysis.md
+		docs\open-source-license-analysis.md = docs\open-source-license-analysis.md
+		docs\pos-accounting-standards.md = docs\pos-accounting-standards.md
+		docs\product-catalog-cal-architecture.md = docs\product-catalog-cal-architecture.md
+		docs\product-modifications-localization-architecture.md = docs\product-modifications-localization-architecture.md
+		docs\README.md = docs\README.md
+		docs\running-with-domain-extensions.md = docs\running-with-domain-extensions.md
+		docs\rust-void-implementation-plan.md = docs\rust-void-implementation-plan.md
+		docs\service-architecture-recommendation.md = docs\service-architecture-recommendation.md
+		docs\SUMMARY.md = docs\SUMMARY.md
+		docs\threading-architecture-analysis.md = docs\threading-architecture-analysis.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pos-kernel-rs", "pos-kernel-rs", "{C41C18A3-361A-426B-897A-920E5D6027BA}"
+	ProjectSection(SolutionItems) = preProject
+		pos-kernel-rs\build.rs = pos-kernel-rs\build.rs
+		pos-kernel-rs\Cargo.toml = pos-kernel-rs\Cargo.toml
+		pos-kernel-rs\poskernel.toml = pos-kernel-rs\poskernel.toml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pos_kernel_data", "pos_kernel_data", "{59C3FB27-6369-4CBE-BCE0-FA3878D827BC}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "proto", "proto", "{FE785415-E85F-4ED0-9C1C-AB71C78A1EA9}"
+	ProjectSection(SolutionItems) = preProject
+		pos-kernel-rs\proto\pos_kernel.proto = pos-kernel-rs\proto\pos_kernel.proto
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3FD8744D-09FF-4496-909F-FD3DB58C1C58}"
+	ProjectSection(SolutionItems) = preProject
+		pos-kernel-rs\src\enhanced_line.rs = pos-kernel-rs\src\enhanced_line.rs
+		pos-kernel-rs\src\lib.rs = pos-kernel-rs\src\lib.rs
+		pos-kernel-rs\src\store_void_methods.rs = pos-kernel-rs\src\store_void_methods.rs
+		pos-kernel-rs\src\transaction_void_methods.rs = pos-kernel-rs\src\transaction_void_methods.rs
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "target", "target", "{BC288E33-A36A-4710-87B6-1B77CFE5BB3F}"
+	ProjectSection(SolutionItems) = preProject
+		pos-kernel-rs\target\.rustc_info.json = pos-kernel-rs\target\.rustc_info.json
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "bin", "bin", "{41D59D4D-01A1-4880-807C-1676A2C11840}"
+	ProjectSection(SolutionItems) = preProject
+		pos-kernel-rs\src\bin\service.rs = pos-kernel-rs\src\bin\service.rs
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "c-abi", "c-abi", "{5B4A9F7A-ECB3-4D95-BD18-D84514F25DB9}"
+	ProjectSection(SolutionItems) = preProject
+		docs\c-abi\README.md = docs\c-abi\README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dotnet", "dotnet", "{74053FF5-928B-42F9-A9BF-7E6234F36C97}"
+	ProjectSection(SolutionItems) = preProject
+		docs\dotnet\README.md = docs\dotnet\README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "requirements", "requirements", "{9FB543BB-38F8-4833-86C2-CEF25115879E}"
+	ProjectSection(SolutionItems) = preProject
+		docs\requirements\REQUIREMENTS_CATALOG.md = docs\requirements\REQUIREMENTS_CATALOG.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "rust", "rust", "{8309778E-EAC3-469A-9203-4893BABBD3DB}"
+	ProjectSection(SolutionItems) = preProject
+		docs\rust\README.md = docs\rust\README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "whitepapers", "whitepapers", "{D3C6621F-10FF-4CB1-A7FE-D14828CCF96B}"
+	ProjectSection(SolutionItems) = preProject
+		docs\whitepapers\CORE_DESIGN.md = docs\whitepapers\CORE_DESIGN.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples", "examples", "{DC750665-465B-401C-97F9-8449B6A90FCE}"
+	ProjectSection(SolutionItems) = preProject
+		docs\examples\README.md = docs\examples\README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "performance", "performance", "{DA8A437C-3027-48D6-9B3E-200D8CD94A1C}"
+	ProjectSection(SolutionItems) = preProject
+		docs\examples\performance\README.md = docs\examples\performance\README.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -130,6 +236,22 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{C41C18A3-361A-426B-897A-920E5D6027BA} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{59C3FB27-6369-4CBE-BCE0-FA3878D827BC} = {C41C18A3-361A-426B-897A-920E5D6027BA}
+		{FE785415-E85F-4ED0-9C1C-AB71C78A1EA9} = {C41C18A3-361A-426B-897A-920E5D6027BA}
+		{3FD8744D-09FF-4496-909F-FD3DB58C1C58} = {C41C18A3-361A-426B-897A-920E5D6027BA}
+		{BC288E33-A36A-4710-87B6-1B77CFE5BB3F} = {C41C18A3-361A-426B-897A-920E5D6027BA}
+		{41D59D4D-01A1-4880-807C-1676A2C11840} = {3FD8744D-09FF-4496-909F-FD3DB58C1C58}
+		{5B4A9F7A-ECB3-4D95-BD18-D84514F25DB9} = {3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE}
+		{74053FF5-928B-42F9-A9BF-7E6234F36C97} = {3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE}
+		{9FB543BB-38F8-4833-86C2-CEF25115879E} = {3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE}
+		{8309778E-EAC3-469A-9203-4893BABBD3DB} = {3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE}
+		{D3C6621F-10FF-4CB1-A7FE-D14828CCF96B} = {3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE}
+		{DC750665-465B-401C-97F9-8449B6A90FCE} = {3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE}
+		{DA8A437C-3027-48D6-9B3E-200D8CD94A1C} = {DC750665-465B-401C-97F9-8449B6A90FCE}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {73D67F45-9D8C-4EE2-9609-0CF62C2590B0}
