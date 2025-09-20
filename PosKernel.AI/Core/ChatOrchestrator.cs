@@ -731,6 +731,64 @@ Provide a brief follow-up: ""What else can I get for you?"" or ""Anything else t
                     _logger.LogInformation("Added {ProductName} to receipt", item.ProductName);
                 }
             }
+            else if (toolCall.FunctionName == "void_line_item" && !result.StartsWith("ERROR"))
+            {
+                // CRITICAL FIX: Handle void operations by removing the item from receipt display
+                if (toolCall.Arguments.TryGetValue("line_number", out var lineNumberElement))
+                {
+                    var lineNumber = lineNumberElement.GetInt32();
+                    
+                    // Convert 1-based line number to 0-based index
+                    var itemIndex = lineNumber - 1;
+                    
+                    if (itemIndex >= 0 && itemIndex < _receipt.Items.Count)
+                    {
+                        var voidedItem = _receipt.Items[itemIndex];
+                        _receipt.Items.RemoveAt(itemIndex);
+                        _logger.LogInformation("Removed {ProductName} from receipt display (line {LineNumber})", 
+                            voidedItem.ProductName, lineNumber);
+                        
+                        // Update receipt status if no items left
+                        if (!_receipt.Items.Any())
+                        {
+                            _receipt.Status = PaymentStatus.Building;
+                            _logger.LogInformation("Receipt status updated to Building - no items remaining after void");
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Invalid line number {LineNumber} for void operation - receipt has {Count} items", 
+                            lineNumber, _receipt.Items.Count);
+                    }
+                }
+            }
+            else if (toolCall.FunctionName == "update_line_item_quantity" && !result.StartsWith("ERROR"))
+            {
+                // CRITICAL FIX: Handle quantity updates by modifying the receipt item
+                if (toolCall.Arguments.TryGetValue("line_number", out var lineNumberElement) &&
+                    toolCall.Arguments.TryGetValue("new_quantity", out var quantityElement))
+                {
+                    var lineNumber = lineNumberElement.GetInt32();
+                    var newQuantity = quantityElement.GetInt32();
+                    
+                    // Convert 1-based line number to 0-based index
+                    var itemIndex = lineNumber - 1;
+                    
+                    if (itemIndex >= 0 && itemIndex < _receipt.Items.Count)
+                    {
+                        var updatedItem = _receipt.Items[itemIndex];
+                        var oldQuantity = updatedItem.Quantity;
+                        updatedItem.Quantity = newQuantity;
+                        _logger.LogInformation("Updated {ProductName} quantity from {OldQuantity} to {NewQuantity} (line {LineNumber})", 
+                            updatedItem.ProductName, oldQuantity, newQuantity, lineNumber);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Invalid line number {LineNumber} for quantity update - receipt has {Count} items", 
+                            lineNumber, _receipt.Items.Count);
+                    }
+                }
+            }
             else if (toolCall.FunctionName == "process_payment" && !result.StartsWith("PAYMENT_FAILED"))
             {
                 // CRITICAL: Update receipt status when payment succeeds

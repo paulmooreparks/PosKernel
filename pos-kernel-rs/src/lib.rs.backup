@@ -197,95 +197,39 @@ impl Currency {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct Line { 
-    sku: String,
-    qty: i32,  // Negative quantities represent voids/reversals
-    unit_minor: i64,
-    line_number: u32,  // 1-based line number for customer reference
-    entry_type: EntryType,
-    #[allow(dead_code)] // POS audit requirement - void reason must be preserved for compliance
-    void_reason: Option<String>,
-    references_line: Option<u32>,  // Links void entries back to original
-    #[allow(dead_code)] // POS audit requirement - transaction timestamp must be preserved for compliance
-    timestamp: SystemTime,
-    #[allow(dead_code)] // POS audit requirement - operator ID must be preserved for compliance
-    operator_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum EntryType {
-    Sale,        // Original sale entry
-    Void,        // Reversing entry for void (maintains audit trail)
-    Adjustment,  // Quantity/price adjustments
+    _sku: String, // Note: prefixed with _ to indicate intentional non-use in current implementation
+    _qty: i32, 
+    _unit_minor: i64 
 }
 
 impl Line {
-    #[allow(dead_code)] // Backward compatibility - used by legacy code paths
     fn new(sku: String, qty: i32, unit_minor: i64) -> Self {
-        // Temporary compatibility with existing code
-        Self::new_sale(sku, qty, unit_minor, 1, None)
-    }
-    
-    fn new_sale(sku: String, qty: i32, unit_minor: i64, line_number: u32, operator_id: Option<String>) -> Self {
         Self {
-            sku,
-            qty,
-            unit_minor,
-            line_number,
-            entry_type: EntryType::Sale,
-            void_reason: None,
-            references_line: None,
-            timestamp: SystemTime::now(),
-            operator_id,
-        }
-    }
-    
-    fn new_void(original: &Line, line_number: u32, reason: String, operator_id: Option<String>) -> Self {
-        Self {
-            sku: original.sku.clone(),
-            qty: -original.qty,  // Negative for reversal
-            unit_minor: original.unit_minor,
-            line_number,
-            entry_type: EntryType::Void,
-            void_reason: Some(reason),
-            references_line: Some(original.line_number),
-            timestamp: SystemTime::now(),
-            operator_id,
-        }
-    }
-    
-    fn new_adjustment(sku: String, qty_delta: i32, unit_minor: i64, line_number: u32, references_line: u32, operator_id: Option<String>) -> Self {
-        Self {
-            sku,
-            qty: qty_delta,  // Delta for adjustment
-            unit_minor,
-            line_number,
-            entry_type: EntryType::Adjustment,
-            void_reason: None,
-            references_line: Some(references_line),
-            timestamp: SystemTime::now(),
-            operator_id,
+            _sku: sku,
+            _qty: qty,
+            _unit_minor: unit_minor,
         }
     }
     
     fn total_minor(&self) -> i64 {
-        self.unit_minor * self.qty as i64
+        self._unit_minor * self._qty as i64
     }
     
-    #[allow(dead_code)] // POS audit requirement - SKU access needed for future audit reports
+    #[allow(dead_code)] // Will be used in future line item management APIs
     fn sku(&self) -> &str {
-        &self.sku
+        &self._sku
     }
     
-    #[allow(dead_code)] // POS audit requirement - quantity access needed for future audit reports
+    #[allow(dead_code)] // Will be used in future line item management APIs
     fn qty(&self) -> i32 {
-        self.qty
+        self._qty
     }
     
-    #[allow(dead_code)] // POS audit requirement - unit price access needed for future audit reports
+    #[allow(dead_code)] // Will be used in future line item management APIs
     fn unit_minor(&self) -> i64 {
-        self.unit_minor
+        self._unit_minor
     }
 }
 
@@ -398,8 +342,6 @@ pub struct WalEntry {
 pub enum WalOperationType {
     TransactionBegin { store: String, currency: String },
     LineAdd { sku: String, qty: i32, unit_minor: i64 },
-    LineVoid { line_number: u32, reason: String, operator_id: Option<String> },
-    LineQuantityUpdate { line_number: u32, new_quantity: i32, operator_id: Option<String> },
     TenderAdd { amount_minor: i64 },
     TransactionCommit { final_state: String },
     TransactionAbort { reason: String },
@@ -659,88 +601,8 @@ impl LegalTransaction {
     }
     
     fn add_line(&mut self, sku: String, qty: i32, unit_minor: i64) {
-        let line_number = self.next_line_number();
-        let line = Line::new_sale(sku, qty, unit_minor, line_number, None);
-        self.lines.push(line);
+        self.lines.push(Line::new(sku, qty, unit_minor));
         self._recovery_point += 1;
-    }
-    
-    fn void_line_item(&mut self, line_number: u32, reason: String, operator_id: Option<String>) -> Result<(), String> {
-        // Find the original line by line number
-        let original_line = self.lines
-            .iter()
-            .find(|line| line.line_number == line_number && line.entry_type == EntryType::Sale)
-            .ok_or_else(|| format!("Line number {} not found or not a sale", line_number))?;
-
-        // Check if already voided by looking for existing void entry
-        let already_voided = self.lines
-            .iter()
-            .any(|line| line.entry_type == EntryType::Void && line.references_line == Some(line_number));
-
-        if already_voided {
-            return Err(format!("Line number {} has already been voided", line_number));
-        }
-
-        // Create void entry
-        let void_line_number = self.next_line_number();
-        let void_line = Line::new_void(original_line, void_line_number, reason, operator_id);
-        self.lines.push(void_line);
-        self._recovery_point += 1;
-        
-        Ok(())
-    }
-    
-    fn update_line_quantity(&mut self, line_number: u32, new_quantity: i32, operator_id: Option<String>) -> Result<(), String> {
-        if new_quantity <= 0 {
-            return Err("New quantity must be positive".to_string());
-        }
-
-        // Calculate effective quantity for the line
-        let effective_qty = self.calculate_effective_quantity_for_line(line_number);
-        
-        if effective_qty <= 0 {
-            return Err(format!("Line number {} has no effective quantity (may be voided)", line_number));
-        }
-
-        // Calculate the adjustment needed
-        let qty_delta = new_quantity - effective_qty;
-        if qty_delta != 0 {
-            // Find the original line to get SKU and unit price
-            let original_line = self.lines
-                .iter()
-                .find(|line| line.line_number == line_number && line.entry_type == EntryType::Sale)
-                .ok_or_else(|| format!("Original line {} not found", line_number))?;
-
-            let adjustment_line_number = self.next_line_number();
-            let adjustment_line = Line::new_adjustment(
-                original_line.sku.clone(),
-                qty_delta,
-                original_line.unit_minor,
-                adjustment_line_number,
-                line_number,
-                operator_id
-            );
-            
-            self.lines.push(adjustment_line);
-            self._recovery_point += 1;
-        }
-
-        Ok(())
-    }
-
-    fn next_line_number(&self) -> u32 {
-        self.lines.len() as u32 + 1
-    }
-
-    fn calculate_effective_quantity_for_line(&self, line_number: u32) -> i32 {
-        self.lines
-            .iter()
-            .filter(|line| {
-                line.line_number == line_number ||  // Original line
-                line.references_line == Some(line_number)  // Void/adjustment entries
-            })
-            .map(|line| line.qty)
-            .sum()
     }
 }
 
@@ -960,84 +822,6 @@ impl LegalKernelStore {
                 eprintln!("CRITICAL: Failed to log transaction abort for {}: {}", handle, e);
                 // Revert state on WAL failure  
                 tx.state = LegalTxState::Building;
-                Err(e)
-            }
-        }
-    }
-
-    fn void_line_item_legal(&mut self, handle: u64, line_number: u32, reason: String, operator_id: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-        let tx = self.active_transactions.get_mut(&handle)
-            .ok_or("Transaction not found")?;
-
-        match tx.state {
-            LegalTxState::Building => {
-                if tx.is_expired(self.system_config.transaction_timeout_seconds) {
-                    eprintln!("WARNING: Transaction {} expired during line void", handle);
-                    return Err("Transaction expired".into());
-                }
-            },
-            _ => {
-                eprintln!("ERROR: Attempted to void line in transaction {} in state {:?}", 
-                         handle, tx.state);
-                return Err("Transaction not in building state".into());
-            }
-        }
-
-        match self.wal.log_operation(
-            handle,
-            WalOperationType::LineVoid { 
-                line_number, 
-                reason: reason.clone(), 
-                operator_id: operator_id.clone() 
-            },
-            &format!("line_number:{},reason:{},operator_id:{:?}", line_number, reason, operator_id)
-        ) {
-            Ok(_) => {
-                tx.void_line_item(line_number, reason, operator_id)?;
-                tx.touch_activity();
-                Ok(())
-            },
-            Err(e) => {
-                eprintln!("CRITICAL: Failed to log line void for transaction {}: {}", handle, e);
-                Err(e)
-            }
-        }
-    }
-
-    fn update_line_quantity_legal(&mut self, handle: u64, line_number: u32, new_quantity: i32, operator_id: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
-        let tx = self.active_transactions.get_mut(&handle)
-            .ok_or("Transaction not found")?;
-
-        match tx.state {
-            LegalTxState::Building => {
-                if tx.is_expired(self.system_config.transaction_timeout_seconds) {
-                    eprintln!("WARNING: Transaction {} expired during quantity update", handle);
-                    return Err("Transaction expired".into());
-                }
-            },
-            _ => {
-                eprintln!("ERROR: Attempted to update line quantity in transaction {} in state {:?}", 
-                         handle, tx.state);
-                return Err("Transaction not in building state".into());
-            }
-        }
-
-        match self.wal.log_operation(
-            handle,
-            WalOperationType::LineQuantityUpdate { 
-                line_number, 
-                new_quantity, 
-                operator_id: operator_id.clone() 
-            },
-            &format!("line_number:{},new_quantity:{},operator_id:{:?}", line_number, new_quantity, operator_id)
-        ) {
-            Ok(_) => {
-                tx.update_line_quantity(line_number, new_quantity, operator_id)?;
-                tx.touch_activity();
-                Ok(())
-            },
-            Err(e) => {
-                eprintln!("CRITICAL: Failed to log quantity update for transaction {}: {}", handle, e);
                 Err(e)
             }
         }
@@ -1747,99 +1531,6 @@ pub extern "C" fn pk_close_transaction_legal(handle: PkTransactionHandle) -> PkR
         None => {
             eprintln!("ERROR: Transaction {} not found for closing", handle);
             PkResult::err(ResultCode::NotFound)
-        }
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn pk_void_line_item(
-    handle: PkTransactionHandle,
-    line_number: u32,
-    reason_ptr: *const u8,
-    reason_len: usize,
-    operator_id_ptr: *const u8,
-    operator_id_len: usize
-) -> PkResult {
-    if handle == PK_INVALID_HANDLE || line_number == 0 {
-        return PkResult::err(ResultCode::ValidationFailed);
-    }
-
-    let reason = if reason_ptr.is_null() || reason_len == 0 {
-        "User void".to_string()
-    } else {
-        unsafe { read_str(reason_ptr, reason_len) }
-    };
-
-    let operator_id = if operator_id_ptr.is_null() || operator_id_len == 0 {
-        None
-    } else {
-        Some(unsafe { read_str(operator_id_ptr, operator_id_len) })
-    };
-
-    let mut store = match legal_kernel_store().write() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("CRITICAL: Failed to acquire kernel store write lock: {}", e);
-            return PkResult::err(ResultCode::InternalError);
-        }
-    };
-
-    match store.void_line_item_legal(handle, line_number, reason, operator_id) {
-        Ok(()) => PkResult::ok(),
-        Err(e) => {
-            if e.to_string().contains("expired") {
-                PkResult::err(ResultCode::TimedOut)
-            } else if e.to_string().contains("not found") {
-                PkResult::err(ResultCode::NotFound)
-            } else if e.to_string().contains("state") {
-                PkResult::err(ResultCode::InvalidState)
-            } else {
-                eprintln!("ERROR: Void line item failed: {}", e);
-                PkResult::err(ResultCode::ValidationFailed)
-            }
-        }
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn pk_update_line_quantity(
-    handle: PkTransactionHandle,
-    line_number: u32,
-    new_quantity: i32,
-    operator_id_ptr: *const u8,
-    operator_id_len: usize
-) -> PkResult {
-    if handle == PK_INVALID_HANDLE || line_number == 0 || new_quantity <= 0 {
-        return PkResult::err(ResultCode::ValidationFailed);
-    }
-
-    let operator_id = if operator_id_ptr.is_null() || operator_id_len == 0 {
-        None
-    } else {
-        Some(unsafe { read_str(operator_id_ptr, operator_id_len) })
-    };
-
-    let mut store = match legal_kernel_store().write() {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("CRITICAL: Failed to acquire kernel store write lock: {}", e);
-            return PkResult::err(ResultCode::InternalError);
-        }
-    };
-
-    match store.update_line_quantity_legal(handle, line_number, new_quantity, operator_id) {
-        Ok(()) => PkResult::ok(),
-        Err(e) => {
-            if e.to_string().contains("expired") {
-                PkResult::err(ResultCode::TimedOut)
-            } else if e.to_string().contains("not found") {
-                PkResult::err(ResultCode::NotFound)
-            } else if e.to_string().contains("state") {
-                PkResult::err(ResultCode::InvalidState)
-            } else {
-                eprintln!("ERROR: Update line quantity failed: {}", e);
-                PkResult::err(ResultCode::ValidationFailed)
-            }
         }
     }
 }

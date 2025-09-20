@@ -272,6 +272,135 @@ namespace PosKernel.Client.Rust
         }
 
         /// <inheritdoc/>
+        public async Task<TransactionClientResult> VoidLineItemAsync(string sessionId, string transactionId, int lineNumber, CancellationToken cancellationToken = default)
+        {
+            EnsureConnected();
+
+            _logger.LogDebug("Voiding line item {LineNumber} from transaction {TransactionId}", lineNumber, transactionId);
+
+            try
+            {
+                // Send void request with JSON body containing reason and operator_id
+                var request = new
+                {
+                    reason = "customer requested",
+                    operator_id = (string?)null  // AI Assistant doesn't have operator ID
+                };
+
+                var json = JsonSerializer.Serialize(request);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                // Create HttpRequestMessage for DELETE with body
+                var httpRequest = new HttpRequestMessage(HttpMethod.Delete, $"/api/sessions/{sessionId}/transactions/{transactionId}/lines/{lineNumber}")
+                {
+                    Content = content
+                };
+
+                var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+                response.EnsureSuccessStatusCode();
+
+                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+                var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
+
+                var result = new TransactionClientResult
+                {
+                    Success = responseData.GetProperty("success").GetBoolean(),
+                    Error = responseData.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null,
+                    SessionId = responseData.TryGetProperty("session_id", out var sidProp) ? sidProp.GetString() : sessionId,
+                    TransactionId = responseData.TryGetProperty("transaction_id", out var tidProp) ? tidProp.GetString() : transactionId,
+                    Total = responseData.TryGetProperty("total", out var totalProp) ? (decimal)totalProp.GetDouble() : 0,
+                    State = responseData.TryGetProperty("state", out var stateProp) ? stateProp.GetString() ?? "" : "",
+                    Data = responseData
+                };
+
+                if (result.Success)
+                {
+                    _logger.LogInformation("Line item {LineNumber} voided from transaction {TransactionId}, new total: {Total:C}", 
+                        lineNumber, result.TransactionId, result.Total);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to void line item: {Error}", result.Error);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error voiding line item");
+                return new TransactionClientResult
+                {
+                    Success = false,
+                    Error = ex.Message,
+                    SessionId = sessionId,
+                    TransactionId = transactionId
+                };
+            }
+        }
+
+        /// <inheritdoc/>
+        public async Task<TransactionClientResult> UpdateLineItemQuantityAsync(string sessionId, string transactionId, int lineNumber, int newQuantity, CancellationToken cancellationToken = default)
+        {
+            EnsureConnected();
+
+            _logger.LogDebug("Updating line item {LineNumber} quantity to {NewQuantity} in transaction {TransactionId}", 
+                lineNumber, newQuantity, transactionId);
+
+            try
+            {
+                // Rust service expects only new_quantity and operator_id in JSON body
+                var request = new
+                {
+                    new_quantity = newQuantity,
+                    operator_id = (string?)null  // AI Assistant doesn't have operator ID
+                };
+
+                var json = JsonSerializer.Serialize(request);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PutAsync($"/api/sessions/{sessionId}/transactions/{transactionId}/lines/{lineNumber}", content, cancellationToken);
+                response.EnsureSuccessStatusCode();
+
+                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+                var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
+
+                var result = new TransactionClientResult
+                {
+                    Success = responseData.GetProperty("success").GetBoolean(),
+                    Error = responseData.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null,
+                    SessionId = responseData.TryGetProperty("session_id", out var sidProp) ? sidProp.GetString() : sessionId,
+                    TransactionId = responseData.TryGetProperty("transaction_id", out var tidProp) ? tidProp.GetString() : transactionId,
+                    Total = responseData.TryGetProperty("total", out var totalProp) ? (decimal)totalProp.GetDouble() : 0,
+                    State = responseData.TryGetProperty("state", out var stateProp) ? stateProp.GetString() ?? "" : "",
+                    Data = responseData
+                };
+
+                if (result.Success)
+                {
+                    _logger.LogInformation("Line item {LineNumber} quantity updated to {NewQuantity} in transaction {TransactionId}, new total: {Total:C}", 
+                        lineNumber, newQuantity, result.TransactionId, result.Total);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to update line item quantity: {Error}", result.Error);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating line item quantity");
+                return new TransactionClientResult
+                {
+                    Success = false,
+                    Error = ex.Message,
+                    SessionId = sessionId,
+                    TransactionId = transactionId
+                };
+            }
+        }
+
+        /// <inheritdoc/>
         public async Task<TransactionClientResult> ProcessPaymentAsync(string sessionId, string transactionId, decimal amount, string paymentType = "cash", CancellationToken cancellationToken = default)
         {
             EnsureConnected();

@@ -53,6 +53,17 @@ namespace PosKernel.Client
         Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Voids a line item from the transaction by line number.
+        /// Creates a reversing entry to maintain audit trail compliance with POS accounting standards.
+        /// </summary>
+        Task<TransactionClientResult> VoidLineItemAsync(string sessionId, string transactionId, int lineNumber, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Updates the quantity of a line item in the transaction.
+        /// </summary>
+        Task<TransactionClientResult> UpdateLineItemQuantityAsync(string sessionId, string transactionId, int lineNumber, int newQuantity, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Processes payment for the transaction.
         /// </summary>
         Task<TransactionClientResult> ProcessPaymentAsync(string sessionId, string transactionId, decimal amount, string paymentType = "cash", CancellationToken cancellationToken = default);

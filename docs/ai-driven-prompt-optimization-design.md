@@ -17,6 +17,210 @@ Based on analysis of existing logs and architecture:
 ### **ARCHITECTURAL PRINCIPLE**: Training a broken system optimizes the brokenness
 **Action Required**: Fix tool selection guidance and payment flow completion before implementing training system.
 
+## Sophisticated Quality Evaluation Requirements
+
+### **Beyond Binary Pass/Fail Analysis**
+
+Real-world testing has revealed that prompt optimization requires **multi-dimensional quality assessment** that goes far beyond simple success/failure metrics.
+
+#### **Subtle Issue Categories Requiring Detection**
+
+##### **1. Contextual Appropriateness**
+- ✅ **Functional Success**: Transaction progresses correctly
+- ❌ **Contextual Problems**: "What else you want?" after payment completion
+- **Challenge**: System works but experience is awkward
+
+##### **2. Information Completeness vs. Correctness**
+- ✅ **Tool Selection**: AI uses correct tool (`search_products`)
+- ✅ **Data Retrieval**: AI gets complete data (19 items including Local Food)
+- ❌ **Information Sharing**: AI shares vague "variety" instead of actual items
+- **Challenge**: Data available but presentation insufficient
+
+##### **3. Value Optimization Within Constraints**
+- ✅ **Factual Accuracy**: All items listed under budget constraint
+- ❌ **Missed Optimization**: Could suggest combinations within budget
+- ❌ **Business Value**: Didn't demonstrate domain expertise
+- **Challenge**: Multiple valid responses with different value levels
+
+#### **Multi-Dimensional Evaluation Framework**
+
+```csharp
+public class AdvancedResponseEvaluation
+{
+    // Basic Correctness (Table Stakes)
+    public bool FactualAccuracy { get; set; }
+    public bool ToolUsageCorrect { get; set; }
+    public bool PersonalityConsistent { get; set; }
+    
+    // Value Optimization (Competitive Advantage)
+    public bool MaximizedCustomerValue { get; set; }
+    public bool ShowedBusinessAcumen { get; set; }
+    public bool ProvidedActionableOptions { get; set; }
+    
+    // Contextual Intelligence (Differentiation)
+    public bool UnderstoodConstraints { get; set; }    // Budget limit
+    public bool OptimizedWithinConstraints { get; set; } // Best use of $5
+    public bool ShowedDomainExpertise { get; set; }     // Menu combinations
+    
+    // Customer Experience (Satisfaction)
+    public bool SimplifiedDecisionMaking { get; set; }
+    public bool ProvidedClearNextSteps { get; set; }
+    public bool ContextuallyAppropriate { get; set; }
+    
+    // Overall Quality Score (0.0 - 1.0)
+    public double QualityScore => CalculateWeightedScore();
+}
+```
+
+#### **Response Quality Spectrum Recognition**
+
+```csharp
+// TRAINING CHALLENGE: Multiple valid responses with different value levels
+// Not just "correct vs incorrect" but "good vs optimal"
+public class ResponseQualitySpectrum
+{
+    public ResponseLevel Minimal { get; set; }    // Factually correct
+    public ResponseLevel Good { get; set; }       // Helpful and accurate  
+    public ResponseLevel Optimal { get; set; }    // Maximizes customer value
+    public ResponseLevel Exceptional { get; set; } // Shows expertise & personality
+}
+```
+
+#### **Scenario-Specific Intelligence Patterns**
+
+##### **Budget Constraint Scenarios**
+```markdown
+**Pattern**: Customer mentions specific budget ("I only have $5")
+**Minimal Response**: List items under budget
+**Optimal Response**: Calculate combinations within budget, show value maximization
+**Expected Enhancement**: 
+- Calculate optimal combinations within budget
+- Show value maximization opportunities  
+- Suggest complete meal solutions within constraints
+- Demonstrate menu expertise through intelligent recommendations
+```
+
+##### **Experience Optimization Scenarios**
+```markdown
+**Pattern**: Customer wants complete experience ("I need breakfast")
+**Minimal Response**: Show popular breakfast items
+**Optimal Response**: Suggest complete breakfast combinations with reasoning
+**Expected Enhancement**:
+- Suggest complete meal combinations
+- Consider dietary balance and satisfaction
+- Leverage personality knowledge of "what goes together"
+- Show cultural authenticity in recommendations
+```
+
+#### **Contextual Appropriateness Detection**
+
+```csharp
+public class ContextualResponseAnalyzer
+{
+    // 1. Context Appropriateness
+    bool DetectPostPaymentContinuation(ChatMessage response, PaymentStatus status)
+    {
+        return status == PaymentStatus.Completed && 
+               response.Content.Contains("What else you want?");
+    }
+    
+    // 2. Information Completeness  
+    bool DetectIncompleteMenuResponse(string userQuery, string response, List<ProductInfo> availableData)
+    {
+        if (userQuery.Contains("what food") && availableData.Count > 5)
+        {
+            return !ContainsSpecificItems(response, availableData);
+        }
+        return false;
+    }
+    
+    // 3. Value Maximization
+    bool DetectMissedValueOptimization(string userQuery, string response, List<ProductInfo> products)
+    {
+        if (ExtractBudgetConstraint(userQuery, out decimal budget))
+        {
+            return !ContainsCombinationSuggestions(response, products, budget);
+        }
+        return false;
+    }
+}
+```
+
+### **Training System Requirements for Complex Scenarios**
+
+#### **Sophisticated Pattern Detection**
+The training system must automatically detect:
+- **Subtle contextual inappropriateness** (functional but awkward)
+- **Information completeness gaps** (partial vs. comprehensive responses)
+- **Value optimization misses** (basic vs. expert-level recommendations)
+- **Cultural authenticity variations** (generic vs. personality-specific)
+
+#### **Multi-Dimensional Optimization Targets**
+```csharp
+public class OptimizationTargets
+{
+    // Primary Metrics (Must Achieve)
+    public double FunctionalAccuracy { get; set; } = 0.95;    // 95% correct operations
+    public double PersonalityConsistency { get; set; } = 0.90; // 90% authentic responses
+    
+    // Secondary Metrics (Competitive Advantage)
+    public double ValueOptimization { get; set; } = 0.80;     // 80% optimal recommendations
+    public double ContextualAppropriateness { get; set; } = 0.85; // 85% contextually appropriate
+    
+    // Tertiary Metrics (Differentiation)
+    public double DomainExpertise { get; set; } = 0.75;       // 75% expert-level responses
+    public double CustomerSatisfaction { get; set; } = 0.90;  // 90% satisfying interactions
+}
+```
+
+#### **Progressive Quality Standards**
+```csharp
+public class QualityStandards
+{
+    // Evolution from Basic to Expert
+    public QualityLevel Basic { get; set; } = new()
+    {
+        ToolSelectionAccuracy = 0.90,
+        FactualCorrectness = 0.95,
+        BasicPersonality = 0.80
+    };
+    
+    public QualityLevel Professional { get; set; } = new()
+    {
+        ValueOptimization = 0.75,
+        ContextualAwareness = 0.85,
+        BusinessAcumen = 0.70
+    };
+    
+    public QualityLevel Expert { get; set; } = new()
+    {
+        DomainExpertise = 0.90,
+        CulturalAuthenticity = 0.95,
+        CustomerDelight = 0.80
+    };
+}
+```
+
+### **Training Complexity Implications**
+
+#### **Why This Demands AI-Driven Optimization**
+
+These sophisticated quality requirements demonstrate why **manual prompt tuning** is insufficient:
+
+1. **Scale**: Too many interaction patterns to manually test
+2. **Subtlety**: Easy to miss contextual appropriateness issues  
+3. **Consistency**: Need systematic evaluation across personalities
+4. **Precision**: Requires detailed multi-dimensional assessment
+
+#### **AI-Driven Optimization Advantages**
+
+The **AI-driven prompt optimization system** can:
+- ✅ **Detect subtle patterns** automatically across thousands of scenarios
+- ✅ **Evaluate multi-dimensional quality** beyond simple pass/fail
+- ✅ **Generate targeted improvements** for specific quality dimensions
+- ✅ **Scale systematically** across different personality types and scenarios
+- ✅ **Optimize progressively** from basic functionality to expert-level performance
+
 ## Training Parameters and Configuration
 
 ### **Training Configuration Service**
@@ -113,14 +317,23 @@ public class TrainingConfiguration
         MinimumProgress = 0.001           // 0.1% minimum improvement per generation
     };
     
-    // Quality Thresholds
+    // Quality Thresholds - Enhanced for Multi-Dimensional Assessment
     public QualityTargets QualityTargets { get; set; } = new()
     {
+        // Primary Quality Metrics
         ConversationCompletion = 0.90,    // 90% successful completions
-        AmbiguityHandling = 0.85,         // 85% appropriate clarifications
-        PersonalityConsistency = 0.95,    // 95% authentic Uncle responses
-        CulturalAuthenticity = 0.90,      // 90% proper cultural responses
-        TechnicalAccuracy = 0.95          // 95% correct tool usage
+        TechnicalAccuracy = 0.95,         // 95% correct tool usage
+        PersonalityConsistency = 0.90,    // 90% authentic responses
+        
+        // Secondary Quality Metrics
+        ContextualAppropriateness = 0.85, // 85% contextually appropriate
+        ValueOptimization = 0.80,         // 80% optimal recommendations
+        InformationCompleteness = 0.88,   // 88% comprehensive responses
+        
+        // Tertiary Quality Metrics
+        DomainExpertise = 0.75,           // 75% expert-level responses
+        CulturalAuthenticity = 0.85,      // 85% culturally appropriate
+        CustomerSatisfaction = 0.82       // 82% satisfying interactions
     };
     
     // Training Focus Areas (0.0 = ignore, 1.0 = maximum focus)
@@ -129,7 +342,10 @@ public class TrainingConfiguration
         ToolSelectionAccuracy = 1.0,      // Critical - fix tool selection
         PersonalityAuthenticity = 0.8,    // Important - maintain Uncle character
         PaymentFlowCompletion = 1.0,      // Critical - fix payment loops
-        AmbiguityHandling = 0.7,          // Important - proper disambiguation
+        ContextualAppropriateness = 0.9,  // High - fix post-payment responses
+        InformationCompleteness = 0.85,   // High - provide detailed responses
+        ValueOptimization = 0.7,          // Important - suggest combinations
+        AmbiguityHandling = 0.6,          // Moderate - proper disambiguation
         CulturalTermRecognition = 0.6,    // Moderate - Singlish patterns
         ConversationEfficiency = 0.4      // Low - speed optimization
     };
@@ -269,17 +485,17 @@ public class TrainingConfigurationDialog
         var toolFocusSlider = CreateFocusSlider(1, "Tool Selection:", _config.Focus.ToolSelectionAccuracy);
         var personalityFocusSlider = CreateFocusSlider(2, "Personality:", _config.Focus.PersonalityAuthenticity);
         var paymentFocusSlider = CreateFocusSlider(3, "Payment Flow:", _config.Focus.PaymentFlowCompletion);
-        var ambiguityFocusSlider = CreateFocusSlider(4, "Ambiguity Handling:", _config.Focus.AmbiguityHandling);
-        var culturalFocusSlider = CreateFocusSlider(5, "Cultural Terms:", _config.Focus.CulturalTermRecognition);
-        var efficiencyFocusSlider = CreateFocusSlider(6, "Efficiency:", _config.Focus.ConversationEfficiency);
+        var contextFocusSlider = CreateFocusSlider(4, "Context:", _config.Focus.ContextualAppropriateness);
+        var completeFocusSlider = CreateFocusSlider(5, "Completeness:", _config.Focus.InformationCompleteness);
+        var valueFocusSlider = CreateFocusSlider(6, "Value Opt:", _config.Focus.ValueOptimization);
         
         focusFrame.Add(
             new Label(1, 1, "Tool Selection:"), toolFocusSlider,
             new Label(1, 2, "Personality:"), personalityFocusSlider,
             new Label(1, 3, "Payment Flow:"), paymentFocusSlider,
-            new Label(1, 4, "Ambiguity:"), ambiguityFocusSlider,
-            new Label(1, 5, "Cultural:"), culturalFocusSlider,
-            new Label(1, 6, "Efficiency:"), efficiencyFocusSlider
+            new Label(1, 4, "Context:"), contextFocusSlider,
+            new Label(1, 5, "Completeness:"), completeFocusSlider,
+            new Label(1, 6, "Value Opt:"), valueFocusSlider
         );
         
         dialog.Add(coreFrame, aggressivenessFrame, focusFrame);

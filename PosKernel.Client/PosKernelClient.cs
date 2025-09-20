@@ -207,6 +207,63 @@ namespace PosKernel.Client
         }
 
         /// <summary>
+        /// Voids a line item from the current transaction by line number.
+        /// Creates a reversing entry to maintain audit trail compliance.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="lineNumber">The line number to void (1-based).</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The result of the void line item operation.</returns>
+        public async Task<TransactionClientResult> VoidLineItemAsync(string sessionId, string transactionId, int lineNumber, CancellationToken cancellationToken = default)
+        {
+            var request = new
+            {
+                jsonrpc = "2.0",
+                method = "void_line_item",
+                @params = new
+                {
+                    session_id = sessionId,
+                    transaction_id = transactionId,
+                    line_number = lineNumber
+                },
+                id = GetNextRequestId()
+            };
+
+            var response = await SendRequestAsync<TransactionClientResult>(request, cancellationToken);
+            return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
+        }
+
+        /// <summary>
+        /// Updates the quantity of a line item in the current transaction.
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="lineNumber">The line number to update (1-based).</param>
+        /// <param name="newQuantity">The new quantity for the line item.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The result of the update line item operation.</returns>
+        public async Task<TransactionClientResult> UpdateLineItemQuantityAsync(string sessionId, string transactionId, int lineNumber, int newQuantity, CancellationToken cancellationToken = default)
+        {
+            var request = new
+            {
+                jsonrpc = "2.0",
+                method = "update_line_item_quantity",
+                @params = new
+                {
+                    session_id = sessionId,
+                    transaction_id = transactionId,
+                    line_number = lineNumber,
+                    new_quantity = newQuantity
+                },
+                id = GetNextRequestId()
+            };
+
+            var response = await SendRequestAsync<TransactionClientResult>(request, cancellationToken);
+            return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
+        }
+
+        /// <summary>
         /// Processes payment for the specified transaction.
         /// </summary>
         /// <param name="sessionId">The session identifier.</param>

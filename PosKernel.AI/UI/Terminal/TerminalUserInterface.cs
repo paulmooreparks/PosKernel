@@ -638,7 +638,7 @@ namespace PosKernel.AI.UI.Terminal {
                 Width = Dim.Percent(chatWidthPercent),
                 Height = Dim.Percent(chatHeightPercent),
                 ReadOnly = true,
-                WordWrap = false,
+                WordWrap = true,
                 CanFocus = true,
             };
 
@@ -730,7 +730,7 @@ namespace PosKernel.AI.UI.Terminal {
                 Width = Dim.Fill(1), // Leave space for scroll bar
                 Height = Dim.Fill(),
                 ReadOnly = true,
-                WordWrap = false, // Disable word wrap for horizontal scrolling
+                WordWrap = true, // Disable word wrap for horizontal scrolling
                 CanFocus = true, // Enable focus for scrolling
                 Visible = true, // Show initially instead of hidden
             };
@@ -794,7 +794,7 @@ namespace PosKernel.AI.UI.Terminal {
                 Width = Dim.Fill(1), // Leave space for scroll bar
                 Height = Dim.Fill(),
                 ReadOnly = true,
-                WordWrap = false, // Disable word wrap for horizontal scrolling
+                WordWrap = true, // Disable word wrap for horizontal scrolling
                 CanFocus = true, // Enable focus for scrolling
             };
 

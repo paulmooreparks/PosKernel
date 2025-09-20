@@ -225,6 +225,8 @@ namespace PosKernel.AI.Tools
             return new List<McpTool>
             {
                 CreateAddItemTool(),
+                CreateVoidItemTool(),
+                CreateUpdateItemQuantityTool(),
                 CreateSearchProductsTool(),
                 CreateGetProductInfoTool(),
                 CreateGetPopularItemsTool(),
@@ -249,6 +251,8 @@ namespace PosKernel.AI.Tools
                 return toolCall.FunctionName switch
                 {
                     "add_item_to_transaction" => await ExecuteAddItemAsync(toolCall, cancellationToken),
+                    "void_line_item" => await ExecuteVoidItemAsync(toolCall, cancellationToken),
+                    "update_line_item_quantity" => await ExecuteUpdateItemQuantityAsync(toolCall, cancellationToken),
                     "search_products" => await ExecuteSearchProductsAsync(toolCall, cancellationToken),
                     "get_product_info" => await ExecuteGetProductInfoAsync(toolCall, cancellationToken),
                     "get_popular_items" => await ExecuteGetPopularItemsAsync(toolCall, cancellationToken),
@@ -311,6 +315,64 @@ namespace PosKernel.AI.Tools
                         }
                     },
                     required = new[] { "item_description" }
+                }
+            };
+        }
+
+        private McpTool CreateVoidItemTool()
+        {
+            return new McpTool
+            {
+                Name = "void_line_item",
+                Description = "Removes a line item from the current transaction using POS accounting standards. Creates a reversing entry to maintain audit trail compliance - does not delete the original entry. Use when customer wants to remove an item completely ('remove that', 'cancel the coffee') or when replacing items. CUSTOMER SERVICE: Always confirm which item is being removed. LINE NUMBERS: Use 1-based line numbers (first item = 1, second item = 2, etc.).",
+                Parameters = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        line_number = new
+                        {
+                            type = "integer",
+                            description = "The line number to void (1-based: first item = 1, second = 2, etc.). Count items in the order they were added.",
+                            minimum = 1
+                        },
+                        reason = new
+                        {
+                            type = "string",
+                            description = "Reason for voiding for audit trail (e.g., 'customer changed mind', 'incorrect order', 'item replacement')",
+                            @default = "customer requested"
+                        }
+                    },
+                    required = new[] { "line_number" }
+                }
+            };
+        }
+
+        private McpTool CreateUpdateItemQuantityTool()
+        {
+            return new McpTool
+            {
+                Name = "update_line_item_quantity",
+                Description = "Updates the quantity of a line item in the transaction. Use when customer wants to change quantity ('make that 2', 'change to just 1', 'I want 3 of those'). LINE NUMBERS: Use 1-based line numbers (first item = 1, second item = 2, etc.).",
+                Parameters = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        line_number = new
+                        {
+                            type = "integer",
+                            description = "The line number to update (1-based: first item = 1, second = 2, etc.). Count items in the order they were added.",
+                            minimum = 1
+                        },
+                        new_quantity = new
+                        {
+                            type = "integer",
+                            description = "The new quantity for the item",
+                            minimum = 1
+                        }
+                    },
+                    required = new[] { "line_number", "new_quantity" }
                 }
             };
         }
@@ -500,6 +562,70 @@ namespace PosKernel.AI.Tools
             
             // Use proper currency formatting service
             return $"ADDED: {product.Name}{prepNote} x{quantity} @ {FormatCurrency(unitPrice)} each = {FormatCurrency(totalPrice)}";
+        }
+
+        private async Task<string> ExecuteVoidItemAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(_currentTransactionId))
+            {
+                return "ERROR: No active transaction to void items from";
+            }
+
+            var lineNumber = toolCall.Arguments["line_number"].GetInt32();
+            var reason = toolCall.Arguments.TryGetValue("reason", out var reasonElement) 
+                ? reasonElement.GetString() ?? "customer requested" 
+                : "customer requested";
+
+            _logger.LogInformation("Voiding line item {LineNumber} from transaction {TransactionId}, Reason: {Reason}", 
+                lineNumber, _currentTransactionId, reason);
+
+            try
+            {
+                var result = await _kernelClient.VoidLineItemAsync(_sessionId!, _currentTransactionId, lineNumber, cancellationToken);
+                
+                if (!result.Success)
+                {
+                    return $"ERROR: Failed to void line item {lineNumber}: {result.Error}";
+                }
+                
+                return $"VOIDED: Line item {lineNumber} has been removed from the order (reversing entry created for audit compliance). Reason: {reason}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error voiding line item {LineNumber}: {Error}", lineNumber, ex.Message);
+                return $"ERROR: Unable to void line item {lineNumber}: {ex.Message}";
+            }
+        }
+
+        private async Task<string> ExecuteUpdateItemQuantityAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(_currentTransactionId))
+            {
+                return "ERROR: No active transaction to update items in";
+            }
+
+            var lineNumber = toolCall.Arguments["line_number"].GetInt32();
+            var newQuantity = toolCall.Arguments["new_quantity"].GetInt32();
+
+            _logger.LogInformation("Updating line item {LineNumber} quantity to {NewQuantity} in transaction {TransactionId}", 
+                lineNumber, newQuantity, _currentTransactionId);
+
+            try
+            {
+                var result = await _kernelClient.UpdateLineItemQuantityAsync(_sessionId!, _currentTransactionId, lineNumber, newQuantity, cancellationToken);
+                
+                if (!result.Success)
+                {
+                    return $"ERROR: Failed to update line item {lineNumber} quantity: {result.Error}";
+                }
+                
+                return $"UPDATED: Line item {lineNumber} quantity changed to {newQuantity}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating line item {LineNumber} quantity: {Error}", lineNumber, ex.Message);
+                return $"ERROR: Unable to update line item {lineNumber} quantity: {ex.Message}";
+            }
         }
 
         private async Task<string> ExecuteCalculateTotalAsync(CancellationToken cancellationToken)
