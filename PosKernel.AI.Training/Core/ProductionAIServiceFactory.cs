@@ -24,6 +24,8 @@ using PosKernel.Extensions.Restaurant.Client;
 using PosKernel.Configuration;
 using PosKernel.Configuration.Services;
 using PosKernel.Abstractions.Services;
+using PosKernel.AI.Common.Abstractions;
+using PosKernel.AI.Common.Factories;
 
 namespace PosKernel.AI.Training.Core;
 
@@ -81,15 +83,42 @@ public static class ProductionAIServiceFactory
         // Initialize configuration system (same as PosKernel.AI)
         var config = PosKernelConfiguration.Initialize();
         
-        // Get OpenAI API key (same validation as PosKernel.AI) - FAIL FAST if missing
-        var openAiKey = config.GetValue<string>("OPENAI_API_KEY") ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        if (string.IsNullOrEmpty(openAiKey))
-        {
+        // ARCHITECTURAL FIX: Training uses TRAINING_AI_* configuration, not STORE_AI_*
+        // This allows training to use Ollama (unlimited) while store uses OpenAI (quality)
+        var provider = config.GetValue<string>("TRAINING_AI_PROVIDER") ?? 
             throw new InvalidOperationException(
-                "DESIGN DEFICIENCY: Training requires OpenAI API key to test production AI system. " +
-                "Training cannot decide API configuration defaults. " +
-                "Set OPENAI_API_KEY environment variable or add to ~/.poskernel/.env file. " +
+                "DESIGN DEFICIENCY: Training requires Training AI provider configuration. " +
+                "Set TRAINING_AI_PROVIDER in ~/.poskernel/.env (e.g., TRAINING_AI_PROVIDER=Ollama). " +
                 $"Config directory: {PosKernelConfiguration.ConfigDirectory}");
+                
+        var model = config.GetValue<string>("TRAINING_AI_MODEL") ?? 
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Training requires Training AI model configuration. " +
+                "Set TRAINING_AI_MODEL in ~/.poskernel/.env (e.g., TRAINING_AI_MODEL=llama3.1:8b). " +
+                $"Config directory: {PosKernelConfiguration.ConfigDirectory}");
+                
+        var baseUrl = config.GetValue<string>("TRAINING_AI_BASE_URL") ?? 
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Training requires Training AI base URL configuration. " +
+                "Set TRAINING_AI_BASE_URL in ~/.poskernel/.env (e.g., TRAINING_AI_BASE_URL=http://localhost:11434). " +
+                $"Config directory: {PosKernelConfiguration.ConfigDirectory}");
+        
+        // API key handling - different for different providers
+        string? apiKey = null;
+        if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
+        {
+            apiKey = config.GetValue<string>("OPENAI_API_KEY");
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new InvalidOperationException(
+                    "DESIGN DEFICIENCY: Training requires OpenAI API key when TRAINING_AI_PROVIDER=OpenAI. " +
+                    "Set OPENAI_API_KEY in ~/.poskernel/.env or use local provider (TRAINING_AI_PROVIDER=Ollama). " +
+                    $"Config directory: {PosKernelConfiguration.ConfigDirectory}");
+            }
+        }
+        else if (provider.Equals("Ollama", StringComparison.OrdinalIgnoreCase))
+        {
+            apiKey = "local"; // Ollama doesn't need real API key
         }
 
         var services = new ServiceCollection();
@@ -118,21 +147,29 @@ public static class ProductionAIServiceFactory
         services.AddSingleton<ICurrencyFormattingService, CurrencyFormattingService>();
         services.AddSingleton<IStoreConfigurationService>(provider => new ConfiguredStoreConfigurationService(storeConfig));
 
-        // Add MCP configuration (EXACT same as PosKernel.AI)
+        // ARCHITECTURAL FIX: Use shared LLM factory with training AI configuration
+        // Training uses TRAINING_AI_* configuration (can be different from STORE_AI_*)
+        services.AddSingleton<ILargeLanguageModel>(serviceProvider =>
+        {
+            var logger = serviceProvider.GetRequiredService<ILogger<ILargeLanguageModel>>();
+            return LLMProviderFactory.CreateLLM(provider, model, baseUrl, apiKey, logger);
+        });
+
+        // Create MCP configuration for training AI (may be different from store AI)
         var mcpConfig = new McpConfiguration
         {
-            BaseUrl = "https://api.openai.com/v1",
-            CompletionEndpoint = "chat/completions",
-            ApiKey = openAiKey,
+            BaseUrl = baseUrl,
+            CompletionEndpoint = provider.Equals("Ollama", StringComparison.OrdinalIgnoreCase) ? "api/generate" : "chat/completions",
+            ApiKey = apiKey,
             TimeoutSeconds = 30,
             DefaultParameters = new Dictionary<string, object>
             {
-                ["model"] = "gpt-4o", // EXACT same model as production
-                ["temperature"] = 0.3, // EXACT same parameters
+                ["model"] = model,
+                ["temperature"] = 0.3,
                 ["max_tokens"] = 1000
             }
         };
-
+        
         services.AddSingleton(mcpConfig);
         services.AddSingleton<McpClient>();
 

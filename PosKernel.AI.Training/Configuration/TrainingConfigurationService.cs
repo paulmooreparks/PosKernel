@@ -43,17 +43,18 @@ public class TrainingConfigurationService : ITrainingConfigurationService
 
         var config = await _dataStore.LoadAsync<TrainingConfiguration>(ConfigurationKey);
 
-        // ARCHITECTURAL PRINCIPLE: Fail fast if configuration missing - no helpful defaults
+        // ARCHITECTURAL FIX: Create default configuration file if it doesn't exist
         if (config == null)
         {
-            throw new InvalidOperationException(
-                "DESIGN DEFICIENCY: Training configuration not found. " +
-                "Initialize training configuration before starting optimization. " +
-                "Use ITrainingConfigurationService.SaveConfigurationAsync() to create initial configuration " +
-                "or implement configuration UI to set initial parameters.");
+            _logger.LogInformation("Training configuration not found, creating default configuration file");
+            config = CreateDefaultConfigurationWithTestingValues();
+            
+            // Save the default configuration to the user's .poskernel directory
+            await _dataStore.SaveAsync(ConfigurationKey, config);
+            _logger.LogInformation("Default training configuration saved to user's .poskernel directory");
         }
 
-        // ARCHITECTURAL PRINCIPLE: Validate loaded configuration - fail fast if corrupt
+        // ARCHITECTURAL PRINCIPLE: Validate loaded/created configuration - fail fast if corrupt
         var validation = await ValidateConfigurationAsync(config);
         if (!validation.IsValid)
         {
@@ -178,10 +179,100 @@ public class TrainingConfigurationService : ITrainingConfigurationService
 
     public TrainingConfiguration CreateDefaultConfiguration()
     {
-        var config = new TrainingConfiguration();
+        // ARCHITECTURAL FIX: Use testing values by default until moved to appconfig.json
+        return CreateDefaultConfigurationWithTestingValues();
+    }
+
+    /// <summary>
+    /// Creates default configuration with testing values (3/3) for initial validation.
+    /// TODO: Move these hard-coded values to appconfig.json
+    /// </summary>
+    private TrainingConfiguration CreateDefaultConfigurationWithTestingValues()
+    {
+        // ARCHITECTURAL NOTE: Hard-coded testing values for now - will move to appconfig.json later
+        var config = new TrainingConfiguration
+        {
+            // TESTING VALUES: Reduced for initial validation
+            ScenarioCount = 3,
+            MaxGenerations = 3,
+            ImprovementThreshold = 0.02,
+            ValidationScenarios = 3,
+
+            // Scenario Generation Mix (must sum to 1.0)
+            ScenarioMix = new ScenarioDistribution
+            {
+                BasicOrdering = 0.40,      // Simple orders
+                EdgeCases = 0.20,          // Challenging scenarios
+                CulturalVariations = 0.20, // Language/cultural tests
+                AmbiguousRequests = 0.10,  // Disambiguation tests
+                PaymentScenarios = 0.10    // Payment flow tests
+            },
+
+            // Training Aggressiveness Controls
+            Aggressiveness = new TrainingAggressiveness
+            {
+                MutationRate = 0.15,              // 15% of prompt modified per mutation
+                ExplorationRatio = 0.30,          // 30% exploratory vs targeted mutations
+                RegressionTolerance = -0.05,      // 5% regression triggers abort
+                StagnationLimit = 5,              // Generations without improvement
+                MinimumProgress = 0.001           // 0.1% minimum improvement per generation
+            },
+
+            // Quality Thresholds - Enhanced for Multi-Dimensional Assessment
+            QualityTargets = new QualityTargets
+            {
+                // Primary Quality Metrics
+                ConversationCompletion = 0.90,    // 90% successful completions
+                TechnicalAccuracy = 0.95,         // 95% correct tool usage
+                PersonalityConsistency = 0.90,    // 90% authentic responses
+
+                // Secondary Quality Metrics
+                ContextualAppropriateness = 0.85, // 85% contextually appropriate
+                ValueOptimization = 0.80,         // 80% optimal recommendations
+                InformationCompleteness = 0.88,   // 88% comprehensive responses
+
+                // Tertiary Quality Metrics
+                DomainExpertise = 0.75,           // 75% expert-level responses
+                CulturalAuthenticity = 0.85,      // 85% culturally appropriate
+                CustomerSatisfaction = 0.82       // 82% satisfying interactions
+            },
+
+            // Training Focus Areas (0.0 = ignore, 1.0 = maximum focus)
+            Focus = new TrainingFocus
+            {
+                ToolSelectionAccuracy = 1.0,      // Critical - ensure correct tools
+                PersonalityAuthenticity = 0.8,    // Important - maintain Uncle character
+                PaymentFlowCompletion = 1.0,      // Critical - complete payment flows
+                ContextualAppropriateness = 0.9,  // High - appropriate responses
+                InformationCompleteness = 0.85,   // High - provide detailed responses
+                ValueOptimization = 0.7,          // Important - suggest combinations
+                AmbiguityHandling = 0.6,          // Moderate - proper disambiguation
+                CulturalTermRecognition = 0.6,    // Moderate - Singlish patterns
+                ConversationEfficiency = 0.4      // Low - speed optimization
+            },
+
+            // Safety Guards
+            Safety = new SafetyConfiguration
+            {
+                MaxTrainingDuration = TimeSpan.FromHours(8),  // Abort after 8 hours
+                MaxPromptLength = 10000,                       // Prevent prompt bloat
+                RequiredRegressionTests = true,                // Always run regression tests
+                HumanApprovalThreshold = 0.15,                // 15% improvement needs review
+                AutoBackupInterval = TimeSpan.FromMinutes(30)  // Backup every 30 minutes
+            },
+
+            // Persistence Settings
+            Persistence = new PersistenceConfiguration
+            {
+                SaveIntermediateResults = true,
+                ResultsRetentionDays = 30,
+                DetailedLogging = true,
+                MetricsCollection = true
+            }
+        };
         
-        _logger.LogDebug("Created default training configuration with {ScenarioCount} scenarios",
-            config.ScenarioCount);
+        _logger.LogDebug("Created default training configuration with testing values: {ScenarioCount} scenarios, {MaxGenerations} generations",
+            config.ScenarioCount, config.MaxGenerations);
 
         return config;
     }

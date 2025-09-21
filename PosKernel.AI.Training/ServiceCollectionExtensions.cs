@@ -132,26 +132,21 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Gets the default cross-platform data directory
+    /// Gets the default cross-platform data directory - matches PosKernel configuration directory structure
     /// </summary>
     private static string GetDefaultDataDirectory()
     {
-        // ARCHITECTURAL PRINCIPLE: Cross-platform path handling
-        var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        // ARCHITECTURAL PRINCIPLE: Use same directory structure as PosKernelConfiguration
+        // Training data should be in ~/.poskernel/training/ alongside ~/.poskernel/.env
+        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         
-        if (string.IsNullOrEmpty(baseDir))
+        if (string.IsNullOrEmpty(homeDir))
         {
-            // Fallback for systems without ApplicationData folder
-            baseDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            
-            if (string.IsNullOrEmpty(baseDir))
-            {
-                // Last resort fallback
-                baseDir = Path.GetTempPath();
-            }
+            // Fallback for systems without UserProfile folder
+            homeDir = Path.GetTempPath();
         }
 
-        return Path.Combine(baseDir, "PosKernel", "AI", "Training");
+        return Path.Combine(homeDir, ".poskernel", "training");
     }
 
     /// <summary>

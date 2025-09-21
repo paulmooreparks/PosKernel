@@ -24,17 +24,17 @@ namespace PosKernel.AI.Training.Configuration;
 public class TrainingConfiguration
 {
     // Core Training Parameters
-    [Range(50, 10000, ErrorMessage = "ScenarioCount must be between 50 and 10,000 for meaningful results")]
-    public int ScenarioCount { get; set; } = 500;
+    [Range(1, 10000, ErrorMessage = "ScenarioCount must be between 1 and 10,000 for meaningful results")]
+    public int ScenarioCount { get; set; } = 5; // TESTING: Reduced from 500 to 5 for initial validation
 
-    [Range(5, 100, ErrorMessage = "MaxGenerations must be between 5 and 100")]
-    public int MaxGenerations { get; set; } = 50;
+    [Range(1, 100, ErrorMessage = "MaxGenerations must be between 1 and 100")]
+    public int MaxGenerations { get; set; } = 3; // TESTING: Reduced from 50 to 3 for initial validation
 
     [Range(0.001, 0.1, ErrorMessage = "ImprovementThreshold must be between 0.1% and 10%")]
     public double ImprovementThreshold { get; set; } = 0.02; // 2% improvement required
 
-    [Range(50, 1000, ErrorMessage = "ValidationScenarios must be between 50 and 1,000")]
-    public int ValidationScenarios { get; set; } = 200; // Fresh scenarios for validation
+    [Range(1, 1000, ErrorMessage = "ValidationScenarios must be between 1 and 1,000")]
+    public int ValidationScenarios { get; set; } = 5; // TESTING: Reduced from 200 to 5 for initial validation
 
     // Scenario Generation Mix (must sum to 1.0)
     public ScenarioDistribution ScenarioMix { get; set; } = new()
