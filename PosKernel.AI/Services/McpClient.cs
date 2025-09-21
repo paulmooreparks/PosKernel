@@ -132,7 +132,9 @@ User request: {prompt}";
             var toolCalls = new List<McpToolCall>();
 
             if (string.IsNullOrEmpty(response))
+            {
                 return toolCalls;
+            }
 
             var lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             
@@ -140,7 +142,9 @@ User request: {prompt}";
             {
                 var trimmed = line.Trim();
                 if (!trimmed.StartsWith("TOOL_CALL:", StringComparison.OrdinalIgnoreCase))
+                {
                     continue;
+                }
 
                 try
                 {
@@ -148,7 +152,10 @@ User request: {prompt}";
                     var toolCallText = trimmed.Substring("TOOL_CALL:".Length).Trim();
                     var spaceIndex = toolCallText.IndexOf(' ');
                     
-                    if (spaceIndex == -1) continue;
+                    if (spaceIndex == -1) 
+                    {
+                        continue;
+                    }
 
                     var toolName = toolCallText.Substring(0, spaceIndex).Trim();
                     var jsonArgs = toolCallText.Substring(spaceIndex + 1).Trim();

@@ -41,7 +41,7 @@ public class TrainingConfigurationService : ITrainingConfigurationService
     {
         _logger.LogDebug("Loading training configuration");
 
-        var config = await _dataStore.LoadAsync<TrainingConfiguration>(ConfigurationKey);
+        var config = _dataStore.Load<TrainingConfiguration>(ConfigurationKey);
 
         // ARCHITECTURAL FIX: Create default configuration file if it doesn't exist
         if (config == null)

@@ -24,7 +24,7 @@ public interface ITrainingDataStore
     /// <summary>
     /// Loads data by key, returning null if not found
     /// </summary>
-    Task<T?> LoadAsync<T>(string key) where T : class;
+    T? Load<T>(string key) where T : class;
 
     /// <summary>
     /// Saves data with the specified key

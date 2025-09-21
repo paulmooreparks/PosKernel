@@ -19,28 +19,56 @@ using PosKernel.Configuration.Services;
 namespace PosKernel.AI.Training.Core;
 
 /// <summary>
-/// Store configuration service for training that provides proper currency/culture configuration
-/// ARCHITECTURAL PRINCIPLE: No hardcoded defaults - explicit configuration for training scenarios
-/// TODO: In production, this would integrate with database or configuration management system
+/// Store configuration service for training that provides proper multi-store configuration
+/// ARCHITECTURAL PRINCIPLE: No hardcoded defaults - explicit configuration for all store types
+/// ARCHITECTURAL FIX: Support all store types, not just Singapore Kopitiam
 /// </summary>
 public class TrainingStoreConfigurationService : IStoreConfigurationService
 {
     public StoreConfiguration GetStoreConfiguration(string storeId)
     {
         // ARCHITECTURAL PRINCIPLE: Training uses explicit configuration - no silent defaults
-        // For training purposes, use Singapore Kopitiam configuration to match existing AI personality
-        // TODO: This should be configurable through proper configuration management
+        // Return basic currency/locale configuration - business logic is in StoreConfig
         return storeId switch
         {
             "training-store" => new StoreConfiguration
             {
                 StoreId = storeId,
-                Currency = "SGD", // Singapore Dollar for Kopitiam Uncle personality
-                Locale = "en-SG"  // Singapore English locale
+                Currency = "SGD", // Singapore Dollar for default Kopitiam training
+                Locale = "en-SG" // Singapore English locale
+            },
+            "training-store-us-coffee" => new StoreConfiguration
+            {
+                StoreId = storeId,
+                Currency = "USD", // US Dollar for American coffee shop
+                Locale = "en-US"
+            },
+            "training-store-fr-bakery" => new StoreConfiguration
+            {
+                StoreId = storeId,
+                Currency = "EUR", // Euro for French bakery
+                Locale = "fr-FR"
+            },
+            "training-store-jp-convenience" => new StoreConfiguration
+            {
+                StoreId = storeId,
+                Currency = "JPY", // Japanese Yen for convenience store
+                Locale = "ja-JP"
+            },
+            "training-store-in-chai" => new StoreConfiguration
+            {
+                StoreId = storeId,
+                Currency = "INR", // Indian Rupee for chai stall
+                Locale = "hi-IN"
             },
             _ => throw new InvalidOperationException(
                 $"DESIGN DEFICIENCY: Unknown store configuration '{storeId}'. " +
-                "Training store configuration service only supports 'training-store' configuration. " +
+                "Training store configuration service supports:\n" +
+                "- 'training-store' (Singapore Kopitiam, SGD, en-SG)\n" +
+                "- 'training-store-us-coffee' (American Coffee Shop, USD, en-US)\n" +
+                "- 'training-store-fr-bakery' (French Bakery, EUR, fr-FR)\n" +
+                "- 'training-store-jp-convenience' (Japanese Convenience Store, JPY, ja-JP)\n" +
+                "- 'training-store-in-chai' (Indian Chai Stall, INR, hi-IN)\n" +
                 "Add configuration for store '{storeId}' or use supported store ID.")
         };
     }

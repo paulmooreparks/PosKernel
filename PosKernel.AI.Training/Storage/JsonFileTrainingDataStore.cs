@@ -44,7 +44,7 @@ public class JsonFileTrainingDataStore : ITrainingDataStore
         EnsureDataDirectoryExists();
     }
 
-    public async Task<T?> LoadAsync<T>(string key) where T : class
+    public T? Load<T>(string key) where T : class
     {
         ValidateKey(key);
 

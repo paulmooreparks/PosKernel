@@ -38,7 +38,7 @@ public interface IPromptManagementService
     /// <summary>
     /// Gets all available prompt types for a personality (ordering, greeting, tool_acknowledgment, etc.)
     /// </summary>
-    Task<IReadOnlyList<string>> GetAvailablePromptTypesAsync(PersonalityType personalityType);
+    IReadOnlyList<string> GetAvailablePromptTypes(PersonalityType personalityType);
 
     /// <summary>
     /// Gets prompt optimization history for analysis
