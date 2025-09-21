@@ -163,12 +163,8 @@ namespace PosKernel.Configuration
             _configuration["PosKernel:CultureCode"] = "en-US";
             _configuration["PosKernel:DefaultCurrency"] = "USD";
             
-            // AI defaults
-            _configuration["AI:Provider"] = "OpenAI";
-            _configuration["AI:Model"] = "gpt-4o-mini";
-            _configuration["AI:Temperature"] = 0.3;
-            _configuration["AI:MaxTokens"] = 1000;
-            _configuration["AI:TimeoutSeconds"] = 30;
+            // ARCHITECTURAL PRINCIPLE: NO AI defaults - require explicit configuration
+            // AI configuration must be provided via environment variables to enforce fail-fast
             
             // Security defaults
             _configuration["Security:EnableAuditLogging"] = true;
@@ -204,7 +200,11 @@ namespace PosKernel.Configuration
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Warning: Failed to load {sourceName} from {filePath}: {ex.Message}");
+                    // ARCHITECTURAL PRINCIPLE: Fail fast on configuration loading errors
+                    throw new InvalidOperationException(
+                        $"DESIGN DEFICIENCY: Failed to load {sourceName} configuration from {filePath}. " +
+                        $"Configuration loading must succeed for system to operate correctly. " +
+                        $"Error: {ex.Message}", ex);
                 }
             }
         }
@@ -237,7 +237,11 @@ namespace PosKernel.Configuration
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Warning: Failed to load .env file: {ex.Message}");
+                    // ARCHITECTURAL PRINCIPLE: Fail fast on secrets loading errors
+                    throw new InvalidOperationException(
+                        $"DESIGN DEFICIENCY: Failed to load secrets from {SecretsFilePath}. " +
+                        $"Secrets file must be readable for system to operate correctly. " +
+                        $"Error: {ex.Message}", ex);
                 }
             }
         }
@@ -248,7 +252,12 @@ namespace PosKernel.Configuration
             var envVars = new[]
             {
                 "OPENAI_API_KEY",
-                "MCP_BASE_URL",
+                "STORE_AI_PROVIDER",
+                "STORE_AI_MODEL", 
+                "STORE_AI_BASE_URL",
+                "TRAINING_AI_PROVIDER",
+                "TRAINING_AI_MODEL",
+                "TRAINING_AI_BASE_URL",
                 "POSKERNEL_LOG_LEVEL",
                 "POSKERNEL_CULTURE",
                 "POSKERNEL_CURRENCY",
@@ -408,14 +417,37 @@ namespace PosKernel.Configuration
         }
 
         /// <summary>
-        /// Gets the AI provider name.
+        /// Gets the AI provider name for store operations.
+        /// Uses STORE_AI_PROVIDER environment variable.
         /// </summary>
-        public string Provider => _config.GetValue("AI:Provider", "OpenAI")!;
+        public string Provider => 
+            _config.GetValue<string>("STORE_AI_PROVIDER") ?? 
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Store AI provider not configured. " +
+                "Set STORE_AI_PROVIDER environment variable in ~/.poskernel/.env file. " +
+                "Cannot decide provider defaults.");
 
         /// <summary>
-        /// Gets the AI model name.
+        /// Gets the AI model name for store operations.
+        /// Uses STORE_AI_MODEL environment variable.
         /// </summary>
-        public string Model => _config.GetValue("AI:Model", "gpt-4o-mini")!;
+        public string Model => 
+            _config.GetValue<string>("STORE_AI_MODEL") ?? 
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Store AI model not configured. " +
+                "Set STORE_AI_MODEL environment variable in ~/.poskernel/.env file. " +
+                "Cannot decide model defaults.");
+
+        /// <summary>
+        /// Gets the base URL for the AI service.
+        /// Uses STORE_AI_BASE_URL environment variable.
+        /// </summary>
+        public string BaseUrl => 
+            _config.GetValue<string>("STORE_AI_BASE_URL") ?? 
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Store AI base URL not configured. " +
+                "Set STORE_AI_BASE_URL environment variable in ~/.poskernel/.env file. " +
+                "Cannot decide base URL defaults.");
 
         /// <summary>
         /// Gets the temperature setting for AI responses.
@@ -433,11 +465,6 @@ namespace PosKernel.Configuration
         public int TimeoutSeconds => _config.GetValue("AI:TimeoutSeconds", 30);
 
         /// <summary>
-        /// Gets the base URL for the AI service.
-        /// </summary>
-        public string BaseUrl => _config.GetValue("MCP_BASE_URL", "https://api.openai.com/v1/")!;
-
-        /// <summary>
         /// Gets the API key for the AI service.
         /// </summary>
         public string? ApiKey => _config.GetValue<string>("OPENAI_API_KEY");
@@ -448,14 +475,25 @@ namespace PosKernel.Configuration
         public bool UseMockAi => _config.GetValue("USE_MOCK_AI", "false")!.Equals("true", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
+        /// Gets whether the configured provider is a local LLM (Ollama).
+        /// </summary>
+        public bool IsLocalProvider => Provider.Equals("Ollama", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Gets the completion endpoint path - different for Ollama vs OpenAI
+        /// </summary>
+        public string CompletionEndpoint => IsLocalProvider ? "api/generate" : "chat/completions";
+
+        /// <summary>
         /// Gets the MCP configuration for the AI client.
+        /// ARCHITECTURAL PRINCIPLE: Store AI configuration uses STORE_AI_* environment variables
         /// </summary>
         public McpConfiguration ToMcpConfiguration()
         {
-            return new McpConfiguration
+            var mcpConfig = new McpConfiguration
             {
                 BaseUrl = BaseUrl,
-                ApiKey = ApiKey,
+                CompletionEndpoint = CompletionEndpoint,
                 TimeoutSeconds = TimeoutSeconds,
                 DefaultParameters = new Dictionary<string, object>
                 {
@@ -464,6 +502,25 @@ namespace PosKernel.Configuration
                     ["max_tokens"] = MaxTokens
                 }
             };
+
+            // ARCHITECTURAL PRINCIPLE: Configure API key based on provider
+            if (IsLocalProvider)
+            {
+                mcpConfig.ApiKey = "local";
+            }
+            else
+            {
+                mcpConfig.ApiKey = ApiKey;
+                
+                if (string.IsNullOrEmpty(mcpConfig.ApiKey))
+                {
+                    throw new InvalidOperationException(
+                        "DESIGN DEFICIENCY: OpenAI API key not configured for store AI. " +
+                        "Set OPENAI_API_KEY environment variable or switch to local provider with STORE_AI_PROVIDER=Ollama");
+                }
+            }
+
+            return mcpConfig;
         }
     }
 

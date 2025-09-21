@@ -29,6 +29,8 @@ using PosKernel.Configuration;
 using PosKernel.Configuration.Services;
 using PosKernel.AI.Models;
 using PosKernel.Extensions.Restaurant.Client;
+using PosKernel.AI.Common.Abstractions;
+using PosKernel.AI.Common.Factories;
 
 namespace PosKernel.AI
 {
@@ -56,13 +58,27 @@ namespace PosKernel.AI
 
                 // Initialize configuration system
                 var config = PosKernelConfiguration.Initialize();
+                var storeAiConfig = new AiConfiguration(config);
 
-                // Check for OpenAI API key from configuration or environment
-                var openAiKey = config.GetValue<string>("OPENAI_API_KEY") ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-                if (string.IsNullOrEmpty(openAiKey))
+                // ARCHITECTURAL PRINCIPLE: Use shared factory - no hardcoded provider assumptions
+                // Validate store AI configuration at startup (fail fast)
+                var provider = storeAiConfig.Provider;
+                var model = storeAiConfig.Model;
+                var baseUrl = storeAiConfig.BaseUrl;
+                var apiKey = storeAiConfig.ApiKey;
+                
+                if (string.IsNullOrWhiteSpace(provider))
                 {
-                    Console.WriteLine("❌ OpenAI API key not configured!");
-                    Console.WriteLine("Add OPENAI_API_KEY to ~/.poskernel/.env or environment variables");
+                    Console.WriteLine("❌ Store AI provider not configured!");
+                    Console.WriteLine("Set STORE_AI_PROVIDER in ~/.poskernel/.env (e.g., STORE_AI_PROVIDER=Ollama)");
+                    Console.WriteLine($"Config directory: {PosKernelConfiguration.ConfigDirectory}");
+                    return 1;
+                }
+                
+                if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(apiKey))
+                {
+                    Console.WriteLine("❌ OpenAI API key required when STORE_AI_PROVIDER=OpenAI");
+                    Console.WriteLine("Set OPENAI_API_KEY in ~/.poskernel/.env or use local provider (STORE_AI_PROVIDER=Ollama)");
                     Console.WriteLine($"Config directory: {PosKernelConfiguration.ConfigDirectory}");
                     return 1;
                 }
@@ -103,21 +119,15 @@ namespace PosKernel.AI
                 services.AddSingleton<ICurrencyFormattingService, CurrencyFormattingService>();
                 services.AddSingleton<IStoreConfigurationService, SimpleStoreConfigurationService>();
 
-                // Add MCP configuration with better model for conversational responses
-                var mcpConfig = new McpConfiguration
+                // ARCHITECTURAL FIX: Use shared LLM factory and wire it into MCP client
+                services.AddSingleton<ILargeLanguageModel>(serviceProvider =>
                 {
-                    BaseUrl = "https://api.openai.com/v1",
-                    CompletionEndpoint = "chat/completions",
-                    ApiKey = openAiKey,
-                    TimeoutSeconds = 30,
-                    DefaultParameters = new Dictionary<string, object>
-                    {
-                        ["model"] = "gpt-4o", // ARCHITECTURAL FIX: Use full gpt-4o instead of mini for better conversational responses with tools
-                        ["temperature"] = 0.3,
-                        ["max_tokens"] = 1000
-                    }
-                };
+                    var logger = serviceProvider.GetRequiredService<ILogger<ILargeLanguageModel>>();
+                    return LLMProviderFactory.CreateLLM(provider, model, baseUrl, apiKey, logger);
+                });
 
+                // Wire MCP client to use shared LLM interface
+                var mcpConfig = storeAiConfig.ToMcpConfiguration();
                 services.AddSingleton(mcpConfig);
                 services.AddSingleton<McpClient>();
 
@@ -311,7 +321,8 @@ namespace PosKernel.AI
             System.Console.WriteLine("Prerequisites for Real Mode:");
             System.Console.WriteLine("  1. Start the Rust kernel service: cd pos-kernel-rs && cargo run --bin service");
             System.Console.WriteLine("  2. Ensure SQLite database exists: data/catalog/restaurant_catalog.db");
-            System.Console.WriteLine("  3. Configure OpenAI API key in environment or ~/.poskernel/.env");
+            System.Console.WriteLine("  3. Configure AI provider in ~/.poskernel/.env (STORE_AI_PROVIDER=Ollama or OpenAI)");
+            System.Console.WriteLine("  4. If using OpenAI: Set OPENAI_API_KEY in ~/.poskernel/.env");
         }
 
         private static Task<StoreConfig?> ShowStoreSelectionDialogAsync(IUserInterface ui, bool useRealKernel)
