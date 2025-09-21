@@ -865,24 +865,41 @@ Provide a brief follow-up: ""What else can I get for you?"" or ""Anything else t
                 };
             }
             
-            // ARCHITECTURAL PRINCIPLE: Use AI personality to generate order summary instead of hardcoded text
-            var promptContext = new PosKernel.AI.Services.PromptContext
-            {
-                UserInput = "Please summarize the order and ask for payment method",
-                TimeOfDay = DateTime.Now.Hour < 12 ? "morning" : DateTime.Now.Hour < 17 ? "afternoon" : "evening",
-                CurrentTime = DateTime.Now.ToString("HH:mm"),
-                CartItems = string.Join(", ", _receipt.Items.Select(i => $"{i.Quantity}x {i.ProductName}")),
-                CurrentTotal = FormatCurrency(_receipt.Total),
-                Currency = _receipt.Store.Currency
-            };
-
             try
             {
+                // ARCHITECTURAL FIX: Use Two-Phase AI Pattern for payment transition
+                // Phase 1: Load payment methods context so AI knows what methods are available
+                var availableTools = _useRealKernel ? _kernelToolsProvider!.GetAvailableTools() : _mockToolsProvider!.GetAvailableTools();
+                
+                var contextPrompt = "Load payment methods context for this store so you know what payment options are available to offer the customer.";
+                _thoughtLogger.LogThought("PAYMENT_TRANSITION: Loading payment methods context before asking customer");
+                
+                var contextResponse = await _mcpClient.CompleteWithToolsAsync(contextPrompt, availableTools);
+                
+                // Execute payment methods context loading if AI decided to use it
+                if (contextResponse.ToolCalls?.Any() == true)
+                {
+                    _thoughtLogger.LogThought($"PAYMENT_CONTEXT_LOADING: Executing {string.Join(", ", contextResponse.ToolCalls.Select(t => t.FunctionName))}");
+                    await ExecuteToolsAsync(contextResponse.ToolCalls);
+                }
+                
+                // Phase 2: Generate order summary with payment method options
+                var promptContext = new PosKernel.AI.Services.PromptContext
+                {
+                    UserInput = "Please summarize the order and ask for payment method",
+                    TimeOfDay = DateTime.Now.Hour < 12 ? "morning" : DateTime.Now.Hour < 17 ? "afternoon" : "evening",
+                    CurrentTime = DateTime.Now.ToString("HH:mm"),
+                    CartItems = string.Join(", ", _receipt.Items.Select(i => $"{i.Quantity}x {i.ProductName}")),
+                    CurrentTotal = FormatCurrency(_receipt.Total),
+                    Currency = _receipt.Store.Currency
+                };
+
                 var prompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering", promptContext);
                 prompt += "\n\nCONTEXT: Create an order summary and ask for payment method. The customer has finished ordering.";
+                prompt += "\nCRITICAL: You should have loaded payment methods context in the previous step - use that information to offer specific payment options to the customer.";
                 
-                // Use Two-Phase pattern for order summary
-                var emptyToolsList = new List<McpTool>(); // No tools needed for order summary
+                // No tools needed for order summary response - payment methods already loaded
+                var emptyToolsList = new List<McpTool>();
                 var response = await _mcpClient.CompleteWithToolsAsync(prompt, emptyToolsList);
                 
                 return new ChatMessage

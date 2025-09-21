@@ -133,7 +133,10 @@ The goal is to **reveal design problems**, not hide them with convenient default
 ## ERRORS AND WARNINGS
 - Do not ignore or suppress compiler warnings/errors
 - Do not use `#pragma warning disable` unless absolutely necessary (and document why)
-- The build is not clean until warnings are resolved. If you can't resolve a warning, or if it will be troublesome to resolve, **DO NOT PROCEED**. Stop and ask for help.
+- **The build is not clean until ALL warnings are resolved.** If you can't resolve a warning, or if it will be troublesome to resolve, **DO NOT PROCEED**. Stop and ask for help.
+- **CS1998 warnings (useless async/await)** are particularly dangerous - they can cause hanging. Remove useless `async` keywords and return `Task.FromResult()` or `Task.CompletedTask` instead.
+- **CS8604/CS8602 warnings (null reference)** must be fixed - add null checks, use null-conditional operators, or make parameters non-nullable.
+- **Every build must show "Build succeeded" with no warnings listed.** Warnings that persist across builds indicate real problems that will cause runtime issues.
 
 ## FORMATTING
 - Use consistent indentation and spacing
