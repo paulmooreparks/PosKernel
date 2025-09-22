@@ -15,6 +15,7 @@ limitations under the License.
 */
 
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace PosKernel.AI.Training.TUI.Views;
 
@@ -28,6 +29,7 @@ internal class TrainingConsoleRedirector : TextWriter
     private readonly Action<string> _addLogAction;
     private readonly TextWriter _originalWriter;
     private readonly string _streamType;
+    private static readonly Regex AnsiEscapeSequence = new(@"\x1B\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled);
 
     public TrainingConsoleRedirector(Action<string> addLogAction, TextWriter originalWriter, string streamType)
     {
@@ -47,7 +49,11 @@ internal class TrainingConsoleRedirector : TextWriter
     {
         if (!string.IsNullOrEmpty(value))
         {
-            _addLogAction($"[CONSOLE.{_streamType}] {value}");
+            var cleanedValue = StripAnsiEscapeCodes(value);
+            if (!string.IsNullOrWhiteSpace(cleanedValue))
+            {
+                _addLogAction($"[CONSOLE.{_streamType}] {cleanedValue}");
+            }
         }
     }
 
@@ -55,13 +61,35 @@ internal class TrainingConsoleRedirector : TextWriter
     {
         if (!string.IsNullOrEmpty(value))
         {
-            _addLogAction($"[CONSOLE.{_streamType}] {value}");
+            var cleanedValue = StripAnsiEscapeCodes(value);
+            if (!string.IsNullOrWhiteSpace(cleanedValue))
+            {
+                _addLogAction($"[CONSOLE.{_streamType}] {cleanedValue}");
+            }
         }
     }
 
     public override void WriteLine()
     {
         // Ignore empty lines to reduce log spam
+    }
+
+    /// <summary>
+    /// Removes ANSI escape sequences (color codes, formatting) from console output
+    /// </summary>
+    private static string StripAnsiEscapeCodes(string input)
+    {
+        if (string.IsNullOrEmpty(input)) {
+            return input;
+        }
+
+        // Remove ANSI escape sequences
+        var cleaned = AnsiEscapeSequence.Replace(input, string.Empty);
+        
+        // Clean up any remaining control characters
+        cleaned = Regex.Replace(cleaned, @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", string.Empty);
+        
+        return cleaned.Trim();
     }
 
     protected override void Dispose(bool disposing)

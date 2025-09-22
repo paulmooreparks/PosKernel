@@ -260,21 +260,42 @@ public class ProductionAITrainingSession : ITrainingSession
                     generation, bestScore, improvement);
 
                 // ARCHITECTURAL FIX: Log the prompt optimization attempt
-                _logger.LogInformation("📝 PROMPT OPTIMIZATION - Generation {Generation}", generation);
-                _logger.LogInformation("📊 OLD PROMPT PERFORMANCE: Previous best score was {OldScore:F3}", bestScore - improvement);
-                _logger.LogInformation("📈 NEW PROMPT PERFORMANCE: New score is {NewScore:F3} (improvement: +{Improvement:F3})", bestScore, improvement);
-                _logger.LogInformation("📏 OPTIMIZED PROMPT LENGTH: {Length} characters", optimizedPrompt.Length);
-                _logger.LogInformation("📝 OPTIMIZED PROMPT CONTENT:\n{OptimizedPrompt}", optimizedPrompt);
+                _logger.LogInformation("PROMPT OPTIMIZATION - Generation {Generation}", generation);
+                _logger.LogInformation("OLD PROMPT PERFORMANCE: Previous best score was {OldScore:F3}", bestScore - improvement);
+                _logger.LogInformation("NEW PROMPT PERFORMANCE: New score is {NewScore:F3} (improvement: +{Improvement:F3})", bestScore, improvement);
+                _logger.LogInformation("OPTIMIZED PROMPT LENGTH: {Length} characters", optimizedPrompt.Length);
+                _logger.LogInformation("OPTIMIZED PROMPT CONTENT:\n{OptimizedPrompt}", optimizedPrompt);
 
                 // Save optimized prompt to the SAME prompt system that production AI uses
-                await _promptService.SaveOptimizedPromptAsync(
-                    _personalityType, 
-                    _promptType, 
-                    optimizedPrompt, 
-                    bestScore, 
-                    _sessionId);
+                // TRAINING ENHANCEMENT: Extract change summary from optimization result if available
+                var changesSummary = "Generation-based enhancement applied";
+                if (generationResult.QualityMetrics.ContainsKey("ChangesSummary"))
+                {
+                    changesSummary = generationResult.QualityMetrics["ChangesSummary"].ToString() ?? changesSummary;
+                }
+
+                // Cast to enhanced interface if available
+                if (_promptService is PromptManagementService enhancedService)
+                {
+                    await enhancedService.SaveOptimizedPromptAsync(
+                        _personalityType, 
+                        _promptType, 
+                        optimizedPrompt, 
+                        bestScore, 
+                        _sessionId,
+                        changesSummary);
+                }
+                else
+                {
+                    await _promptService.SaveOptimizedPromptAsync(
+                        _personalityType, 
+                        _promptType, 
+                        optimizedPrompt, 
+                        bestScore, 
+                        _sessionId);
+                }
                 
-                _logger.LogInformation("✅ PRODUCTION PROMPT OPTIMIZED: Updated {PersonalityType}/{PromptType} prompt used by PosKernel.AI", 
+                _logger.LogInformation("PRODUCTION PROMPT OPTIMIZED: Updated {PersonalityType}/{PromptType} prompt used by PosKernel.AI", 
                     _personalityType, _promptType);
                 
                 // ARCHITECTURAL FIX: Verify the prompt was actually updated by reloading it
@@ -702,15 +723,22 @@ public class ProductionAITrainingSession : ITrainingSession
         {
             _logger.LogInformation("Applying holistic enhancement: {EnhancementName}", enhancement.Name);
 
+            // TRAINING ENHANCEMENT: Track changes being made for visibility
+            var changeTracker = new PromptChangeTracker(baselinePrompt);
+
             // ARCHITECTURAL PRINCIPLE: Use AI to holistically improve the prompt based on enhancement guidance
             // Rather than template insertion, this should analyze the prompt and improve existing sections
-            var enhancedPrompt = ApplyHolisticEnhancement(baselinePrompt, enhancement);
+            var enhancedPrompt = ApplyHolisticEnhancement(baselinePrompt, enhancement, changeTracker);
+
+            // Log the changes that were made for training visibility
+            var changesSummary = changeTracker.GetChangesSummary();
+            _logger.LogInformation("📝 TRAINING CHANGES: {ChangesSummary}", changesSummary);
 
             return enhancedPrompt;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to apply holistic enhancement {Enhancement}, using fallback approach", enhancement.Name);
+            _logger.LogWarning(ex, "Failed to apply holistic enhancement {Enhancement}, using fallback approach");
             
             // Fallback: minimal enhancement without artifacts
             return ApplyFallbackEnhancement(baselinePrompt, enhancement);
@@ -721,7 +749,7 @@ public class ProductionAITrainingSession : ITrainingSession
     /// Applies holistic enhancement by improving existing prompt content
     /// ARCHITECTURAL PRINCIPLE: Enhance in-place rather than append
     /// </summary>
-    private string ApplyHolisticEnhancement(string baselinePrompt, TrainingEnhancement enhancement)
+    private string ApplyHolisticEnhancement(string baselinePrompt, TrainingEnhancement enhancement, PromptChangeTracker changeTracker)
     {
         // ARCHITECTURAL PRINCIPLE: This should use the training AI to improve the existing prompt
         // For now, implement basic enhancement patterns based on focus area
@@ -729,64 +757,75 @@ public class ProductionAITrainingSession : ITrainingSession
 
         if (focusArea.Contains("multi-item") || focusArea.Contains("parsing"))
         {
-            return EnhanceOrderProcessingSections(baselinePrompt);
+            return EnhanceOrderProcessingSections(baselinePrompt, changeTracker);
         }
 
         if (focusArea.Contains("cultural") || focusArea.Contains("language"))
         {
-            return EnhanceCulturalLanguageSections(baselinePrompt);
+            return EnhanceCulturalLanguageSections(baselinePrompt, changeTracker);
         }
 
         if (focusArea.Contains("modification") || focusArea.Contains("order changes"))
         {
-            return EnhanceModificationHandlingSections(baselinePrompt);
+            return EnhanceModificationHandlingSections(baselinePrompt, changeTracker);
         }
 
         if (focusArea.Contains("conversation") || focusArea.Contains("responsiveness"))
         {
-            return EnhanceConversationFlowSections(baselinePrompt);
+            return EnhanceConversationFlowSections(baselinePrompt, changeTracker);
         }
 
         // Default: general prompt strengthening
-        return EnhanceGeneralPromptSections(baselinePrompt);
+        return EnhanceGeneralPromptSections(baselinePrompt, changeTracker);
     }
 
     /// <summary>
     /// Enhances order processing sections within the existing prompt
     /// </summary>
-    private string EnhanceOrderProcessingSections(string prompt)
+    private string EnhanceOrderProcessingSections(string prompt, PromptChangeTracker changeTracker)
     {
         // Find and enhance existing order processing guidance
         var enhanced = prompt;
 
         // Enhance tool execution patterns
-        enhanced = enhanced.Replace(
-            "Use add_item_to_transaction",
-            "Use add_item_to_transaction when confident about product match (>0.8 confidence). Always provide conversational confirmation"
-        );
+        var oldToolPattern = "Use add_item_to_transaction";
+        var newToolPattern = "Use add_item_to_transaction when confident about product match (>0.8 confidence). Always provide conversational confirmation";
+        
+        if (enhanced.Contains(oldToolPattern))
+        {
+            enhanced = enhanced.Replace(oldToolPattern, newToolPattern);
+            changeTracker.RecordChange("Enhanced tool execution patterns", "Added confidence thresholds and confirmation requirements for add_item_to_transaction");
+        }
 
         // Enhance multi-item order guidance
         if (enhanced.Contains("Complex Order Pattern Recognition"))
         {
             // Already enhanced - strengthen existing content
-            enhanced = enhanced.Replace(
-                "Use separate add_item_to_transaction calls for each different item",
-                "Execute separate add_item_to_transaction calls for each different item, confirming each addition with natural response"
-            );
+            var oldMultiItemPattern = "Use separate add_item_to_transaction calls for each different item";
+            var newMultiItemPattern = "Execute separate add_item_to_transaction calls for each different item, confirming each addition with natural response";
+            
+            if (enhanced.Contains(oldMultiItemPattern))
+            {
+                enhanced = enhanced.Replace(oldMultiItemPattern, newMultiItemPattern);
+                changeTracker.RecordChange("Strengthened multi-item processing", "Added natural response confirmation requirement");
+            }
         }
         else
         {
             // Add multi-item guidance to existing sections
-            enhanced = enhanced.Replace(
-                "## MENU AND PAYMENT KNOWLEDGE",
-                "## COMPLEX ORDER MASTERY\n" +
-                "Handle multi-item orders systematically:\n" +
-                "- Parse compound orders with 'dan' (and), 'sama' (with), commas\n" +
-                "- Extract quantities carefully - 'dua' at end applies to last item only\n" +
-                "- Execute separate tool calls for each different item\n" +
-                "- Confirm parsing with natural kopitiam language\n\n" +
-                "## MENU AND PAYMENT KNOWLEDGE"
-            );
+            var menuSection = "## MENU AND PAYMENT KNOWLEDGE";
+            if (enhanced.Contains(menuSection))
+            {
+                var complexOrderSection = "## COMPLEX ORDER MASTERY\n" +
+                    "Handle multi-item orders systematically:\n" +
+                    "- Parse compound orders with 'dan' (and), 'sama' (with), commas\n" +
+                    "- Extract quantities carefully - 'dua' at end applies to last item only\n" +
+                    "- Execute separate tool calls for each different item\n" +
+                    "- Confirm parsing with natural kopitiam language\n\n";
+                    
+                enhanced = enhanced.Replace(menuSection, complexOrderSection + menuSection);
+                changeTracker.RecordChange("Added complex order mastery section", "Inserted comprehensive multi-item order processing guidelines before menu section");
+            }
         }
 
         return enhanced;
@@ -795,7 +834,7 @@ public class ProductionAITrainingSession : ITrainingSession
     /// <summary>
     /// Enhances cultural language sections within the existing prompt
     /// </summary>
-    private string EnhanceCulturalLanguageSections(string prompt)
+    private string EnhanceCulturalLanguageSections(string prompt, PromptChangeTracker changeTracker)
     {
         var enhanced = prompt;
 
@@ -803,17 +842,25 @@ public class ProductionAITrainingSession : ITrainingSession
         if (enhanced.Contains("KOPITIAM EXPERTISE"))
         {
             // Enhance existing cultural knowledge
-            enhanced = enhanced.Replace(
-                "You understand ALL kopitiam language",
-                "Master kopitiam language with regional confidence: Hokkien ('si', 'gao', 'poh'), Malay ('kosong', 'ais', 'panas'), respond to cultural terms immediately with authentic acknowledgment"
-            );
+            var oldCulturalPattern = "You understand ALL kopitiam language";
+            var newCulturalPattern = "Master kopitiam language with regional confidence: Hokkien ('si', 'gao', 'poh'), Malay ('kosong', 'ais', 'panas'), respond to cultural terms immediately with authentic acknowledgment";
+            
+            if (enhanced.Contains(oldCulturalPattern))
+            {
+                enhanced = enhanced.Replace(oldCulturalPattern, newCulturalPattern);
+                changeTracker.RecordChange("Enhanced cultural language mastery", "Added specific regional variations and response patterns");
+            }
         }
 
         // Enhance confidence-based responses
-        enhanced = enhanced.Replace(
-            "If not sure, ask",
-            "Cultural confidence levels: HIGH (kopitiam terms) → execute immediately, MEDIUM (mixed language) → confirm in kopitiam terms, LOW (English only) → offer kopitiam alternatives"
-        );
+        var oldConfidencePattern = "If not sure, ask";
+        var newConfidencePattern = "Cultural confidence levels: HIGH (kopitiam terms) → execute immediately, MEDIUM (mixed language) → confirm in kopitiam terms, LOW (English only) → offer kopitiam alternatives";
+        
+        if (enhanced.Contains(oldConfidencePattern))
+        {
+            enhanced = enhanced.Replace(oldConfidencePattern, newConfidencePattern);
+            changeTracker.RecordChange("Added confidence-based cultural responses", "Implemented tiered response system based on cultural term usage");
+        }
 
         return enhanced;
     }
@@ -821,7 +868,7 @@ public class ProductionAITrainingSession : ITrainingSession
     /// <summary>
     /// Enhances order modification sections within the existing prompt  
     /// </summary>
-    private string EnhanceModificationHandlingSections(string prompt)
+    private string EnhanceModificationHandlingSections(string prompt, PromptChangeTracker changeTracker)
     {
         var enhanced = prompt;
 
@@ -829,24 +876,31 @@ public class ProductionAITrainingSession : ITrainingSession
         if (enhanced.Contains("ORDER MODIFICATION PATTERNS"))
         {
             // Strengthen existing modification guidance
-            enhanced = enhanced.Replace(
-                "void_line_item for that item",
-                "void_line_item immediately for clear modification requests ('change the peanut butter toast to kaya toast'), confirm for ambiguous requests ('change to kaya')"
-            );
+            var oldModificationPattern = "void_line_item for that item";
+            var newModificationPattern = "void_line_item immediately for clear modification requests ('change the peanut butter toast to kaya toast'), confirm for ambiguous requests ('change to kaya')";
+            
+            if (enhanced.Contains(oldModificationPattern))
+            {
+                enhanced = enhanced.Replace(oldModificationPattern, newModificationPattern);
+                changeTracker.RecordChange("Enhanced modification confidence handling", "Added specific examples and confidence-based decision making");
+            }
         }
         else
         {
             // Add modification mastery to existing sections
-            enhanced = enhanced.Replace(
-                "## Payment Flow",
-                "## ORDER MODIFICATION MASTERY\n" +
-                "Handle order changes with uncle confidence:\n" +
-                "- HIGH confidence: Execute immediately for clear changes\n" +
-                "- MEDIUM confidence: Confirm specifics before executing\n" +
-                "- Always continue taking orders after modifications\n" +
-                "- Confirm changes with natural kopitiam responses\n\n" +
-                "## Payment Flow"
-            );
+            var paymentSection = "## Payment Flow";
+            if (enhanced.Contains(paymentSection))
+            {
+                var modificationSection = "## ORDER MODIFICATION MASTERY\n" +
+                    "Handle order changes with uncle confidence:\n" +
+                    "- HIGH confidence: Execute immediately for clear changes\n" +
+                    "- MEDIUM confidence: Confirm specifics before executing\n" +
+                    "- Always continue taking orders after modifications\n" +
+                    "- Confirm changes with natural kopitiam responses\n\n";
+                    
+                enhanced = enhanced.Replace(paymentSection, modificationSection + paymentSection);
+                changeTracker.RecordChange("Added order modification mastery section", "Inserted confidence-based modification handling before payment flow");
+            }
         }
 
         return enhanced;
@@ -855,132 +909,29 @@ public class ProductionAITrainingSession : ITrainingSession
     /// <summary>
     /// Enhances conversation flow sections within the existing prompt
     /// </summary>
-    private string EnhanceConversationFlowSections(string prompt)
+    private string EnhanceConversationFlowSections(string prompt, PromptChangeTracker changeTracker)
     {
         var enhanced = prompt;
 
         // Strengthen existing conversation patterns
-        enhanced = enhanced.Replace(
-            "Be warm and efficient",
-            "Maintain natural kopitiam conversation flow: greet warmly ('Uncle here! What you want today?'), confirm specifically ('Can lah! Added [item]'), continue naturally ('What else you want?'), close friendly ('Thank you boss!')"
-        );
-
-        // Enhance existing style guidance
-        enhanced = enhanced.Replace(
-            "Use natural kopitiam expressions",
-            "Master kopitiam conversation timing: immediate acknowledgment, tool + natural response, context awareness, proactive suggestions with cultural warmth"
-        );
-
-        return enhanced;
-    }
-
-    /// <summary>
-    /// Enhances the baseline prompt with holistic improvements
-    /// ARCHITECTURAL PRINCIPLE: Improve existing content, never append training artifacts
-    /// </summary>
-    private string EnhanceBaselinePrompt(string baselinePrompt, int generation)
-    {
-        // ARCHITECTURAL PRINCIPLE: Apply progressive holistic improvements based on generation
+        var oldWarmPattern = "Be warm and efficient";
+        var newWarmPattern = "Maintain natural kopitiam conversation flow: greet warmly ('Uncle here! What you want today?'), confirm specifically ('Can lah! Added [item]'), continue naturally ('What else you want?'), close friendly ('Thank you boss!')";
         
-        return generation switch
+        if (enhanced.Contains(oldWarmPattern))
         {
-            2 => EnhanceToolSelectionAccuracy(baselinePrompt),
-            3 => EnhanceConversationalClarity(baselinePrompt), 
-            4 => EnhanceOrderProcessingWorkflow(baselinePrompt),
-            5 => EnhancePaymentProcessingIntelligence(baselinePrompt),
-            _ => EnhanceContextAwareness(baselinePrompt)
-        };
-    }
-
-    /// <summary>
-    /// Enhances tool selection accuracy in existing prompt content
-    /// </summary>
-    private string EnhanceToolSelectionAccuracy(string prompt)
-    {
-        var enhanced = prompt;
-
-        // Strengthen existing tool usage instructions
-        enhanced = enhanced.Replace(
-            "Use add_item_to_transaction",
-            "Use add_item_to_transaction only when confident about product match (>0.8 confidence). Validate product exists and provide clear confirmation"
-        );
-
-        enhanced = enhanced.Replace(
-            "Process this request",
-            "Analyze request carefully, validate confidence levels, then execute appropriate tools with conversational confirmation"
-        );
-
-        return enhanced;
-    }
-
-    /// <summary>
-    /// Enhances conversational clarity in existing prompt content
-    /// </summary>
-    private string EnhanceConversationalClarity(string prompt)
-    {
-        var enhanced = prompt;
-
-        // Improve existing conversation guidance
-        enhanced = enhanced.Replace(
-            "respond naturally",
-            "provide complete responses with context and ask specific clarifying questions when needed"
-        );
-
-        enhanced = enhanced.Replace(
-            "Be warm and efficient",
-            "Maintain clear communication: acknowledge requests specifically, provide complete context, guide customers through any confusion with patience"
-        );
-
-        return enhanced;
-    }
-
-    /// <summary>
-    /// Enhances order processing workflow in existing prompt content
-    /// </summary>
-    private string EnhanceOrderProcessingWorkflow(string prompt)
-    {
-        var enhanced = prompt;
-
-        // Strengthen existing order handling
-        enhanced = enhanced.Replace(
-            "Handle order changes",
-            "Process complex orders systematically: break down multi-item requests, handle modifications with proper tool sequences, confirm all changes before proceeding"
-        );
-
-        return enhanced;
-    }
-
-    /// <summary>
-    /// Enhances payment processing intelligence in existing prompt content
-    /// </summary>
-    private string EnhancePaymentProcessingIntelligence(string prompt)
-    {
-        var enhanced = prompt;
-
-        // Improve existing payment guidance
-        if (enhanced.Contains("PAYMENT QUESTIONS vs PAYMENT PROCESSING"))
-        {
-            enhanced = enhanced.Replace(
-                "Distinguish payment questions from payment processing",
-                "Master payment context awareness: questions during ordering get method information, payment words after order completion trigger processing, handle errors gracefully with alternatives"
-            );
+            enhanced = enhanced.Replace(oldWarmPattern, newWarmPattern);
+            changeTracker.RecordChange("Enhanced conversation flow patterns", "Added specific dialogue examples for each conversation stage");
         }
 
-        return enhanced;
-    }
-
-    /// <summary>
-    /// Enhances context awareness in existing prompt content
-    /// </summary>
-    private string EnhanceContextAwareness(string prompt)
-    {
-        var enhanced = prompt;
-
-        // Strengthen existing context handling
-        enhanced = enhanced.Replace(
-            "maintain consistent personality",
-            "maintain consistent personality while referencing previous interactions and building conversation continuity throughout the entire customer experience"
-        );
+        // Enhance existing style guidance
+        var oldStylePattern = "Use natural kopitiam expressions";
+        var newStylePattern = "Master kopitiam conversation timing: immediate acknowledgment, tool + natural response, context awareness, proactive suggestions with cultural warmth";
+        
+        if (enhanced.Contains(oldStylePattern))
+        {
+            enhanced = enhanced.Replace(oldStylePattern, newStylePattern);
+            changeTracker.RecordChange("Improved style guidance", "Added timing and context awareness requirements");
+        }
 
         return enhanced;
     }
@@ -988,38 +939,21 @@ public class ProductionAITrainingSession : ITrainingSession
     /// <summary>
     /// Applies general strengthening to prompt sections
     /// </summary>
-    private string EnhanceGeneralPromptSections(string prompt)
+    private string EnhanceGeneralPromptSections(string prompt, PromptChangeTracker changeTracker)
     {
         var enhanced = prompt;
 
         // Strengthen general guidance
-        enhanced = enhanced.Replace(
-            "Think step-by-step",
-            "Think step-by-step: analyze customer intent, assess confidence level, select appropriate tools, provide natural conversational response"
-        );
-
-        return enhanced;
-    }
-
-    /// <summary>
-    /// Fallback enhancement when holistic approach fails
-    /// </summary>
-    private string ApplyFallbackEnhancement(string baselinePrompt, TrainingEnhancement enhancement)
-    {
-        // ARCHITECTURAL PRINCIPLE: Minimal enhancement without training artifacts
-        var focusGuidance = $"Enhanced Focus: {enhancement.Focus}";
+        var oldThinkPattern = "Think step-by-step";
+        var newThinkPattern = "Think step-by-step: analyze customer intent, assess confidence level, select appropriate tools, provide natural conversational response";
         
-        // Find appropriate insertion point or append minimally
-        if (baselinePrompt.Contains("IMPORTANT: Before responding"))
+        if (enhanced.Contains(oldThinkPattern))
         {
-            return baselinePrompt.Replace(
-                "IMPORTANT: Before responding, think step-by-step",
-                $"IMPORTANT: Before responding, think step-by-step. {focusGuidance}"
-            );
+            enhanced = enhanced.Replace(oldThinkPattern, newThinkPattern);
+            changeTracker.RecordChange("Enhanced general thinking guidance", "Added structured decision-making process with confidence assessment");
         }
 
-        // Last resort: append minimal guidance
-        return baselinePrompt + $"\n\n**Enhanced Focus**: {enhancement.Focus}";
+        return enhanced;
     }
 
     /// <summary>
@@ -1031,7 +965,7 @@ public class ProductionAITrainingSession : ITrainingSession
         var variations = new List<string>();
 
         // ARCHITECTURAL FIX: Generic, culture-neutral fallback enhancements
-        var fallbackEnhancements = new []
+        var fallbackEnhancements = new[]
         {
             "Focus: Improve tool selection accuracy and product identification precision.",
             "Focus: Enhance conversational flow and customer interaction responsiveness.", 
@@ -1042,7 +976,9 @@ public class ProductionAITrainingSession : ITrainingSession
 
         foreach (var enhancement in fallbackEnhancements)
         {
-            var enhancedPrompt = EnhanceGeneralPromptSections(baselinePrompt + $"\n\n## PERFORMANCE FOCUS\n{enhancement}");
+            var changeTracker = new PromptChangeTracker(baselinePrompt);
+            var enhancedPrompt = EnhanceGeneralPromptSections(baselinePrompt + $"\n\n## PERFORMANCE FOCUS\n{enhancement}", changeTracker);
+            changeTracker.RecordChange("Fallback enhancement applied", enhancement);
             variations.Add(enhancedPrompt);
         }
 
@@ -1066,6 +1002,178 @@ public class ProductionAITrainingSession : ITrainingSession
             6 => "Context Awareness",
             _ => $"Performance Enhancement {variationIndex + 1}"
         };
+    }
+
+    /// <summary>
+    /// Enhances the baseline prompt with holistic improvements
+    /// ARCHITECTURAL PRINCIPLE: Improve existing content, never append training artifacts
+    /// </summary>
+    private string EnhanceBaselinePrompt(string baselinePrompt, int generation)
+    {
+        var changeTracker = new PromptChangeTracker(baselinePrompt);
+        
+        // ARCHITECTURAL PRINCIPLE: Apply progressive holistic improvements based on generation
+        var enhanced = generation switch
+        {
+            2 => EnhanceToolSelectionAccuracy(baselinePrompt, changeTracker),
+            3 => EnhanceConversationalClarity(baselinePrompt, changeTracker), 
+            4 => EnhanceOrderProcessingWorkflow(baselinePrompt, changeTracker),
+            5 => EnhancePaymentProcessingIntelligence(baselinePrompt, changeTracker),
+            _ => EnhanceContextAwareness(baselinePrompt, changeTracker)
+        };
+
+        _logger.LogInformation("📝 BASELINE ENHANCEMENT: {ChangesSummary}", changeTracker.GetChangesSummary());
+        return enhanced;
+    }
+
+    /// <summary>
+    /// Enhances tool selection accuracy in existing prompt content
+    /// </summary>
+    private string EnhanceToolSelectionAccuracy(string prompt, PromptChangeTracker changeTracker)
+    {
+        var enhanced = prompt;
+
+        // Strengthen existing tool usage instructions
+        var oldToolPattern = "Use add_item_to_transaction";
+        var newToolPattern = "Use add_item_to_transaction only when confident about product match (>0.8 confidence). Validate product exists and provide clear confirmation";
+        
+        if (enhanced.Contains(oldToolPattern))
+        {
+            enhanced = enhanced.Replace(oldToolPattern, newToolPattern);
+            changeTracker.RecordChange("Enhanced tool selection accuracy", "Added confidence validation and product existence checks");
+        }
+
+        var oldProcessPattern = "Process this request";
+        var newProcessPattern = "Analyze request carefully, validate confidence levels, then execute appropriate tools with conversational confirmation";
+        
+        if (enhanced.Contains(oldProcessPattern))
+        {
+            enhanced = enhanced.Replace(oldProcessPattern, newProcessPattern);
+            changeTracker.RecordChange("Improved request processing", "Added analysis and validation steps");
+        }
+
+        return enhanced;
+    }
+
+    /// <summary>
+    /// Enhances conversational clarity in existing prompt content
+    /// </summary>
+    private string EnhanceConversationalClarity(string prompt, PromptChangeTracker changeTracker)
+    {
+        var enhanced = prompt;
+
+        // Improve existing conversation guidance
+        var oldNaturalPattern = "respond naturally";
+        var newNaturalPattern = "provide complete responses with context and ask specific clarifying questions when needed";
+        
+        if (enhanced.Contains(oldNaturalPattern))
+        {
+            enhanced = enhanced.Replace(oldNaturalPattern, newNaturalPattern);
+            changeTracker.RecordChange("Enhanced conversational clarity", "Added context and clarification requirements");
+        }
+
+        var oldWarmPattern = "Be warm and efficient";
+        var newWarmPattern = "Maintain clear communication: acknowledge requests specifically, provide complete context, guide customers through any confusion with patience";
+        
+        if (enhanced.Contains(oldWarmPattern))
+        {
+            enhanced = enhanced.Replace(oldWarmPattern, newWarmPattern);
+            changeTracker.RecordChange("Improved communication guidance", "Added specific acknowledgment and guidance patterns");
+        }
+
+        return enhanced;
+    }
+
+    /// <summary>
+    /// Enhances order processing workflow in existing prompt content
+    /// </summary>
+    private string EnhanceOrderProcessingWorkflow(string prompt, PromptChangeTracker changeTracker)
+    {
+        var enhanced = prompt;
+
+        // Strengthen existing order handling
+        var oldOrderPattern = "Handle order changes";
+        var newOrderPattern = "Process complex orders systematically: break down multi-item requests, handle modifications with proper tool sequences, confirm all changes before proceeding";
+        
+        if (enhanced.Contains(oldOrderPattern))
+        {
+            enhanced = enhanced.Replace(oldOrderPattern, newOrderPattern);
+            changeTracker.RecordChange("Enhanced order processing workflow", "Added systematic multi-item and modification handling");
+        }
+
+        return enhanced;
+    }
+
+    /// <summary>
+    /// Enhances payment processing intelligence in existing prompt content
+    /// </summary>
+    private string EnhancePaymentProcessingIntelligence(string prompt, PromptChangeTracker changeTracker)
+    {
+        var enhanced = prompt;
+
+        // Improve existing payment guidance
+        if (enhanced.Contains("PAYMENT QUESTIONS vs PAYMENT PROCESSING"))
+        {
+            var oldPaymentPattern = "Distinguish payment questions from payment processing";
+            var newPaymentPattern = "Master payment context awareness: questions during ordering get method information, payment words after order completion trigger processing, handle errors gracefully with alternatives";
+            
+            if (enhanced.Contains(oldPaymentPattern))
+            {
+                enhanced = enhanced.Replace(oldPaymentPattern, newPaymentPattern);
+                changeTracker.RecordChange("Enhanced payment processing intelligence", "Added contextual awareness and error handling");
+            }
+        }
+
+        return enhanced;
+    }
+
+    /// <summary>
+    /// Enhances context awareness in existing prompt content
+    /// </summary>
+    private string EnhanceContextAwareness(string prompt, PromptChangeTracker changeTracker)
+    {
+        var enhanced = prompt;
+
+        // Strengthen existing context handling
+        var oldPersonalityPattern = "maintain consistent personality";
+        var newPersonalityPattern = "maintain consistent personality while referencing previous interactions and building conversation continuity throughout the entire customer experience";
+        
+        if (enhanced.Contains(oldPersonalityPattern))
+        {
+            enhanced = enhanced.Replace(oldPersonalityPattern, newPersonalityPattern);
+            changeTracker.RecordChange("Enhanced context awareness", "Added conversation continuity and interaction referencing");
+        }
+
+        return enhanced;
+    }
+
+    /// <summary>
+    /// Fallback enhancement when holistic approach fails
+    /// </summary>
+    private string ApplyFallbackEnhancement(string baselinePrompt, TrainingEnhancement enhancement)
+    {
+        var changeTracker = new PromptChangeTracker(baselinePrompt);
+        
+        // ARCHITECTURAL PRINCIPLE: Minimal enhancement without training artifacts
+        var focusGuidance = $"Enhanced Focus: {enhancement.Focus}";
+        
+        // Find appropriate insertion point or append minimally
+        if (baselinePrompt.Contains("IMPORTANT: Before responding"))
+        {
+            var enhanced = baselinePrompt.Replace(
+                "IMPORTANT: Before responding, think step-by-step",
+                $"IMPORTANT: Before responding, think step-by-step. {focusGuidance}"
+            );
+            changeTracker.RecordChange("Applied fallback enhancement", $"Added focus guidance: {enhancement.Focus}");
+            _logger.LogInformation("📝 FALLBACK ENHANCEMENT: {ChangesSummary}", changeTracker.GetChangesSummary());
+            return enhanced;
+        }
+
+        // Last resort: append minimal guidance
+        var fallbackEnhanced = baselinePrompt + $"\n\n**Enhanced Focus**: {enhancement.Focus}";
+        changeTracker.RecordChange("Applied minimal fallback", $"Appended focus area: {enhancement.Focus}");
+        _logger.LogInformation("📝 MINIMAL FALLBACK: {ChangesSummary}", changeTracker.GetChangesSummary());
+        return fallbackEnhanced;
     }
 
     private async Task<List<TrainingScenario>> GenerateRealScenariosFromProductionDataAsync(int scenarioCount)
@@ -1138,7 +1246,7 @@ public class ProductionAITrainingSession : ITrainingSession
             await freshOrchestrator.InitializeAsync();
 
             // ARCHITECTURAL FIX: Log scenario start with fresh transaction guarantee
-            _logger.LogInformation("🤖 STARTING Scenario {ScenarioIndex}/Generation {Generation}: Testing '{Input}' against FRESH production AI (new transaction)", 
+            _logger.LogInformation("STARTING Scenario {ScenarioIndex}/Generation {Generation}: Testing '{Input}' against FRESH production AI (new transaction)", 
                 scenarioIndex, generation, scenario.UserInput);
 
             // Test against FRESH production ChatOrchestrator (EXACT same call as PosKernel.AI but with new transaction)
@@ -1157,7 +1265,7 @@ public class ProductionAITrainingSession : ITrainingSession
 
             if (string.IsNullOrEmpty(aiResponse.Content))
             {
-                _logger.LogWarning("⚠️ EMPTY RESPONSE from production AI for scenario {ScenarioIndex}: '{Input}'", 
+                _logger.LogWarning("EMPTY RESPONSE from production AI for scenario {ScenarioIndex}: '{Input}'", 
                     scenarioIndex, scenario.UserInput);
             }
 
@@ -1166,28 +1274,28 @@ public class ProductionAITrainingSession : ITrainingSession
             var isSuccessful = score > 0.6;
 
             // ARCHITECTURAL FIX: Enhanced completion logging with transaction completion status
-            var statusEmoji = isSuccessful ? "✅" : "❌";
+            var statusEmoji = isSuccessful ? "SUCCESS" : "FAILED";
             var completionStatus = completionAttempted.Completed ? "COMPLETED" : "INCOMPLETE";
-            _logger.LogInformation("🤖 {CompletionStatus} Scenario {ScenarioIndex}/Generation {Generation}: '{Input}' → {StatusEmoji} Score: {Score:F3}, Duration: {Duration:F1}s (fresh transaction)", 
+            _logger.LogInformation("{CompletionStatus} Scenario {ScenarioIndex}/Generation {Generation}: '{Input}' -> {Status} Score: {Score:F3}, Duration: {Duration:F1}s (fresh transaction)", 
                 completionStatus, scenarioIndex, generation, scenario.UserInput, statusEmoji, score, testDuration.TotalSeconds);
             
-            _logger.LogInformation("📝 AI RESPONSE: '{Response}'", 
+            _logger.LogInformation("AI RESPONSE: '{Response}'", 
                 aiResponse.Content?.Length > 200 ? aiResponse.Content.Substring(0, 200) + "..." : aiResponse.Content ?? "[No response]");
 
             if (completionAttempted.Completed)
             {
-                _logger.LogInformation("💳 TRANSACTION COMPLETED: Total {Total}, Payment method: {PaymentMethod}", 
+                _logger.LogInformation("TRANSACTION COMPLETED: Total {Total}, Payment method: {PaymentMethod}", 
                     completionAttempted.FinalTotal, completionAttempted.PaymentMethod ?? "Unknown");
             }
             else
             {
-                _logger.LogWarning("⚠️ TRANSACTION INCOMPLETE: Training data may be suboptimal - {Reason}", 
+                _logger.LogWarning("TRANSACTION INCOMPLETE: Training data may be suboptimal - {Reason}", 
                     completionAttempted.FailureReason ?? "Unknown reason");
             }
 
             // ARCHITECTURAL FIX: Clean up the fresh orchestrator to ensure no transaction leakage
             // The orchestrator will be disposed by DI container, ensuring clean transaction state
-            _logger.LogDebug("🧹 Scenario {ScenarioIndex} completed, fresh orchestrator will be disposed", scenarioIndex);
+            _logger.LogDebug("Scenario {ScenarioIndex} completed, fresh orchestrator will be disposed", scenarioIndex);
 
             return new ScenarioTestEventArgs
             {
@@ -1205,7 +1313,7 @@ public class ProductionAITrainingSession : ITrainingSession
         catch (OperationCanceledException)
         {
             var testDuration = DateTime.UtcNow - testStart;
-            _logger.LogError("⏰ TIMEOUT in scenario {ScenarioIndex}/Generation {Generation} after {Duration:F1}s: '{Input}' (fresh transaction guaranteed)", 
+            _logger.LogError("TIMEOUT in scenario {ScenarioIndex}/Generation {Generation} after {Duration:F1}s: '{Input}' (fresh transaction guaranteed)", 
                 scenarioIndex, generation, testDuration.TotalSeconds, scenario.UserInput);
 
             return new ScenarioTestEventArgs
@@ -1225,7 +1333,7 @@ public class ProductionAITrainingSession : ITrainingSession
         catch (Exception ex)
         {
             var testDuration = DateTime.UtcNow - testStart;
-            _logger.LogError(ex, "❌ FAILED scenario {ScenarioIndex}/Generation {Generation} after {Duration:F1}s: '{Input}' - {Error} (fresh transaction guaranteed)", 
+            _logger.LogError(ex, "FAILED scenario {ScenarioIndex}/Generation {Generation} after {Duration:F1}s: '{Input}' - {Error} (fresh transaction guaranteed)", 
                 scenarioIndex, generation, testDuration.TotalSeconds, scenario.UserInput, ex.Message);
 
             return new ScenarioTestEventArgs
@@ -1254,7 +1362,7 @@ public class ProductionAITrainingSession : ITrainingSession
         
         try
         {
-            _logger.LogDebug("🎯 TRAINING: Attempting to complete transaction for scenario {ScenarioIndex}", scenarioIndex);
+            _logger.LogDebug("TRAINING: Attempting to complete transaction for scenario {ScenarioIndex}", scenarioIndex);
 
             // Attempt to trigger payment by indicating customer is done ordering
             var completionPrompts = new[]
@@ -1269,7 +1377,7 @@ public class ProductionAITrainingSession : ITrainingSession
             var completionPrompt = completionPrompts[new Random().Next(completionPrompts.Length)];
             var completionResponse = await orchestrator.ProcessUserInputAsync(completionPrompt);
             
-            _logger.LogDebug("🎯 TRAINING: Completion prompt '{Prompt}' → Response: '{Response}'", 
+            _logger.LogDebug("TRAINING: Completion prompt '{Prompt}' -> Response: '{Response}'", 
                 completionPrompt, completionResponse?.Content?.Substring(0, Math.Min(100, completionResponse.Content?.Length ?? 0)));
 
             // If the AI asks for payment method, provide one
@@ -1283,7 +1391,7 @@ public class ProductionAITrainingSession : ITrainingSession
                 
                 var paymentResponse = await orchestrator.ProcessUserInputAsync(selectedPayment);
                 
-                _logger.LogDebug("🎯 TRAINING: Payment method '{Method}' → Response: '{Response}'", 
+                _logger.LogDebug("TRAINING: Payment method '{Method}' -> Response: '{Response}'", 
                     selectedPayment, paymentResponse?.Content?.Substring(0, Math.Min(100, paymentResponse.Content?.Length ?? 0)));
 
                 // Check if payment was processed successfully
@@ -1302,28 +1410,28 @@ public class ProductionAITrainingSession : ITrainingSession
                         attempt.FinalTotal = total;
                     }
                     
-                    _logger.LogInformation("✅ TRAINING: Transaction completed successfully - {Method}, Total: {Total}", 
+                    _logger.LogInformation("TRAINING: Transaction completed successfully - {Method}, Total: {Total}", 
                         selectedPayment, attempt.FinalTotal);
                 }
                 else
                 {
                     attempt.Failed = true;
                     attempt.FailureReason = "Payment method provided but transaction not completed";
-                    _logger.LogWarning("❌ TRAINING: Transaction completion failed after payment method provided");
+                    _logger.LogWarning("TRAINING: Transaction completion failed after payment method provided");
                 }
             }
             else
             {
                 attempt.Failed = true;
                 attempt.FailureReason = "AI did not request payment method after completion prompt";
-                _logger.LogWarning("❌ TRAINING: Transaction completion failed - AI did not request payment");
+                _logger.LogWarning("TRAINING: Transaction completion failed - AI did not request payment");
             }
         }
         catch (Exception ex)
         {
             attempt.Failed = true;
             attempt.FailureReason = $"Exception during completion attempt: {ex.Message}";
-            _logger.LogWarning(ex, "❌ TRAINING: Exception while attempting transaction completion for scenario {ScenarioIndex}", scenarioIndex);
+            _logger.LogWarning(ex, "TRAINING: Exception while attempting transaction completion for scenario {ScenarioIndex}", scenarioIndex);
         }
 
         return attempt;
@@ -1359,12 +1467,12 @@ public class ProductionAITrainingSession : ITrainingSession
         if (completionAttempt.Completed)
         {
             score += 0.4; // Big bonus for completing full order flow
-            _logger.LogDebug("🎯 TRAINING BONUS: +0.4 for transaction completion");
+            _logger.LogDebug("TRAINING BONUS: +0.4 for transaction completion");
         }
         else if (completionAttempt.Failed)
         {
             score -= 0.1; // Slight penalty for failed completion attempt
-            _logger.LogDebug("🎯 TRAINING PENALTY: -0.1 for failed transaction completion");
+            _logger.LogDebug("TRAINING PENALTY: -0.1 for failed transaction completion");
         }
 
         // Penalty for errors
@@ -1377,7 +1485,7 @@ public class ProductionAITrainingSession : ITrainingSession
 
         var finalScore = Math.Max(0.0, Math.Min(1.0, score));
         
-        _logger.LogDebug("🎯 TRAINING SCORE: Scenario response={Response:F3}, completion={Completion:F3}, final={Final:F3}", 
+        _logger.LogDebug("TRAINING SCORE: Scenario response={ResponseScore:F3}, completion={CompletionBonus:F3}, final={FinalScore:F3}", 
             score - (completionAttempt.Completed ? 0.4 : 0) + (completionAttempt.Failed ? 0.1 : 0),
             completionAttempt.Completed ? 0.4 : (completionAttempt.Failed ? -0.1 : 0),
             finalScore);
@@ -1651,4 +1759,60 @@ public class TransactionCompletionAttempt
     public string? PaymentMethod { get; set; }
     public double FinalTotal { get; set; }
     public string? FailureReason { get; set; }
+}
+
+/// <summary>
+/// Tracks changes made to prompts during training enhancement
+/// TRAINING PRINCIPLE: Visibility into what modifications are actually applied
+/// </summary>
+public class PromptChangeTracker
+{
+    private readonly string _baselinePrompt;
+    private readonly List<string> _changes = new();
+
+    public PromptChangeTracker(string baselinePrompt)
+    {
+        _baselinePrompt = baselinePrompt ?? throw new ArgumentNullException(nameof(baselinePrompt));
+    }
+
+    /// <summary>
+    /// Records a specific change made during enhancement
+    /// </summary>
+    public void RecordChange(string changeType, string description)
+    {
+        if (!string.IsNullOrWhiteSpace(changeType))
+        {
+            _changes.Add($"{changeType}: {description}");
+        }
+    }
+
+    /// <summary>
+    /// Gets a summary of all changes made
+    /// </summary>
+    public string GetChangesSummary()
+    {
+        if (!_changes.Any())
+        {
+            return "No meaningful changes applied";
+        }
+
+        var changeCount = _changes.Count;
+        var summary = $"{changeCount} enhancement{(changeCount == 1 ? "" : "s")} applied: {string.Join("; ", _changes)}";
+        
+        // Keep summary reasonable length for display
+        if (summary.Length > 300)
+        {
+            summary = summary.Substring(0, 297) + "...";
+        }
+        
+        return summary;
+    }
+
+    /// <summary>
+    /// Gets detailed change information for logging
+    /// </summary>
+    public IReadOnlyList<string> GetDetailedChanges()
+    {
+        return _changes.AsReadOnly();
+    }
 }

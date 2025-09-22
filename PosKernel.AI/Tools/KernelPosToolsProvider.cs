@@ -488,7 +488,7 @@ namespace PosKernel.AI.Tools
             var confidence = toolCall.Arguments.ContainsKey("confidence") ? toolCall.Arguments["confidence"].GetDouble() : 0.5;
             var context = toolCall.Arguments.ContainsKey("context") ? toolCall.Arguments["context"].GetString() : "initial_order";
 
-            _logger.LogInformation("Adding item to kernel: '{Item}' x{Qty} (prep: '{Prep}'), Confidence: {Confidence}, Context: {Context}", 
+            _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Adding item to kernel: '{Item}' x{Qty} (prep: '{Prep}'), Confidence: {Confidence}, Context: {Context}", 
                 itemDescription, quantity, preparationNotes, confidence, context ?? "initial_order");
 
             if (string.IsNullOrWhiteSpace(itemDescription))
@@ -500,14 +500,27 @@ namespace PosKernel.AI.Tools
             {
                 // ARCHITECTURAL PRINCIPLE: Let the AI handle all cultural translation and semantic matching
                 // The AI has the complete menu context and is the world's best translation engine
+                _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Searching restaurant extension for: '{SearchTerm}'", itemDescription);
+                
                 var searchResults = await _restaurantClient.SearchProductsAsync(itemDescription, 10, cancellationToken);
+
+                _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Restaurant extension returned {Count} results for '{SearchTerm}':", 
+                    searchResults.Count, itemDescription);
+                
+                for (int i = 0; i < searchResults.Count && i < 5; i++)
+                {
+                    var result = searchResults[i];
+                    _logger.LogInformation("🔍 ADD_ITEM_DEBUG:   [{Index}] '{Name}' (SKU: {Sku}, Category: {Category}, Price: {Price})", 
+                        i + 1, result.Name, result.Sku, result.CategoryName, result.BasePriceCents / 100.0m);
+                }
 
                 if (!searchResults.Any())
                 {
-                    _logger.LogDebug("No exact match found, trying broader search through restaurant extension");
+                    _logger.LogDebug("🔍 ADD_ITEM_DEBUG: No exact match found, trying broader search through restaurant extension");
                     var broadSearchResults = await GetBroaderSearchResults(itemDescription, cancellationToken);
                     if (!broadSearchResults.Any())
                     {
+                        _logger.LogWarning("🔍 ADD_ITEM_DEBUG: No results found even with broader search for '{SearchTerm}'", itemDescription);
                         return $"PRODUCT_NOT_FOUND: No products found matching '{itemDescription}'. The restaurant extension found no matches.";
                     }
                     searchResults = broadSearchResults;
@@ -515,15 +528,18 @@ namespace PosKernel.AI.Tools
 
                 // ARCHITECTURAL PRINCIPLE: Trust the AI's confidence - don't override with hardcoded logic
                 // The AI already understands cultural context, semantic meaning, and user intent
-                _logger.LogDebug("Using AI confidence: {Confidence} for item '{Item}' in context '{Context}'", 
+                _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Using AI confidence: {Confidence} for item '{Item}' in context '{Context}'", 
                     confidence, itemDescription, context);
 
                 // Trust the restaurant extension ordering (best match first)
                 var bestMatch = searchResults.First();
+                _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Best match selected: '{Name}' (SKU: {Sku})", bestMatch.Name, bestMatch.Sku);
 
                 // ARCHITECTURAL PRINCIPLE: Use AI confidence thresholds, not hardcoded client logic
                 if (context == "clarification_response" || confidence >= 0.7 || searchResults.Count == 1)
                 {
+                    _logger.LogInformation("🔍 ADD_ITEM_DEBUG: AUTO-ADDING based on confidence {Confidence} >= 0.7 OR context '{Context}' OR single result", 
+                        confidence, context);
                     return await AddProductToTransactionAsync(bestMatch, quantity, preparationNotes, cancellationToken);
                 }
                 else
@@ -532,12 +548,16 @@ namespace PosKernel.AI.Tools
                     var options = searchResults.Take(3).ToList();
                     var optionsList = string.Join(", ", options.Select(p => $"{p.Name} ({FormatCurrency(p.BasePriceCents / 100.0m)})"));
                     
+                    _logger.LogWarning("🔍 ADD_ITEM_DEBUG: DISAMBIGUATION triggered - confidence {Confidence} < 0.7, multiple results ({Count}), context '{Context}'", 
+                        confidence, searchResults.Count, context);
+                    _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Offering disambiguation options: {Options}", optionsList);
+                    
                     return $"DISAMBIGUATION_NEEDED: Found {options.Count} options for '{itemDescription}': {optionsList}";
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error adding item to kernel transaction: {Error}", ex.Message);
+                _logger.LogError(ex, "🔍 ADD_ITEM_DEBUG: Error adding item to kernel transaction: {Error}", ex.Message);
                 return $"ERROR: Unable to process item '{itemDescription}': {ex.Message}";
             }
         }

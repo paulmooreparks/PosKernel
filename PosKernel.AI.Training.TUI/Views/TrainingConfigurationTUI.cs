@@ -713,10 +713,22 @@ public class TrainingConfigurationTUI
 
             // Create simple text display of optimizations
             var optimizationDisplay = string.Join("\n\n", records.Select((r, i) => 
-                $"#{i + 1} - Score: {r.PerformanceScore:F3} | Session: {r.TrainingSessionId} | {r.Timestamp:yyyy-MM-dd HH:mm}\n" +
-                $"    Quality Metrics: {string.Join(", ", r.QualityMetrics.Select(kv => $"{kv.Key}={kv.Value:F2}"))}\n" +
-                $"    Optimized Prompt Preview: {r.OptimizedPrompt.Substring(0, Math.Min(150, r.OptimizedPrompt.Length))}..."
-            ));
+            {
+                // TRAINING ENHANCEMENT: Extract change information from notes if available
+                var changesSummary = "No change details available";
+                if (!string.IsNullOrEmpty(r.Notes) && r.Notes.Contains("Changes: "))
+                {
+                    var changesStart = r.Notes.IndexOf("Changes: ") + 9;
+                    if (changesStart < r.Notes.Length)
+                    {
+                        changesSummary = r.Notes.Substring(changesStart);
+                    }
+                }
+                
+                return $"#{i + 1} - Score: {r.PerformanceScore:F3} | Session: {r.TrainingSessionId} | {r.Timestamp:yyyy-MM-dd HH:mm}\n" +
+                       $"    Quality Metrics: {string.Join(", ", r.QualityMetrics.Select(kv => $"{kv.Key}={kv.Value:F2}"))}\n" +
+                       $"    Changes Made: {changesSummary}";
+            }));
 
             var textView = new TextView()
             {

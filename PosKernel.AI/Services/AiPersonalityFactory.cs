@@ -167,9 +167,23 @@ Be friendly and responsive to customer needs.");
             var providerModelPath = Path.Combine(PromptsBasePath, provider, model, personalityFolder, $"{promptType}.md");
             var basePath = Path.Combine(PromptsBasePath, "Base", personalityFolder, $"{promptType}.md");
             
-            // Check if we need to reload due to file changes
+            // PROMPT LOADING DEBUG: Use Console.WriteLine so it appears in Terminal.GUI debug logs
+            Console.WriteLine($"PROMPT_LOADING: Checking paths for {personalityFolder}/{promptType}:");
+            Console.WriteLine($"  Provider-specific: {providerModelPath} (exists: {File.Exists(providerModelPath)})");
+            Console.WriteLine($"  Base fallback: {basePath} (exists: {File.Exists(basePath)})");
+            Console.WriteLine($"  Provider: {provider}, Model: {model}");
+            Console.WriteLine($"  PromptsBasePath: {PromptsBasePath}");
+            
+            // ARCHITECTURAL FIX: Always check file timestamps, even for cached prompts
             var shouldReload = !_promptCache.ContainsKey(cacheKey);
             DateTime? latestTimestamp = null;
+            DateTime? cachedTimestamp = null;
+            
+            // Get cached timestamp if it exists
+            if (_promptFileTimestamps.TryGetValue(cacheKey, out var existingTimestamp))
+            {
+                cachedTimestamp = existingTimestamp;
+            }
 
             // Check timestamps for both possible files
             if (File.Exists(providerModelPath))
@@ -177,9 +191,11 @@ Be friendly and responsive to customer needs.");
                 var providerTimestamp = File.GetLastWriteTime(providerModelPath);
                 latestTimestamp = providerTimestamp;
                 
-                if (!shouldReload && _promptFileTimestamps.TryGetValue(cacheKey, out var cachedTimestamp))
+                // ARCHITECTURAL FIX: Force reload if file is newer than cached version
+                if (cachedTimestamp.HasValue && providerTimestamp > cachedTimestamp.Value)
                 {
-                    shouldReload = providerTimestamp > cachedTimestamp;
+                    shouldReload = true;
+                    Console.WriteLine($"🔍 PROMPT_LOADING: Provider-specific file newer than cache - forcing reload");
                 }
             }
 
@@ -191,15 +207,18 @@ Be friendly and responsive to customer needs.");
                     latestTimestamp = baseTimestamp;
                 }
                 
-                if (!shouldReload && _promptFileTimestamps.TryGetValue(cacheKey, out var cachedTimestamp))
+                // ARCHITECTURAL FIX: Force reload if base file is newer than cached version
+                if (cachedTimestamp.HasValue && baseTimestamp > cachedTimestamp.Value)
                 {
-                    shouldReload = baseTimestamp > cachedTimestamp;
+                    shouldReload = true;
+                    Console.WriteLine($"🔍 PROMPT_LOADING: Base file newer than cache - forcing reload");
                 }
             }
 
             // Return cached version if no reload needed
             if (!shouldReload && _promptCache.TryGetValue(cacheKey, out var cachedPrompt))
             {
+                Console.WriteLine($"PROMPT_LOADING: Using cached prompt for {cacheKey} (cached: {cachedTimestamp})");
                 return cachedPrompt;
             }
 
@@ -214,12 +233,19 @@ Be friendly and responsive to customer needs.");
                     {
                         _promptFileTimestamps[cacheKey] = latestTimestamp.Value;
                     }
+                    
+                    // PROMPT LOADING DEBUG: Log successful provider-specific prompt load
+                    Console.WriteLine($"PROMPT_LOADING: SUCCESS Loaded provider-specific prompt from {providerModelPath}");
+                    Console.WriteLine($"PROMPT_LOADING: Content length: {content.Length} characters");
+                    Console.WriteLine($"PROMPT_LOADING: File timestamp: {File.GetLastWriteTime(providerModelPath)}");
+                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {content.Substring(0, Math.Min(200, content.Length))}");
+                    
                     return content;
                 }
                 catch (Exception ex)
                 {
                     // Log warning but continue to fallback
-                    System.Diagnostics.Debug.WriteLine($"Warning: Failed to read provider-specific prompt {providerModelPath}: {ex.Message}");
+                    Console.WriteLine($"PROMPT_LOADING: WARNING Failed to read provider-specific prompt {providerModelPath}: {ex.Message}");
                 }
             }
 
@@ -235,18 +261,23 @@ Be friendly and responsive to customer needs.");
                         _promptFileTimestamps[cacheKey] = latestTimestamp.Value;
                     }
                     
-                    // Log that we're using base fallback
-                    System.Diagnostics.Debug.WriteLine($"Using base prompt fallback for {provider}/{model}/{personalityFolder}/{promptType}");
+                    // PROMPT LOADING DEBUG: Log fallback prompt load
+                    Console.WriteLine($"PROMPT_LOADING: SUCCESS Loaded base fallback prompt from {basePath}");
+                    Console.WriteLine($"PROMPT_LOADING: Content length: {content.Length} characters");
+                    Console.WriteLine($"PROMPT_LOADING: File timestamp: {File.GetLastWriteTime(basePath)}");
+                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {content.Substring(0, Math.Min(200, content.Length))}");
+                    Console.WriteLine($"PROMPT_LOADING: Using base fallback for {provider}/{model}/{personalityFolder}/{promptType}");
+                    
                     return content;
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Error reading base prompt {basePath}: {ex.Message}");
+                    Console.WriteLine($"PROMPT_LOADING: ERROR Error reading base prompt {basePath}: {ex.Message}");
                 }
             }
             
             // ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks to other personalities or inline prompts
-            throw new FileNotFoundException(
+            var errorMessage = 
                 $"DESIGN DEFICIENCY: No prompt found for {personalityFolder}/{promptType}.\n" +
                 $"Checked provider-specific: {providerModelPath} (exists: {File.Exists(providerModelPath)})\n" +
                 $"Checked base fallback: {basePath} (exists: {File.Exists(basePath)})\n\n" +
@@ -254,7 +285,12 @@ Be friendly and responsive to customer needs.");
                 $"  - For all models: {basePath}\n" +
                 $"  - For {provider}/{model} only: {providerModelPath}\n\n" +
                 $"Provider: {provider}, Model: {model}\n" +
-                $"Available files: {GetAvailableFiles(personalityFolder)}");
+                $"Available files: {GetAvailableFiles(personalityFolder)}";
+            
+            // PROMPT LOADING DEBUG: Log the error before throwing
+            Console.WriteLine($"PROMPT_LOADING: ERROR {errorMessage}");
+            
+            throw new FileNotFoundException(errorMessage);
         }
 
         /// <summary>

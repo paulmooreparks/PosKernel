@@ -79,15 +79,24 @@ public class PromptManagementService : IPromptManagementService
 
     public async Task SaveOptimizedPromptAsync(PersonalityType personalityType, string promptType, string optimizedPrompt, double performanceScore, string trainingSessionId)
     {
+        await SaveOptimizedPromptAsync(personalityType, promptType, optimizedPrompt, performanceScore, trainingSessionId, "No change tracking available");
+    }
+
+    /// <summary>
+    /// Saves optimized prompt with change tracking information
+    /// TRAINING ENHANCEMENT: Track what changes were actually made
+    /// </summary>
+    public async Task SaveOptimizedPromptAsync(PersonalityType personalityType, string promptType, string optimizedPrompt, double performanceScore, string trainingSessionId, string changesSummary)
+    {
         try
         {
-            _logger.LogInformation("💾 SAVING optimized prompt for {PersonalityType}/{PromptType} with score {Score:F3} from session {SessionId}", 
+            _logger.LogInformation("SAVING optimized prompt for {PersonalityType}/{PromptType} with score {Score:F3} from session {SessionId}", 
                 personalityType, promptType, performanceScore, trainingSessionId);
 
             // ARCHITECTURAL FIX: Actually save to the production prompt files that the cashier system reads
             await SavePromptToProductionFileAsync(personalityType, promptType, optimizedPrompt);
 
-            // Save to optimization history for analysis
+            // Save to optimization history for analysis with change tracking
             await SaveOptimizationRecordAsync(new PromptOptimizationRecord
             {
                 Id = Guid.NewGuid().ToString(),
@@ -107,19 +116,20 @@ public class PromptManagementService : IPromptManagementService
                     { "EnhancementMarkers", CountEnhancementMarkers(optimizedPrompt) } // TRAINING FIX: Count specific enhancement indicators
                 },
                 Notes = $"Training session: {trainingSessionId}, Content length: {optimizedPrompt.Length}, " +
-                       $"Hash: {GetPromptContentHash(optimizedPrompt):X8}, " +
-                       $"Enhancement markers: {CountEnhancementMarkers(optimizedPrompt)}" // TRAINING FIX: Include differentiation info
+                       $"Hash: {GetPromptContentHash(optimizedPrompt):F0}, " +
+                       $"Enhancement markers: {CountEnhancementMarkers(optimizedPrompt)}, " +
+                       $"Changes: {changesSummary}" // TRAINING ENHANCEMENT: Include actual changes made
             });
 
             // ARCHITECTURAL PRINCIPLE: Clear prompt cache so AiPersonalityFactory reloads from disk
             AiPersonalityFactory.ClearPromptCache();
             
-            _logger.LogInformation("✅ PRODUCTION PROMPT UPDATED: {PersonalityType}/{PromptType} prompt file saved and cache cleared", 
+            _logger.LogInformation("PRODUCTION PROMPT UPDATED: {PersonalityType}/{PromptType} prompt file saved and cache cleared", 
                 personalityType, promptType);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Failed to save optimized prompt for {PersonalityType}/{PromptType}: {Error}", 
+            _logger.LogError(ex, "Failed to save optimized prompt for {PersonalityType}/{PromptType}: {Error}", 
                 personalityType, promptType, ex.Message);
             throw;
         }

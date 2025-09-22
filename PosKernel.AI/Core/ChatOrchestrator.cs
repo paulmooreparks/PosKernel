@@ -175,23 +175,13 @@ namespace PosKernel.AI.Core {
         {
             _logger.LogInformation("Processing user input: {Input}", userInput);
             
-            // Enhanced intent analysis with conversation context
+            // ARCHITECTURAL PRINCIPLE: Simple structural analysis only
             var intentAnalysis = _orderAnalyzer.AnalyzeOrderIntent(userInput, _receipt, _conversationHistory);
             
-            _thoughtLogger.LogThought($"ENHANCED_INTENT_ANALYSIS: Intent: {intentAnalysis.Intent}, Confidence: {intentAnalysis.ConfidenceLevel:F2}, Reason: {intentAnalysis.ReasonCode}");
+            _thoughtLogger.LogThought($"STRUCTURAL_INTENT_ANALYSIS: Intent: {intentAnalysis.Intent}, Confidence: {intentAnalysis.ConfidenceLevel:F2}, Reason: {intentAnalysis.ReasonCode}");
             
-            if (intentAnalysis.IsPaymentMethodResponse)
-            {
-                _thoughtLogger.LogThought("CONVERSATION_CONTEXT: User is responding to payment method question - processing as payment intent");
-            }
-            
-            if (intentAnalysis.IsOrderSummaryResponse)
-            {
-                _thoughtLogger.LogThought("CONVERSATION_CONTEXT: User is responding after order summary - considering payment context");
-            }
-
-            // Handle with enhanced ordering logic
-            var response = await HandleWithEnhancedOrdering(userInput, intentAnalysis);
+            // Handle with simplified ordering logic
+            var response = await HandleWithSimplifiedOrdering(userInput, intentAnalysis);
             
             // Add to conversation history for context
             _conversationHistory.Add(new ChatMessage
@@ -208,37 +198,27 @@ namespace PosKernel.AI.Core {
             return response;
         }
 
-        private async Task<ChatMessage> HandleWithEnhancedOrdering(string userInput, OrderIntentAnalysis intentAnalysis)
+        private async Task<ChatMessage> HandleWithSimplifiedOrdering(string userInput, OrderIntentAnalysis intentAnalysis)
         {
             _thoughtLogger.LogThought(
-                $"ENHANCED_ORDER_HANDLING: Intent: {intentAnalysis.Intent}, Confidence: {intentAnalysis.ConfidenceLevel:F2}, " +
-                $"PaymentMethodResponse: {intentAnalysis.IsPaymentMethodResponse}, " +
-                $"OrderSummaryResponse: {intentAnalysis.IsOrderSummaryResponse}, " +
+                $"SIMPLIFIED_ORDER_HANDLING: Intent: {intentAnalysis.Intent}, Confidence: {intentAnalysis.ConfidenceLevel:F2}, " +
                 $"Items in receipt: {_receipt.Items.Count}, Receipt status: {_receipt.Status}");
 
-            // ARCHITECTURAL FIX: If we have items in receipt, ensure payment context is preserved
+            // ARCHITECTURAL PRINCIPLE: If we have items in receipt, ensure payment context is preserved
             if (_receipt.Items.Any() && _receipt.Status != PaymentStatus.Completed)
             {
                 _receipt.Status = PaymentStatus.ReadyForPayment;
                 _thoughtLogger.LogThought("RECEIPT_STATUS_CORRECTED: Set to ReadyForPayment due to existing items");
             }
 
-            // ARCHITECTURAL ENHANCEMENT: Prioritize conversation context over structural analysis
-            if (intentAnalysis.IsPaymentMethodResponse && 
-                (intentAnalysis.Intent == OrderIntent.ProcessPayment || intentAnalysis.Intent == OrderIntent.ReadyForPayment))
-            {
-                _thoughtLogger.LogThought("PAYMENT_CONTEXT_DETECTED: User responding to payment method question - processing payment immediately");
-                return await ProcessUserRequestAsync(userInput, "payment");
-            }
-
-            // Handle other intents with enhanced context awareness
+            // ARCHITECTURAL PRINCIPLE: Simple intent handling - most cases defer to AI semantic understanding
             switch (intentAnalysis.Intent)
             {
                 case OrderIntent.ContinueOrdering:
                     return await ProcessUserRequestAsync(userInput, "ordering");
                     
                 case OrderIntent.ReadyForPayment:
-                    // Enhanced: Check if we should transition to payment
+                    // Check if we should transition to payment
                     if (_receipt.Items.Any())
                     {
                         _thoughtLogger.LogThought("ORDER_COMPLETION_CONTEXT: Order completion detected - asking for payment method");
@@ -251,44 +231,16 @@ namespace PosKernel.AI.Core {
                         return await ProcessUserRequestAsync(userInput, "ordering");
                     }
                     
-                case OrderIntent.ProcessPayment:
-                    _thoughtLogger.LogThought("DIRECT_PAYMENT_INTENT: Processing as payment request");
-                    return await ProcessUserRequestAsync(userInput, "payment");
-                    
                 case OrderIntent.Question:
                     _thoughtLogger.LogThought("QUESTION_INTENT: Customer asking question - provide information, don't automatically process");
-                    // ARCHITECTURAL FIX: Questions should be answered, not processed as actions
-                    // Even payment-related questions should be informational first
-                    return await ProcessUserRequestAsync(userInput, "ordering"); // Questions go through normal ordering flow
-                    
-                // ARCHITECTURAL FIX: Handle all completion-related intents properly
-                case OrderIntent.EmptyOrderCompletion:
-                    _thoughtLogger.LogThought("EMPTY_ORDER_COMPLETION: Customer indicating completion but no items - ask what they want");
-                    return await ProcessUserRequestAsync("What would you like to order?", "ordering");
-                    
-                case OrderIntent.ChangedMindAddMore:
-                    _thoughtLogger.LogThought("CHANGED_MIND: Customer changing mind after completion indication - continue ordering");
                     return await ProcessUserRequestAsync(userInput, "ordering");
                     
                 case OrderIntent.Ambiguous:
                     _thoughtLogger.LogThought("AMBIGUOUS_INTENT: Let AI semantic analysis determine intent");
-                    // Enhanced: Consider conversation context for ambiguous inputs
-                    if (intentAnalysis.IsOrderSummaryResponse && _receipt.Status == PaymentStatus.ReadyForPayment)
-                    {
-                        _thoughtLogger.LogThought("CONTEXT_BASED_PAYMENT: Ambiguous input after order summary - treating as potential payment method");
-                        return await ProcessUserRequestAsync(userInput, "payment");
-                    }
                     return await ProcessUserRequestAsync(userInput, "ordering");
                     
                 default:
-                    // ARCHITECTURAL FIX: Better fallback logic
-                    // CRITICAL FIX: If we have items and user says something payment-related, treat as payment
-                    if (_receipt.Items.Any() && LooksLikePaymentMethod(userInput))
-                    {
-                        _thoughtLogger.LogThought("ITEMS_EXIST_PAYMENT_METHOD: Have items and input looks like payment method - processing payment");
-                        return await ProcessUserRequestAsync(userInput, "payment");
-                    }
-                    
+                    // ARCHITECTURAL PRINCIPLE: Default to ordering context - let AI handle semantics
                     return await ProcessUserRequestAsync(userInput, "ordering");
             }
         }
@@ -482,9 +434,9 @@ namespace PosKernel.AI.Core {
                      "3. **Customer asks for recommendations** ('what's popular?', 'what's good?', 'what do you recommend?'):\n" +
                      "   → **Use `get_popular_items` tool** to show recommendations\n" +
                      "   → This is different from asking for the complete menu\n\n" +
-                     "4. **Customer indicates completion** ('that's all', 'finish', 'done'):\n" +
-                     "   → **DO NOT use any tools** - just ask for payment method\n" +
-                     "   → Conversational response will be handled in next phase\n\n" +
+                     "4. **Customer indicates completion** ('that's all', 'habis', 'finished', 'done'):\n" +
+                     "   → **Use `load_payment_methods_context` tool** to get available payment options\n" +
+                     "   → Then ask for payment method in conversational response\n\n" +
                      "5. **Customer specifies payment method** (after you asked how they want to pay):\n" +
                      "   → **Use `process_payment` tool with their specified method**\n" +
                      "   → **DO NOT use `load_payment_methods_context` tool**\n\n" +

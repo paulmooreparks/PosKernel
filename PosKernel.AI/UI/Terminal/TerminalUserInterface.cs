@@ -149,7 +149,7 @@ namespace PosKernel.AI.UI.Terminal {
                                 // DEBUGGING: Show a more detailed error message to help diagnose the issue
                                 ShowMessage(new ChatMessage {
                                     Sender = "System",
-                                    Content = $"🔧 Debug: Processing failed with error: {ex.Message}\n\nCheck the debug logs for details. The system is still ready for your next order.",
+                                    Content = $"Debug: Processing failed with error: {ex.Message}\n\nCheck the debug logs for details. The system is still ready for your next order.",
                                     IsSystem = true,
                                     ShowInCleanMode = true
                                 });
@@ -163,7 +163,7 @@ namespace PosKernel.AI.UI.Terminal {
                     // Show a more specific error message for debugging
                     ShowMessage(new ChatMessage {
                         Sender = "System",
-                        Content = "🔄 System is initializing... Please wait a moment.",
+                        Content = "System is initializing... Please wait a moment.",
                         IsSystem = true,
                         ShowInCleanMode = true
                     });
@@ -1019,6 +1019,8 @@ namespace PosKernel.AI.UI.Terminal {
         private readonly TextWriter _originalOut;
         private readonly TextWriter _originalError;
         private readonly string _streamType;
+        private static readonly System.Text.RegularExpressions.Regex AnsiEscapeSequence = 
+            new(@"\x1B\[[0-?]*[ -/]*[@-~]", System.Text.RegularExpressions.RegexOptions.Compiled);
 
         public ConsoleOutputRedirector(TerminalLogDisplay logDisplay, TextWriter originalWriter, string streamType) {
             _logDisplay = logDisplay;
@@ -1035,18 +1037,40 @@ namespace PosKernel.AI.UI.Terminal {
 
         public override void Write(string? value) {
             if (!string.IsNullOrEmpty(value)) {
-                _logDisplay?.AddLog($"[CONSOLE.{_streamType}] {value}");
+                var cleanedValue = StripAnsiEscapeCodes(value);
+                if (!string.IsNullOrWhiteSpace(cleanedValue)) {
+                    _logDisplay?.AddLog($"[CONSOLE.{_streamType}] {cleanedValue}");
+                }
             }
         }
 
         public override void WriteLine(string? value) {
             if (!string.IsNullOrEmpty(value)) {
-                _logDisplay?.AddLog($"[CONSOLE.{_streamType}] {value}");
+                var cleanedValue = StripAnsiEscapeCodes(value);
+                if (!string.IsNullOrWhiteSpace(cleanedValue)) {
+                    _logDisplay?.AddLog($"[CONSOLE.{_streamType}] {cleanedValue}");
+                }
             }
         }
 
         public override void WriteLine() {
             // Ignore empty lines
+        }
+
+        /// <summary>
+        /// Removes ANSI escape sequences (color codes, formatting) from console output
+        /// </summary>
+        private static string StripAnsiEscapeCodes(string input) {
+            if (string.IsNullOrEmpty(input))
+                return input;
+
+            // Remove ANSI escape sequences
+            var cleaned = AnsiEscapeSequence.Replace(input, string.Empty);
+            
+            // Clean up any remaining control characters
+            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", string.Empty);
+            
+            return cleaned.Trim();
         }
 
         protected override void Dispose(bool disposing) {
