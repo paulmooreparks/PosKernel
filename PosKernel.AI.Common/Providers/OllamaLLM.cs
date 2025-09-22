@@ -43,8 +43,9 @@ public class OllamaLLM : ILargeLanguageModel
         _baseUrl = baseUrl ?? throw new ArgumentNullException(nameof(baseUrl));
         _model = model ?? throw new ArgumentNullException(nameof(model));
 
-        // ARCHITECTURAL FIX: Set appropriate timeout for local LLM calls
-        _httpClient.Timeout = TimeSpan.FromSeconds(60);
+        // ARCHITECTURAL FIX: Set longer timeout for training scenarios
+        // Training often involves longer, more complex prompts that take time to process
+        _httpClient.Timeout = TimeSpan.FromMinutes(3); // Increased from 60 seconds to 3 minutes
     }
 
     public LLMProviderInfo ProviderInfo => new()
@@ -59,65 +60,107 @@ public class OllamaLLM : ILargeLanguageModel
 
     public async Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
-        try
+        const int maxRetries = 3;
+        const int baseDelayMs = 1000;
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            var requestBody = new OllamaGenerateRequest
+            try
             {
-                Model = _model,
-                Prompt = prompt,
-                Stream = false
-            };
+                var requestBody = new OllamaGenerateRequest
+                {
+                    Model = _model,
+                    Prompt = prompt,
+                    Stream = false
+                };
 
-            var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+                var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                });
 
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            _logger.LogDebug("Calling Ollama generate API: {Model} at {BaseUrl}", _model, _baseUrl);
+                _logger.LogDebug("Calling Ollama generate API: {Model} at {BaseUrl} (attempt {Attempt}/{MaxRetries})",
+                    _model, _baseUrl, attempt, maxRetries);
 
-            var response = await _httpClient.PostAsync($"{_baseUrl}/api/generate", content, cancellationToken);
+                var response = await _httpClient.PostAsync($"{_baseUrl}/api/generate", content, cancellationToken);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                throw new InvalidOperationException(
-                    $"DESIGN DEFICIENCY: Ollama API call failed with status {response.StatusCode}. " +
-                    $"Response: {errorContent}. " +
-                    $"Ensure Ollama is running and model '{_model}' is available.");
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                    if (attempt == maxRetries)
+                    {
+                        throw new InvalidOperationException(
+                            $"DESIGN DEFICIENCY: Ollama API call failed with status {response.StatusCode} after {maxRetries} attempts. " +
+                            $"Response: {errorContent}. " +
+                            $"Ensure Ollama is running and model '{_model}' is available.");
+                    }
+
+                    _logger.LogWarning("Ollama API call failed (attempt {Attempt}/{MaxRetries}): {Status} - {Error}",
+                        attempt, maxRetries, response.StatusCode, errorContent);
+
+                    // Wait before retry with exponential backoff
+                    await Task.Delay(baseDelayMs * attempt, cancellationToken);
+                    continue;
+                }
+
+                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+                var ollamaResponse = JsonSerializer.Deserialize<OllamaGenerateResponse>(responseJson, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                });
+
+                if (string.IsNullOrEmpty(ollamaResponse?.Response))
+                {
+                    if (attempt == maxRetries)
+                    {
+                        throw new InvalidOperationException(
+                            $"DESIGN DEFICIENCY: Ollama returned invalid response format after {maxRetries} attempts. " +
+                            $"Expected 'response' field but got: {responseJson}");
+                    }
+
+                    _logger.LogWarning("Ollama returned empty response (attempt {Attempt}/{MaxRetries})", attempt, maxRetries);
+                    await Task.Delay(baseDelayMs * attempt, cancellationToken);
+                    continue;
+                }
+
+                _logger.LogDebug("Ollama response received: {CharCount} characters (attempt {Attempt})",
+                    ollamaResponse.Response.Length, attempt);
+                return ollamaResponse.Response;
             }
-
-            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-            var ollamaResponse = JsonSerializer.Deserialize<OllamaGenerateResponse>(responseJson, new JsonSerializerOptions
+            catch (HttpRequestException ex)
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-            });
+                if (attempt == maxRetries)
+                {
+                    throw new InvalidOperationException(
+                        $"DESIGN DEFICIENCY: Cannot connect to Ollama at {_baseUrl} after {maxRetries} attempts. " +
+                        $"Ensure Ollama is running and accessible. " +
+                        $"Error: {ex.Message}", ex);
+                }
 
-            if (string.IsNullOrEmpty(ollamaResponse?.Response))
-            {
-                throw new InvalidOperationException(
-                    $"DESIGN DEFICIENCY: Ollama returned invalid response format. " +
-                    $"Expected 'response' field but got: {responseJson}");
+                _logger.LogWarning(ex, "HTTP request failed (attempt {Attempt}/{MaxRetries}): {Error}",
+                    attempt, maxRetries, ex.Message);
+                await Task.Delay(baseDelayMs * attempt, cancellationToken);
             }
+            catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+            {
+                if (attempt == maxRetries)
+                {
+                    throw new InvalidOperationException(
+                        $"DESIGN DEFICIENCY: Ollama request timed out after {maxRetries} attempts. " +
+                        $"Model '{_model}' may be slow to respond or not loaded. " +
+                        $"Consider using a faster model or increasing timeout. " +
+                        $"Error: {ex.Message}", ex);
+                }
 
-            _logger.LogDebug("Ollama response received: {CharCount} characters", ollamaResponse.Response.Length);
-            return ollamaResponse.Response;
+                _logger.LogWarning("Ollama request timed out (attempt {Attempt}/{MaxRetries})", attempt, maxRetries);
+                await Task.Delay(baseDelayMs * attempt, cancellationToken);
+            }
         }
-        catch (HttpRequestException ex)
-        {
-            throw new InvalidOperationException(
-                $"DESIGN DEFICIENCY: Cannot connect to Ollama at {_baseUrl}. " +
-                $"Ensure Ollama is running and accessible. " +
-                $"Error: {ex.Message}", ex);
-        }
-        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
-        {
-            throw new InvalidOperationException(
-                $"DESIGN DEFICIENCY: Ollama request timed out. " +
-                $"Model '{_model}' may be slow to respond or not loaded. " +
-                $"Error: {ex.Message}", ex);
-        }
+
+        throw new InvalidOperationException($"DESIGN DEFICIENCY: All {maxRetries} attempts to call Ollama failed.");
     }
 
     public async Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)

@@ -25,6 +25,8 @@ using PosKernel.AI.Models;
 using PosKernel.AI.Core;
 using PosKernel.Abstractions.Services;
 using PosKernel.Configuration.Services;
+using PosKernel.Extensions.Restaurant.Client;
+using PosKernel.Abstractions;
 
 namespace PosKernel.AI.Training;
 
@@ -71,15 +73,18 @@ public static class ServiceCollectionExtensions
         // Register prompt management services  
         services.TryAddScoped<IPromptManagementService, PromptManagementService>();
 
-        // Register training session - TRANSACTION-CENTRIC implementation using EXACT same services as PosKernel.AI
+        // Register training session - PRODUCTION AI implementation using EXACT same services as PosKernel.AI
         services.TryAddTransient<ITrainingSession>(provider =>
         {
-            // ARCHITECTURAL PRINCIPLE: Training should support all store types - no hardcoded Kopitiam assumptions
-            // Create store configurations for different training scenarios
-            var defaultStoreConfig = new StoreConfig
+            var promptService = provider.GetRequiredService<IPromptManagementService>();
+            var logger = provider.GetRequiredService<ILogger<ProductionAITrainingSession>>();
+            
+            // ARCHITECTURAL PRINCIPLE: Use ProductionAIServiceFactory to create the exact same services as PosKernel.AI
+            // This ensures training uses the identical infrastructure
+            var storeConfig = new StoreConfig
             {
                 StoreName = "Training Store",
-                StoreType = StoreType.Kopitiam, // Default for demo - should be configurable
+                StoreType = StoreType.Kopitiam,
                 PersonalityType = PersonalityType.SingaporeanKopitiamUncle,
                 Currency = "SGD",
                 CultureCode = "en-SG"
@@ -87,50 +92,28 @@ public static class ServiceCollectionExtensions
 
             var personalityConfig = new AiPersonalityConfig
             {
-                Type = defaultStoreConfig.PersonalityType,
+                Type = PersonalityType.SingaporeanKopitiamUncle,
                 StaffTitle = "Uncle",
                 VenueTitle = "Kopitiam",
-                SupportedLanguages = new List<string> { "en", "zh", "ms", "ta" },
-                CultureCode = defaultStoreConfig.CultureCode,
-                Currency = defaultStoreConfig.Currency
+                SupportedLanguages = new List<string> { "English", "Mandarin", "Cantonese", "Hokkien", "Hakka", "Teochew", "Malay", "Tamil", "Punjabi", "Bangladeshi" },
+                CultureCode = storeConfig.CultureCode,
+                Currency = storeConfig.Currency
             };
 
-            // ARCHITECTURAL PRINCIPLE: Create production services with validated configuration
+            // ARCHITECTURAL PRINCIPLE: Create production services using the factory that already exists
             var productionServices = ProductionAIServiceFactory.CreateProductionServicesAsync(
-                defaultStoreConfig,
+                storeConfig,
                 personalityConfig).GetAwaiter().GetResult();
 
-            // Create transaction-centric training session
-            var chatOrchestrator = productionServices.GetRequiredService<ChatOrchestrator>();
-            var promptService = provider.GetRequiredService<IPromptManagementService>();
-            var logger = provider.GetRequiredService<ILogger<TransactionTrainingEngine>>();
-
-            return new TransactionTrainingEngine(
-                chatOrchestrator,
+            return new ProductionAITrainingSession(
+                logger,
                 promptService,
-                defaultStoreConfig.PersonalityType,
-                logger);
+                productionServices,
+                PersonalityType.SingaporeanKopitiamUncle,
+                "ordering"); // Focus on ordering prompts
         });
 
         return services;
-    }
-
-    /// <summary>
-    /// Gets the default cross-platform data directory - matches PosKernel configuration directory structure
-    /// </summary>
-    private static string GetDefaultDataDirectory()
-    {
-        // ARCHITECTURAL PRINCIPLE: Use same directory structure as PosKernelConfiguration
-        // Training data should be in ~/.poskernel/training/ alongside ~/.poskernel/.env
-        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        
-        if (string.IsNullOrEmpty(homeDir))
-        {
-            // Fallback for systems without UserProfile folder
-            homeDir = Path.GetTempPath();
-        }
-
-        return Path.Combine(homeDir, ".poskernel", "training");
     }
 
     /// <summary>
@@ -170,5 +153,23 @@ public static class ServiceCollectionExtensions
                 $"DESIGN DEFICIENCY: Required AI Training services not registered: {string.Join(", ", missingServices)}. " +
                 "Call services.AddAITraining() in your service registration code before building the service provider.");
         }
+    }
+
+    /// <summary>
+    /// Gets the default cross-platform data directory - matches PosKernel configuration directory structure
+    /// </summary>
+    private static string GetDefaultDataDirectory()
+    {
+        // ARCHITECTURAL PRINCIPLE: Use same directory structure as PosKernelConfiguration
+        // Training data should be in ~/.poskernel/training/ alongside ~/.poskernel/.env
+        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        
+        if (string.IsNullOrEmpty(homeDir))
+        {
+            // Fallback for systems without UserProfile folder
+            homeDir = Path.GetTempPath();
+        }
+
+        return Path.Combine(homeDir, ".poskernel", "training");
     }
 }

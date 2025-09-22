@@ -18,6 +18,7 @@ using Microsoft.Extensions.Logging;
 using PosKernel.AI.Training.Storage;
 using PosKernel.AI.Services;
 using PosKernel.AI.Models;
+using PosKernel.Configuration;
 
 namespace PosKernel.AI.Training.Core;
 
@@ -46,14 +47,18 @@ public class PromptManagementService : IPromptManagementService
     {
         try
         {
+            _logger.LogDebug("Loading prompt for {PersonalityType}/{PromptType} with context: TimeOfDay={TimeOfDay}", 
+                personalityType, promptType, context.TimeOfDay);
+
             // ARCHITECTURAL PRINCIPLE: Integrate with existing AiPersonalityFactory instead of separate storage
+            // The AiPersonalityFactory will handle the PosKernelConfiguration.Initialize() call internally
             var prompt = AiPersonalityFactory.BuildPrompt(personalityType, promptType, context);
             
             if (string.IsNullOrEmpty(prompt))
             {
                 throw new InvalidOperationException(
                     $"DESIGN DEFICIENCY: AiPersonalityFactory returned empty prompt for {personalityType}/{promptType}. " +
-                    $"Check prompt file exists and is properly formatted in PosKernel.AI/Prompts/{personalityType}/{promptType}.md");
+                    $"Check prompt file exists and is properly formatted in ~/.poskernel/ai_config/prompts/{personalityType}/{promptType}.md");
             }
 
             _logger.LogDebug("Retrieved {PromptType} prompt for {PersonalityType}: {Length} characters", 
@@ -63,10 +68,12 @@ public class PromptManagementService : IPromptManagementService
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException(
-                $"DESIGN DEFICIENCY: Failed to get current prompt for {personalityType}/{promptType}. " +
-                $"Training system requires access to existing prompt files via AiPersonalityFactory. " +
-                $"Error: {ex.Message}");
+            var errorMessage = $"DESIGN DEFICIENCY: Failed to get current prompt for {personalityType}/{promptType}. " +
+                              $"Training system requires access to existing prompt files via AiPersonalityFactory. " +
+                              $"Error: {ex.Message}";
+            
+            _logger.LogError(ex, errorMessage);
+            throw new InvalidOperationException(errorMessage, ex);
         }
     }
 
@@ -74,21 +81,14 @@ public class PromptManagementService : IPromptManagementService
     {
         try
         {
-            // ARCHITECTURAL PRINCIPLE: Save directly to the prompt files that PosKernel.AI reads
-            var promptFilePath = Path.Combine("PosKernel.AI", "Prompts", personalityType.ToString(), $"{promptType}.md");
-            var promptDirectory = Path.GetDirectoryName(promptFilePath);
-            
-            if (!string.IsNullOrEmpty(promptDirectory) && !Directory.Exists(promptDirectory))
-            {
-                Directory.CreateDirectory(promptDirectory);
-                _logger.LogInformation("Created prompt directory: {Directory}", promptDirectory);
-            }
-            
-            // Save the optimized prompt to the actual file
-            await File.WriteAllTextAsync(promptFilePath, optimizedPrompt);
-            
-            // Save optimization record to training data store for history tracking
-            var optimizationRecord = new PromptOptimizationRecord
+            _logger.LogInformation("💾 SAVING optimized prompt for {PersonalityType}/{PromptType} with score {Score:F3} from session {SessionId}", 
+                personalityType, promptType, performanceScore, trainingSessionId);
+
+            // ARCHITECTURAL FIX: Actually save to the production prompt files that the cashier system reads
+            await SavePromptToProductionFileAsync(personalityType, promptType, optimizedPrompt);
+
+            // Save to optimization history for analysis
+            await SaveOptimizationRecordAsync(new PromptOptimizationRecord
             {
                 Id = Guid.NewGuid().ToString(),
                 PersonalityType = personalityType,
@@ -100,69 +100,274 @@ public class PromptManagementService : IPromptManagementService
                 TrainingSessionId = trainingSessionId,
                 QualityMetrics = new Dictionary<string, double>
                 {
-                    { "PerformanceScore", performanceScore }
-                }
-            };
-            
-            var historyKey = GetPromptHistoryKey(personalityType, promptType, optimizationRecord.Id);
-            await _dataStore.SaveAsync(historyKey, optimizationRecord);
-            
+                    { "PerformanceScore", performanceScore },
+                    { "PromptLength", optimizedPrompt.Length },
+                    { "OptimizationTimestamp", DateTimeOffset.UtcNow.ToUnixTimeSeconds() },
+                    { "UniqueContentHash", GetPromptContentHash(optimizedPrompt) }, // TRAINING FIX: Add content hash for uniqueness verification
+                    { "EnhancementMarkers", CountEnhancementMarkers(optimizedPrompt) } // TRAINING FIX: Count specific enhancement indicators
+                },
+                Notes = $"Training session: {trainingSessionId}, Content length: {optimizedPrompt.Length}, " +
+                       $"Hash: {GetPromptContentHash(optimizedPrompt):X8}, " +
+                       $"Enhancement markers: {CountEnhancementMarkers(optimizedPrompt)}" // TRAINING FIX: Include differentiation info
+            });
+
             // ARCHITECTURAL PRINCIPLE: Clear prompt cache so AiPersonalityFactory reloads from disk
             AiPersonalityFactory.ClearPromptCache();
             
-            _logger.LogInformation("Saved optimized {PromptType} prompt for {PersonalityType} to {FilePath} with score {Score:F3}", 
-                promptType, personalityType, promptFilePath, performanceScore);
+            _logger.LogInformation("✅ PRODUCTION PROMPT UPDATED: {PersonalityType}/{PromptType} prompt file saved and cache cleared", 
+                personalityType, promptType);
         }
         catch (Exception ex)
         {
-            throw new InvalidOperationException(
-                $"DESIGN DEFICIENCY: Failed to save optimized prompt for {personalityType}/{promptType}. " +
-                $"Training requires write access to PosKernel.AI/Prompts/ directory structure. " +
-                $"Error: {ex.Message}");
+            _logger.LogError(ex, "❌ Failed to save optimized prompt for {PersonalityType}/{PromptType}: {Error}", 
+                personalityType, promptType, ex.Message);
+            throw;
         }
+    }
+
+    /// <summary>
+    /// Normalizes a model name to be safe for use in file paths.
+    /// Replaces characters that are invalid in Windows/Unix paths with safe alternatives.
+    /// </summary>
+    /// <param name="modelName">The model name to normalize</param>
+    /// <returns>A path-safe model name</returns>
+    private static string NormalizeModelNameForPath(string modelName)
+    {
+        if (string.IsNullOrEmpty(modelName))
+        {
+            return modelName;
+        }
+
+        // ARCHITECTURAL FIX: Use Path.GetInvalidFileNameChars() to handle all invalid characters properly
+        // This covers both path and filename restrictions across Windows/Unix systems
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var normalizedName = new string(modelName.Select(c => invalidChars.Contains(c) ? '-' : c).ToArray());
+        
+        return normalizedName;
+    }
+
+    /// <summary>
+    /// Saves the optimized prompt to the actual production file that the cashier system reads
+    /// ARCHITECTURAL PRINCIPLE: Training must update the SAME files that production AI uses
+    /// ARCHITECTURAL FIX: Training should ALWAYS save to STORE configuration paths (where cashier reads)
+    /// </summary>
+    private async Task SavePromptToProductionFileAsync(PersonalityType personalityType, string promptType, string optimizedPrompt)
+    {
+        // ARCHITECTURAL FIX: Use standard configuration directory resolution
+        var posKernelHome = Environment.GetEnvironmentVariable("POSKERNEL_HOME") 
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".poskernel");
+
+        var aiConfigPath = Path.Combine(posKernelHome, "ai_config");
+        var promptsPath = Path.Combine(aiConfigPath, "prompts");
+
+        // ARCHITECTURAL BUG FIX: Training should ALWAYS use STORE configuration for prompt file paths
+        // The cashier uses STORE_AI_PROVIDER/STORE_AI_MODEL, so optimized prompts must go there
+        var config = PosKernelConfiguration.Initialize();
+        
+        // Always use STORE configuration - this is where the cashier will read from
+        var provider = config.GetValue<string>("STORE_AI_PROVIDER");
+        var model = config.GetValue<string>("STORE_AI_MODEL");
+        
+        if (string.IsNullOrEmpty(provider))
+        {
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Store AI provider not configured. " +
+                "Training system optimizes prompts for the store cashier system. " +
+                "Set STORE_AI_PROVIDER in ~/.poskernel/.env file. " +
+                "Training cannot optimize prompts without knowing the target store configuration.");
+        }
+        
+        if (string.IsNullOrEmpty(model))
+        {
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Store AI model not configured. " +
+                "Training system optimizes prompts for the store cashier system. " +
+                "Set STORE_AI_MODEL in ~/.poskernel/.env file. " +
+                "Training cannot optimize prompts without knowing the target store configuration.");
+        }
+
+        // ARCHITECTURAL FIX: Normalize model name for safe path usage
+        var normalizedModel = NormalizeModelNameForPath(model);
+        
+        _logger.LogInformation("📂 Saving optimized prompts to STORE configuration: {Provider}/{Model} (normalized: {NormalizedModel})", 
+            provider, model, normalizedModel);
+
+        // ARCHITECTURAL PRINCIPLE: Use hierarchical path structure like AiPersonalityFactory
+        // Use normalized model name for path safety
+        var providerModelPath = Path.Combine(promptsPath, provider, normalizedModel, personalityType.ToString(), $"{promptType}.md");
+        var basePath = Path.Combine(promptsPath, "Base", personalityType.ToString(), $"{promptType}.md");
+
+        string actualFilePath;
+        bool isProviderSpecific = false;
+
+        // Check if provider-specific file exists, or if we should create it
+        if (File.Exists(providerModelPath))
+        {
+            actualFilePath = providerModelPath;
+            isProviderSpecific = true;
+            _logger.LogInformation("📂 Found existing provider-specific prompt file: {FilePath}", actualFilePath);
+        }
+        else if (File.Exists(basePath))
+        {
+            // Base file exists - decide whether to upgrade to provider-specific or update base
+            // For training, we want to create provider-specific files to avoid affecting other providers
+            actualFilePath = providerModelPath;
+            isProviderSpecific = true;
+            _logger.LogInformation("📂 Creating provider-specific prompt file: {FilePath}", actualFilePath);
+        }
+        else
+        {
+            // Neither exists - create provider-specific file
+            actualFilePath = providerModelPath;
+            isProviderSpecific = true;
+            _logger.LogInformation("📂 Creating new provider-specific prompt file: {FilePath}", actualFilePath);
+        }
+
+        // Ensure directory structure exists
+        var directory = Path.GetDirectoryName(actualFilePath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+            _logger.LogInformation("📁 Created prompt directory: {Directory}", directory);
+        }
+
+        // Backup the existing file before overwriting
+        if (File.Exists(actualFilePath))
+        {
+            var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+            var backupPath = $"{actualFilePath}.backup.{timestamp}";
+            
+            // ARCHITECTURAL FIX: Check if backup already exists to avoid the error we saw
+            int backupCounter = 1;
+            while (File.Exists(backupPath))
+            {
+                backupPath = $"{actualFilePath}.backup.{timestamp}-{backupCounter}";
+                backupCounter++;
+            }
+            
+            File.Copy(actualFilePath, backupPath);
+            _logger.LogInformation("💾 Backed up existing prompt to: {BackupPath}", backupPath);
+        }
+
+        // Save the optimized prompt
+        await File.WriteAllTextAsync(actualFilePath, optimizedPrompt);
+        _logger.LogInformation("✅ CASHIER PROMPT UPDATED: Saved optimized prompt to {FilePath} (provider-specific: {IsProviderSpecific})", 
+            actualFilePath, isProviderSpecific);
+        
+        // Verify the file was written correctly
+        var writtenContent = await File.ReadAllTextAsync(actualFilePath);
+        if (writtenContent != optimizedPrompt)
+        {
+            throw new InvalidOperationException($"DESIGN DEFICIENCY: Prompt file verification failed. Written content does not match optimized prompt.");
+        }
+        
+        _logger.LogInformation("✅ VERIFICATION PASSED: Prompt file contains correct optimized content ({Length} characters)", writtenContent.Length);
+    }
+
+    /// <summary>
+    /// Saves an optimization record to the history file
+    /// </summary>
+    private async Task SaveOptimizationRecordAsync(PromptOptimizationRecord record)
+    {
+        var historyKey = GetPromptHistoryKey(record.PersonalityType, record.PromptType, record.Id);
+        await _dataStore.SaveAsync(historyKey, record);
     }
 
     public IReadOnlyList<string> GetAvailablePromptTypes(PersonalityType personalityType)
     {
         try
         {
-            // ARCHITECTURAL PRINCIPLE: Discover prompt types from AiPersonalityFactory, don't hardcode them
-            var promptDirectory = Path.Combine("PosKernel.AI", "Prompts", personalityType.ToString());
+            // ARCHITECTURAL PRINCIPLE: Use standard configuration directory resolution
+            var posKernelHome = Environment.GetEnvironmentVariable("POSKERNEL_HOME") 
+                ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".poskernel");
+
+            var promptsPath = Path.Combine(posKernelHome, "ai_config", "prompts");
             
-            if (!Directory.Exists(promptDirectory))
+            // ARCHITECTURAL BUG FIX: Training should ALWAYS use STORE configuration for prompt file paths
+            // The cashier uses STORE_AI_PROVIDER/STORE_AI_MODEL, so we must discover from those paths
+            var config = PosKernelConfiguration.Initialize();
+            
+            // Always use STORE configuration - this is where the cashier reads from
+            var provider = config.GetValue<string>("STORE_AI_PROVIDER");
+            var model = config.GetValue<string>("STORE_AI_MODEL");
+            
+            if (string.IsNullOrEmpty(provider))
             {
                 throw new InvalidOperationException(
-                    $"DESIGN DEFICIENCY: Prompt directory not found for personality {personalityType}. " +
-                    $"Expected directory: {promptDirectory}. " +
-                    $"Ensure AiPersonalityFactory prompt files are properly deployed.");
+                    "DESIGN DEFICIENCY: Store AI provider not configured. " +
+                    "Training system needs to discover prompts from store cashier system. " +
+                    "Set STORE_AI_PROVIDER in ~/.poskernel/.env file. " +
+                    "Training cannot discover prompts without knowing the store configuration.");
+            }
+            
+            if (string.IsNullOrEmpty(model))
+            {
+                throw new InvalidOperationException(
+                    "DESIGN DEFICIENCY: Store AI model not configured. " +
+                    "Training system needs to discover prompts from store cashier system. " +
+                    "Set STORE_AI_MODEL in ~/.poskernel/.env file. " +
+                    "Training cannot discover prompts without knowing the store configuration.");
             }
 
-            // Discover available prompt types from .md files in the personality directory
-            var promptFiles = Directory.GetFiles(promptDirectory, "*.md");
-            var promptTypes = promptFiles
-                .Select(Path.GetFileNameWithoutExtension)
-                .Where(name => !string.IsNullOrEmpty(name))
-                .Cast<string>()
-                .ToList();
+            // ARCHITECTURAL FIX: Normalize model name for safe path usage
+            var normalizedModel = NormalizeModelNameForPath(model);
+
+            // Check both provider-specific and base directories
+            var providerModelDirectory = Path.Combine(promptsPath, provider, normalizedModel, personalityType.ToString());
+            var baseDirectory = Path.Combine(promptsPath, "Base", personalityType.ToString());
+
+            var promptTypes = new HashSet<string>();
+
+            // Collect from provider-specific directory
+            if (Directory.Exists(providerModelDirectory))
+            {
+                var providerFiles = Directory.GetFiles(providerModelDirectory, "*.md");
+                foreach (var file in providerFiles)
+                {
+                    var promptType = Path.GetFileNameWithoutExtension(file);
+                    if (!string.IsNullOrEmpty(promptType))
+                    {
+                        promptTypes.Add(promptType);
+                    }
+                }
+            }
+
+            // Collect from base directory
+            if (Directory.Exists(baseDirectory))
+            {
+                var baseFiles = Directory.GetFiles(baseDirectory, "*.md");
+                foreach (var file in baseFiles)
+                {
+                    var promptType = Path.GetFileNameWithoutExtension(file);
+                    if (!string.IsNullOrEmpty(promptType))
+                    {
+                        promptTypes.Add(promptType);
+                    }
+                }
+            }
 
             if (!promptTypes.Any())
             {
                 throw new InvalidOperationException(
                     $"DESIGN DEFICIENCY: No prompt files found for personality {personalityType}. " +
-                    $"Expected .md files in directory: {promptDirectory}. " +
+                    $"Checked directories:\n" +
+                    $"  - Provider-specific: {providerModelDirectory}\n" +
+                    $"  - Base: {baseDirectory}\n" +
                     $"Ensure personality prompt files are properly deployed.");
             }
 
+            var result = promptTypes.Cast<string>().ToList();
+
             _logger.LogDebug("Discovered {Count} prompt types for {PersonalityType}: {Types}", 
-                promptTypes.Count, personalityType, string.Join(", ", promptTypes));
+                result.Count, personalityType, string.Join(", ", result));
             
-            return promptTypes;
+            return result;
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException(
                 $"DESIGN DEFICIENCY: Failed to discover prompt types for {personalityType}. " +
-                $"Cannot enumerate prompt files from AiPersonalityFactory directory structure. " +
+                $"Cannot enumerate prompt files from ~/.poskernel/ai_config/prompts/ directory structure. " +
                 $"Error: {ex.Message}");
         }
     }
@@ -221,4 +426,60 @@ public class PromptManagementService : IPromptManagementService
 
     private static string GetPromptHistoryKeyPattern(PersonalityType personalityType, string promptType) 
         => $"{PROMPT_HISTORY_KEY_PREFIX}-{personalityType}-{promptType}*";
+
+    /// <summary>
+    /// Generates a hash of the prompt content to detect meaningful changes
+    /// TRAINING PRINCIPLE: Helps distinguish between truly different prompt variations
+    /// </summary>
+    private static double GetPromptContentHash(string prompt)
+    {
+        if (string.IsNullOrEmpty(prompt))
+        {
+            return 0;
+        }
+
+        // Simple hash based on content characteristics that indicate real differences
+        var hash = prompt.Length * 37;
+        hash += prompt.Count(c => c == '#') * 101; // Section markers
+        hash += prompt.Count(c => c == '*') * 67;  // Emphasis markers  
+        hash += prompt.Count(c => c == ':') * 53;  // Definition markers
+        hash += prompt.Count(c => c == '-') * 41;  // List markers
+        
+        // Add hash contribution from specific training keywords that indicate enhancements
+        var trainingKeywords = new[] { "confidence", "tool", "execute", "conversation", "cultural", "payment" };
+        foreach (var keyword in trainingKeywords)
+        {
+            var keywordCount = prompt.Split(keyword, StringSplitOptions.None).Length - 1;
+            hash += keywordCount * keyword.Length * 29;
+        }
+        
+        return hash % 1000000; // Keep it reasonable for display
+    }
+
+    /// <summary>
+    /// Counts enhancement markers in the prompt to detect training improvements
+    /// TRAINING PRINCIPLE: More enhancement markers indicate more sophisticated prompts
+    /// </summary>
+    private static double CountEnhancementMarkers(string prompt)
+    {
+        if (string.IsNullOrEmpty(prompt))
+        {
+            return 0;
+        }
+
+        var enhancementMarkers = new[]
+        {
+            "confidence", "execute", "immediately", "confirm", "specific", "natural",
+            "cultural", "authentic", "systematic", "workflow", "validation", "error",
+            "recovery", "context", "awareness", "timing", "flow", "clarity"
+        };
+
+        return enhancementMarkers.Sum(marker => 
+        {
+            // Use case-insensitive comparison manually since StringSplitOptions doesn't have OrdinalIgnoreCase
+            var lowerPrompt = prompt.ToLowerInvariant();
+            var lowerMarker = marker.ToLowerInvariant();
+            return lowerPrompt.Split(lowerMarker, StringSplitOptions.None).Length - 1;
+        });
+    }
 }
