@@ -502,21 +502,16 @@ public class TrainingConfigurationTUI
         }
     }
 
-    private void AddLog(string message)
-    {
+    private void AddLog(string message) {
         var timestamp = DateTime.Now.ToString("HH:mm:ss");
         var logEntry = $"[{timestamp}] {message}";
-        
+
         _logContent.AppendLine(logEntry);
 
-        Application.Invoke(() =>
-        {
-            if (_logView != null)
-            {
-                _logView.Text = _logContent.ToString();
-                _logView.MoveEnd(); // Auto-scroll to bottom
-            }
-        });
+        if (_logView != null) {
+            _logView.Text = _logContent.ToString();
+            _logView.MoveEnd(); // Auto-scroll to bottom
+        }
     }
 
     private void UpdateStatus(string status)
@@ -562,81 +557,68 @@ public class TrainingConfigurationTUI
 
     private void StartTraining()
     {
-        try
+        AddLog("Starting training session...");
+        UpdateStatus("Loading training configuration...");
+
+        // Demonstrate console redirection is working
+        Console.WriteLine("Testing console output redirection...");
+        Console.Error.WriteLine("Testing error output redirection...");
+            
+        // Load current configuration
+        var config = _configDialog.LoadConfigurationAsync().GetAwaiter().GetResult();
+            
+        if (config == null)
         {
-            AddLog("Starting training session...");
-            UpdateStatus("Loading training configuration...");
-
-            // Demonstrate console redirection is working
-            Console.WriteLine("Testing console output redirection...");
-            Console.Error.WriteLine("Testing error output redirection...");
-            
-            // Load current configuration
-            var config = _configDialog.LoadConfigurationAsync().GetAwaiter().GetResult();
-            
-            if (config == null)
-            {
-                AddLog("No configuration found - creating default");
-                MessageBox.Query("No Configuration", 
-                    "No training configuration found.\n\nPlease configure training parameters first (F2).",
-                    "OK");
-                return;
-            }
-
-            // Validate configuration before training
-            var validation = _configDialog.ValidateCurrentConfigurationAsync().GetAwaiter().GetResult();
-            if (validation == null || !validation.IsValid)
-            {
-                var errors = validation?.Errors.Any() == true 
-                    ? string.Join("\n", validation.Errors)
-                    : "Unknown validation error";
-                    
-                AddLog($"Configuration validation failed: {errors}");
-                MessageBox.ErrorQuery("Invalid Configuration",
-                    $"Training configuration has errors:\n\n{errors}\n\nPlease fix configuration first (F2).",
-                    "OK");
-                return;
-            }
-
-            // Show warnings if any
-            if (validation.Warnings.Any())
-            {
-                var warnings = string.Join("\n", validation.Warnings);
-                var proceed = MessageBox.Query("Configuration Warnings",
-                    $"Configuration has warnings:\n\n{warnings}\n\nProceed with training anyway?",
-                    "Yes", "No") == 0;
-                    
-                if (!proceed)
-                {
-                    AddLog("Training cancelled due to configuration warnings");
-                    return;
-                }
-            }
-
-            // Create training session
-            var trainingSession = _serviceProvider.GetRequiredService<ITrainingSession>();
-            var sessionLogger = _serviceProvider.GetRequiredService<ILogger<TrainingSessionDialog>>();
-            var sessionDialog = new TrainingSessionDialog(trainingSession, sessionLogger);
-            
-            AddLog($"Starting training with {config.ScenarioCount} scenarios, {config.MaxGenerations} generations");
-            UpdateStatus("Training session starting...");
-            
-            // Show training dialog (this will block until training completes)
-            sessionDialog.ShowTrainingDialog(config);
-            
-            AddLog("Training session dialog closed");
-            UpdateStatus("Training session completed");
-        }
-        catch (Exception ex)
-        {
-            var errorMsg = $"Failed to start training: {ex.Message}";
-            AddLog($"ERROR: {errorMsg}");
-            UpdateStatus("Training failed to start");
-            
-            MessageBox.ErrorQuery("Training Error",
-                $"Failed to start training session:\n\n{ex.Message}",
+            AddLog("No configuration found - creating default");
+            MessageBox.Query("No Configuration", 
+                "No training configuration found.\n\nPlease configure training parameters first (F2).",
                 "OK");
+            return;
         }
+
+        // Validate configuration before training
+        var validation = _configDialog.ValidateCurrentConfigurationAsync().GetAwaiter().GetResult();
+        if (validation == null || !validation.IsValid)
+        {
+            var errors = validation?.Errors.Any() == true 
+                ? string.Join("\n", validation.Errors)
+                : "Unknown validation error";
+                    
+            AddLog($"Configuration validation failed: {errors}");
+            MessageBox.ErrorQuery("Invalid Configuration",
+                $"Training configuration has errors:\n\n{errors}\n\nPlease fix configuration first (F2).",
+                "OK");
+            return;
+        }
+
+        // Show warnings if any
+        if (validation.Warnings.Any())
+        {
+            var warnings = string.Join("\n", validation.Warnings);
+            var proceed = MessageBox.Query("Configuration Warnings",
+                $"Configuration has warnings:\n\n{warnings}\n\nProceed with training anyway?",
+                "Yes", "No") == 0;
+                    
+            if (!proceed)
+            {
+                AddLog("Training cancelled due to configuration warnings");
+                return;
+            }
+        }
+
+        // Create training session
+        var trainingSession = _serviceProvider.GetRequiredService<ITrainingSession>();
+        var sessionLogger = _serviceProvider.GetRequiredService<ILogger<TrainingSessionDialog>>();
+        var sessionDialog = new TrainingSessionDialog(trainingSession, sessionLogger);
+            
+        AddLog($"Starting training with {config.ScenarioCount} scenarios, {config.MaxGenerations} generations");
+        UpdateStatus("Training session starting...");
+            
+        // Show training dialog (this will block until training completes)
+        sessionDialog.ShowTrainingDialog(config);
+            
+        AddLog("Training session dialog closed");
+        UpdateStatus("Training session completed");
     }
 
     private void ViewTrainedPrompts()
@@ -718,10 +700,15 @@ public class TrainingConfigurationTUI
                 var changesSummary = "No change details available";
                 if (!string.IsNullOrEmpty(r.Notes) && r.Notes.Contains("Changes: "))
                 {
-                    var changesStart = r.Notes.IndexOf("Changes: ") + 9;
-                    if (changesStart < r.Notes.Length)
+                    var changesIndex = r.Notes.IndexOf("Changes: ");
+                    if (changesIndex >= 0 && changesIndex + 9 < r.Notes.Length)
                     {
-                        changesSummary = r.Notes.Substring(changesStart);
+                        // Safe substring extraction with bounds checking
+                        var startIndex = changesIndex + 9;
+                        if (startIndex < r.Notes.Length)
+                        {
+                            changesSummary = r.Notes.Substring(startIndex);
+                        }
                     }
                 }
                 

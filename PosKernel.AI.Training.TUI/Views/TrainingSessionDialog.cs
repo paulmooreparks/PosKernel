@@ -74,29 +74,19 @@ public class TrainingSessionDialog
 
         Application.Invoke(() =>
         {
-            try
-            {
-                CreateDialog();
-                StartTrainingSession();
+            CreateDialog();
+            StartTrainingSession();
                 
-                // ARCHITECTURAL FIX: Ensure dialog is not null before running
-                if (_dialog != null)
-                {
-                    Application.Run(_dialog);
-                }
-                else
-                {
-                    throw new InvalidOperationException(
-                        "DESIGN DEFICIENCY: Dialog creation failed - dialog is null. " +
-                        "Cannot run training session dialog without properly created dialog window.");
-                }
-            }
-            catch (Exception ex)
+            // ARCHITECTURAL FIX: Ensure dialog is not null before running
+            if (_dialog != null)
             {
-                _logger.LogError(ex, "ShowTrainingDialog: Exception showing training dialog");
-                MessageBox.ErrorQuery("Training Error",
-                    $"Failed to show training dialog:\n\n{ex.Message}",
-                    "OK");
+                Application.Run(_dialog);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "DESIGN DEFICIENCY: Dialog creation failed - dialog is null. " +
+                    "Cannot run training session dialog without properly created dialog window.");
             }
         });
     }
@@ -302,12 +292,46 @@ public class TrainingSessionDialog
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Training session failed: {Error}", ex.Message);
+                
+                // ARCHITECTURAL PRINCIPLE: FAIL FAST - Ensure UI knows about the failure
                 Application.Invoke(() =>
                 {
-                    AddEventLog($"Training failed: {ex.Message}");
-                    UpdateStatus("Training failed");
+                    _sessionCompleted = true;
+                    _closeButton!.Enabled = true;
+                    _pauseResumeButton!.Enabled = false;
+                    _abortButton!.Enabled = false;
+                    
+                    AddEventLog($"CRITICAL FAILURE: {ex.Message}");
+                    UpdateStatus($"Training failed: {ex.Message}");
+                    
+                    // Show error dialog to user
+                    MessageBox.ErrorQuery("Training Failed",
+                        $"Training session failed with a critical error:\n\n{ex.Message}\n\n" +
+                        $"This indicates a system-level problem that prevented training from continuing. " +
+                        $"Check the event log for details.",
+                        "OK");
                 });
-                throw;
+                
+                throw; // Re-throw to ensure Task.Status reflects the failure
+            }
+        });
+
+        // ARCHITECTURAL FIX: Monitor the task for completion/failure
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _trainingTask;
+                // Task completed successfully - OnTrainingComplete event will handle UI updates
+            }
+            catch (OperationCanceledException)
+            {
+                // Task was cancelled - OnTrainingComplete event will handle UI updates
+            }
+            catch (Exception ex)
+            {
+                // Task failed - error handling above will have already updated UI
+                _logger.LogError(ex, "Training task monitor detected failure: {Error}", ex.Message);
             }
         });
 
@@ -478,11 +502,23 @@ public class TrainingSessionDialog
         _eventLog.AppendLine($"[{timestamp}] {message}");
 
         // Keep only last 100 lines to prevent memory issues
-        var lines = _eventLog.ToString().Split('\n');
+        var logText = _eventLog.ToString();
+        var lines = logText.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         if (lines.Length > 100)
         {
             _eventLog.Clear();
-            _eventLog.AppendLine(string.Join('\n', lines.TakeLast(100)));
+            
+            // Safe way to take last 100 lines without potential indexing issues
+            var startIndex = Math.Max(0, lines.Length - 100);
+            var endIndex = lines.Length;
+            
+            for (int i = startIndex; i < endIndex; i++)
+            {
+                if (i < lines.Length) // Extra safety check
+                {
+                    _eventLog.AppendLine(lines[i]);
+                }
+            }
         }
 
         if (_eventLogView != null)

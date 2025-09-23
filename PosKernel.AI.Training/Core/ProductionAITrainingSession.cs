@@ -48,7 +48,7 @@ public class ProductionAITrainingSession : ITrainingSession
     private TimeSpan _pausedDuration;
     private string _sessionId = string.Empty;
 
-    // Cached production services (EXACT same instances as PosKernel.AI would use)
+    // Cached production services (EXACT same instances as PosKernel.AI demo)
     // ARCHITECTURAL FIX: Remove cached orchestrator - each scenario needs fresh instance for transaction isolation
     private RestaurantExtensionClient _restaurantClient = null!;
 
@@ -185,6 +185,18 @@ public class ProductionAITrainingSession : ITrainingSession
 
     public async Task AbortAsync()
     {
+        lock (_stateLock)
+        {
+            if (_state == TrainingSessionState.Completed || _state == TrainingSessionState.Failed || _state == TrainingSessionState.Aborted)
+            {
+                _logger.LogInformation("Training session {SessionId} already in terminal state {State}, ignoring abort request", _sessionId, _state);
+                return;
+            }
+            
+            _logger.LogInformation("Aborting training session {SessionId} from state {State}", _sessionId, _state);
+            _state = TrainingSessionState.Aborted;
+        }
+        
         _cancellationTokenSource?.Cancel();
         await HandleAbortAsync("Production AI training aborted by user request");
     }
@@ -242,7 +254,15 @@ public class ProductionAITrainingSession : ITrainingSession
             // Wait if paused
             while (State == TrainingSessionState.Paused)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 await Task.Delay(100, cancellationToken);
+            }
+            
+            // Check if aborted
+            if (State == TrainingSessionState.Aborted)
+            {
+                _logger.LogInformation("Training session {SessionId} aborted, breaking from generation loop", _sessionId);
+                break;
             }
 
             var generationResult = await RunProductionGenerationAsync(generation, config, cancellationToken);
@@ -423,9 +443,17 @@ public class ProductionAITrainingSession : ITrainingSession
         {
             cancellationToken.ThrowIfCancellationRequested();
             
+            // Check if aborted
+            if (State == TrainingSessionState.Aborted)
+            {
+                _logger.LogInformation("Training session {SessionId} aborted during scenario testing", _sessionId);
+                break;
+            }
+            
             // Wait if paused
             while (State == TrainingSessionState.Paused)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 await Task.Delay(100, cancellationToken);
             }
 
@@ -1279,8 +1307,9 @@ public class ProductionAITrainingSession : ITrainingSession
             _logger.LogInformation("{CompletionStatus} Scenario {ScenarioIndex}/Generation {Generation}: '{Input}' -> {Status} Score: {Score:F3}, Duration: {Duration:F1}s (fresh transaction)", 
                 completionStatus, scenarioIndex, generation, scenario.UserInput, statusEmoji, score, testDuration.TotalSeconds);
             
-            _logger.LogInformation("AI RESPONSE: '{Response}'", 
-                aiResponse.Content?.Length > 200 ? aiResponse.Content.Substring(0, 200) + "..." : aiResponse.Content ?? "[No response]");
+            // ARCHITECTURAL FIX: Safe response preview for logging
+            var responsePreview = SafeTruncateString(aiResponse.Content, 200);
+            _logger.LogInformation("AI RESPONSE: '{Response}'", responsePreview);
 
             if (completionAttempted.Completed)
             {
@@ -1355,6 +1384,7 @@ public class ProductionAITrainingSession : ITrainingSession
     /// <summary>
     /// Attempts to complete the transaction to provide better training data
     /// TRAINING PRINCIPLE: Complete transactions provide better learning signals than incomplete ones
+    /// ARCHITECTURAL FIX: Enhanced completion detection and retry logic
     /// </summary>
     private async Task<TransactionCompletionAttempt> AttemptTransactionCompletion(ChatOrchestrator orchestrator, TrainingScenario scenario, int scenarioIndex)
     {
@@ -1364,40 +1394,58 @@ public class ProductionAITrainingSession : ITrainingSession
         {
             _logger.LogDebug("TRAINING: Attempting to complete transaction for scenario {ScenarioIndex}", scenarioIndex);
 
-            // Attempt to trigger payment by indicating customer is done ordering
-            var completionPrompts = new[]
+            // ARCHITECTURAL FIX: Try multiple completion strategies
+            var completionStrategies = new[]
             {
-                "That's all",
-                "That's it",
-                "I'm done",
-                "Nothing else",
-                "Can pay now"
+                // Strategy 1: Direct completion signals
+                new[] { "That's all", "That's it", "I'm done", "Nothing else", "Can pay now" },
+                // Strategy 2: Payment-focused signals
+                new[] { "How to pay?", "Ready to pay", "Want to pay now", "Payment please" },
+                // Strategy 3: Malay completion signals (based on earlier issue)
+                new[] { "habis", "sudah", "selesai" }
             };
 
-            var completionPrompt = completionPrompts[new Random().Next(completionPrompts.Length)];
-            var completionResponse = await orchestrator.ProcessUserInputAsync(completionPrompt);
-            
-            _logger.LogDebug("TRAINING: Completion prompt '{Prompt}' -> Response: '{Response}'", 
-                completionPrompt, completionResponse?.Content?.Substring(0, Math.Min(100, completionResponse.Content?.Length ?? 0)));
+            ChatMessage? completionResponse = null;
+            string? usedCompletionPrompt = null;
 
-            // If the AI asks for payment method, provide one
-            if (completionResponse?.Content?.Contains("pay", StringComparison.OrdinalIgnoreCase) == true ||
-                completionResponse?.Content?.Contains("method", StringComparison.OrdinalIgnoreCase) == true ||
-                completionResponse?.Content?.Contains("cash", StringComparison.OrdinalIgnoreCase) == true ||
-                completionResponse?.Content?.Contains("card", StringComparison.OrdinalIgnoreCase) == true)
+            // Try each strategy until we get a payment method request
+            foreach (var strategy in completionStrategies)
+            {
+                var completionPrompt = strategy[new Random().Next(strategy.Length)];
+                completionResponse = await orchestrator.ProcessUserInputAsync(completionPrompt);
+                usedCompletionPrompt = completionPrompt;
+                
+                // ARCHITECTURAL FIX: Safe string truncation for logging
+                var responsePreview = SafeTruncateString(completionResponse?.Content, 100);
+                _logger.LogDebug("TRAINING: Completion prompt '{Prompt}' -> Response: '{Response}'", 
+                    completionPrompt, responsePreview);
+
+                // Check if this response indicates payment method request
+                if (IsPaymentMethodRequest(completionResponse?.Content))
+                {
+                    _logger.LogDebug("TRAINING: Payment method request detected with strategy: {Strategy}", string.Join("/", strategy));
+                    break;
+                }
+                
+                // ARCHITECTURAL FIX: Brief delay between attempts
+                await Task.Delay(200);
+            }
+
+            // If we got a payment method request, provide payment method
+            if (IsPaymentMethodRequest(completionResponse?.Content))
             {
                 var paymentMethods = new[] { "Cash", "PayNow", "Card", "NETS" };
                 var selectedPayment = paymentMethods[new Random().Next(paymentMethods.Length)];
                 
                 var paymentResponse = await orchestrator.ProcessUserInputAsync(selectedPayment);
                 
+                // ARCHITECTURAL FIX: Safe string truncation for logging
+                var paymentResponsePreview = SafeTruncateString(paymentResponse?.Content, 100);
                 _logger.LogDebug("TRAINING: Payment method '{Method}' -> Response: '{Response}'", 
-                    selectedPayment, paymentResponse?.Content?.Substring(0, Math.Min(100, paymentResponse.Content?.Length ?? 0)));
+                    selectedPayment, paymentResponsePreview);
 
                 // Check if payment was processed successfully
-                if (paymentResponse?.Content?.Contains("processed", StringComparison.OrdinalIgnoreCase) == true ||
-                    paymentResponse?.Content?.Contains("thank you", StringComparison.OrdinalIgnoreCase) == true ||
-                    paymentResponse?.Content?.Contains("complete", StringComparison.OrdinalIgnoreCase) == true)
+                if (IsPaymentProcessedSuccessfully(paymentResponse?.Content))
                 {
                     attempt.Completed = true;
                     attempt.PaymentMethod = selectedPayment;
@@ -1423,8 +1471,8 @@ public class ProductionAITrainingSession : ITrainingSession
             else
             {
                 attempt.Failed = true;
-                attempt.FailureReason = "AI did not request payment method after completion prompt";
-                _logger.LogWarning("TRAINING: Transaction completion failed - AI did not request payment");
+                attempt.FailureReason = $"AI did not request payment method after multiple completion attempts. Last prompt: '{usedCompletionPrompt}'";
+                _logger.LogWarning("TRAINING: Transaction completion failed - AI did not request payment after trying multiple strategies");
             }
         }
         catch (Exception ex)
@@ -1435,6 +1483,88 @@ public class ProductionAITrainingSession : ITrainingSession
         }
 
         return attempt;
+    }
+
+    /// <summary>
+    /// Determines if the AI response is requesting a payment method
+    /// ARCHITECTURAL PRINCIPLE: Robust payment method detection across cultures
+    /// </summary>
+    private static bool IsPaymentMethodRequest(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return false;
+        }
+
+        var lowerContent = content.ToLowerInvariant();
+        
+        // Check for payment method request indicators
+        var paymentIndicators = new[]
+        {
+            "how you want to pay",
+            "payment method",
+            "how to pay", 
+            "cash or card",
+            "paynow",
+            "payment",
+            "pay by",
+            "pay with"
+        };
+
+        return paymentIndicators.Any(indicator => lowerContent.Contains(indicator));
+    }
+
+    /// <summary>
+    /// Determines if the AI response indicates successful payment processing
+    /// ARCHITECTURAL PRINCIPLE: Robust payment completion detection
+    /// </summary>
+    private static bool IsPaymentProcessedSuccessfully(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return false;
+        }
+
+        var lowerContent = content.ToLowerInvariant();
+        
+        // Check for payment completion indicators
+        var completionIndicators = new[]
+        {
+            "payment processed",
+            "payment received",
+            "thank you",
+            "complete",
+            "paid",
+            "transaction successful",
+            "receipt",
+            "change"
+        };
+
+        return completionIndicators.Any(indicator => lowerContent.Contains(indicator));
+    }
+
+    /// <summary>
+    /// Safely truncates a string to the specified length without throwing exceptions
+    /// ARCHITECTURAL PRINCIPLE: Fail-safe string operations for logging
+    /// </summary>
+    private static string SafeTruncateString(string? input, int maxLength)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return "[Empty response]";
+        }
+
+        if (maxLength <= 0)
+        {
+            return "[Length error]";
+        }
+
+        if (input.Length <= maxLength)
+        {
+            return input;
+        }
+
+        return input.Substring(0, maxLength) + "...";
     }
 
     private double ScoreProductionAIResponse(ChatMessage aiResponse, TrainingScenario scenario, TransactionCompletionAttempt completionAttempt)

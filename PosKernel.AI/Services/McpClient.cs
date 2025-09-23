@@ -152,13 +152,21 @@ User request: {prompt}";
                     var toolCallText = trimmed.Substring("TOOL_CALL:".Length).Trim();
                     var spaceIndex = toolCallText.IndexOf(' ');
                     
+                    string toolName;
+                    string jsonArgs;
+                    
                     if (spaceIndex == -1) 
                     {
-                        continue;
+                        // Handle case where there's only a tool name, no arguments
+                        toolName = toolCallText;
+                        jsonArgs = "{}";
+                        _logger.LogDebug("Tool call without arguments: {ToolName}", toolName);
                     }
-
-                    var toolName = toolCallText.Substring(0, spaceIndex).Trim();
-                    var jsonArgs = toolCallText.Substring(spaceIndex + 1).Trim();
+                    else
+                    {
+                        toolName = toolCallText.Substring(0, spaceIndex).Trim();
+                        jsonArgs = toolCallText.Substring(spaceIndex + 1).Trim();
+                    }
 
                     // Validate tool exists
                     if (!availableTools.Any(t => t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
@@ -171,12 +179,26 @@ User request: {prompt}";
                     Dictionary<string, JsonElement> arguments;
                     try
                     {
-                        arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonArgs) ?? new();
+                        // ARCHITECTURAL FIX: Handle common invalid JSON patterns from AI responses
+                        if (string.IsNullOrWhiteSpace(jsonArgs) || jsonArgs == "()" || jsonArgs == "(empty)" || jsonArgs == "none")
+                        {
+                            arguments = new Dictionary<string, JsonElement>();
+                            _logger.LogDebug("Tool call {ToolName} has no arguments (empty/null/parentheses)", toolName);
+                        }
+                        else
+                        {
+                            arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonArgs) ?? new();
+                        }
                     }
                     catch (JsonException ex)
                     {
-                        _logger.LogWarning(ex, "Failed to parse tool arguments: {JsonArgs}", jsonArgs);
-                        continue;
+                        // ARCHITECTURAL PRINCIPLE: FAIL FAST - Don't continue with corrupted tool calls
+                        _logger.LogError(ex, "CRITICAL: Tool argument parsing failed - AI returned invalid JSON: {JsonArgs}", jsonArgs);
+                        throw new InvalidOperationException(
+                            $"DESIGN DEFICIENCY: AI tool calling failed due to invalid JSON in tool arguments. " +
+                            $"Tool: {toolName}, Invalid JSON: '{jsonArgs}', Error: {ex.Message}. " +
+                            $"This indicates a problem with AI prompt engineering or model configuration. " +
+                            $"Fix the AI model configuration or prompt to generate valid JSON tool arguments.");
                     }
 
                     toolCalls.Add(new McpToolCall
@@ -190,7 +212,13 @@ User request: {prompt}";
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to parse tool call from line: {Line}", trimmed);
+                    // ARCHITECTURAL PRINCIPLE: FAIL FAST - Don't continue with corrupted tool parsing
+                    _logger.LogError(ex, "CRITICAL: Tool call parsing failed unexpectedly for line: {Line}", trimmed);
+                    throw new InvalidOperationException(
+                        $"DESIGN DEFICIENCY: AI tool call parsing failed unexpectedly. " +
+                        $"Line: '{trimmed}', Error: {ex.GetType().Name}: {ex.Message}. " +
+                        $"This indicates a fundamental problem with AI response parsing. " +
+                        $"Check AI model configuration and prompt engineering.");
                 }
             }
 

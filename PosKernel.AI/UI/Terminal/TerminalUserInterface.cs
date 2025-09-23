@@ -136,7 +136,8 @@ namespace PosKernel.AI.UI.Terminal {
                                     terminalUI?.UpdatePromptDisplay();
                                     // _inputField.SetFocus();
                                 });
-                            } else {
+                            }
+                            else {
                                 terminalUI?.LogDisplay?.AddLog($"DEBUG: No payment completion detected - Previous: {previousReceiptStatus}, New: {newReceiptStatus}");
                             }
                         }

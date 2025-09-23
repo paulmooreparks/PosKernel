@@ -15,6 +15,7 @@
 //
 
 using PosKernel.Configuration;
+using PosKernel.AI.Core;
 
 namespace PosKernel.AI.Services
 {
@@ -238,7 +239,7 @@ Be friendly and responsive to customer needs.");
                     Console.WriteLine($"PROMPT_LOADING: SUCCESS Loaded provider-specific prompt from {providerModelPath}");
                     Console.WriteLine($"PROMPT_LOADING: Content length: {content.Length} characters");
                     Console.WriteLine($"PROMPT_LOADING: File timestamp: {File.GetLastWriteTime(providerModelPath)}");
-                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {content.Substring(0, Math.Min(200, content.Length))}");
+                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {content.SafeTruncateString(200)}");
                     
                     return content;
                 }
@@ -265,7 +266,7 @@ Be friendly and responsive to customer needs.");
                     Console.WriteLine($"PROMPT_LOADING: SUCCESS Loaded base fallback prompt from {basePath}");
                     Console.WriteLine($"PROMPT_LOADING: Content length: {content.Length} characters");
                     Console.WriteLine($"PROMPT_LOADING: File timestamp: {File.GetLastWriteTime(basePath)}");
-                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {content.Substring(0, Math.Min(200, content.Length))}");
+                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {content.SafeTruncateString(200)}");
                     Console.WriteLine($"PROMPT_LOADING: Using base fallback for {provider}/{model}/{personalityFolder}/{promptType}");
                     
                     return content;
