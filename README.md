@@ -35,7 +35,7 @@ Users may currently interact with the AI cashier via a terminal GUI application,
 
 ```mermaid
 graph TB
-    subgraph AL ["AI Demo Application Layer"]
+    subgraph AL ["AI Application Layer"]
         direction LR
         A["Terminal.Gui Interface<br/>Store Selection Dialog"]
         A --- B["Cultural AI Personalities<br/>5 Store Types Supported"]
