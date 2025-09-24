@@ -709,7 +709,7 @@ public class TerminalUserInterface : IUserInterface
 
         // Calculate layout dimensions
         var inputHeight = 3;
-        var chatHeightPercent = 20; // Fixed width for chat area to match screenshot
+        var chatHeightPercent = 30; // Fixed width for chat area to match screenshot
         var chatWidthPercent = 60; // Fixed width for chat area to match screenshot
         var promptHeightPercent = 20; // Height when expanded, 1 when collapsed
 
