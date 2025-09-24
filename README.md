@@ -205,8 +205,8 @@ The following sequence diagram shows a complete transaction for ordering "Kopi C
 sequenceDiagram
     participant U as User
     participant D as AI Interface
-    participant MCP as MCP Client
     participant AI as OpenAI/Ollama
+    participant MCP as MCP Client
     participant R as Retail Extension Service
     participant DB as SQLite Database
     participant K as Rust POS Kernel
@@ -214,50 +214,39 @@ sequenceDiagram
     Note over U,K: Singapore Kopitiam Transaction: "Kopi C satu"
     
     U->>D: Types "kopi c satu"
-    D->>MCP: Process natural language input
-    MCP->>AI: Chat completion request with tools
-    AI->>MCP: Intent: Add 1x Kopi C to order
-    MCP->>D: Structured tool call response
-    
-    D->>R: SearchProducts("Kopi C")
+    D->>AI: Chat completion request with tools
+    AI->>MCP: Tool call: search_products("Kopi C")
+    MCP->>R: SearchProducts("Kopi C")
     R->>DB: SELECT * FROM products WHERE name LIKE 'Kopi C'
     DB->>R: Product: {sku: "KOPI002", name: "Kopi C", price: 140}
-    R->>D: RestaurantCompatibleProductInfo
+    R->>MCP: RestaurantCompatibleProductInfo
+    MCP->>AI: Tool execution result
+    AI->>D: "Can lah! I've added Kopi C for you. S$1.40. Anything else?"
     
-    D->>MCP: Generate response with product data
-    MCP->>AI: Tool execution confirmation request
-    AI->>MCP: Tool acknowledgment with cultural response
-    MCP->>D: "Can lah! I've added Kopi C for you. S$1.40. Anything else?"
-    
-    D->>K: POST /sessions/{id}/transactions/{id}/lines
-    K->>D: Line item added, total: S$1.40
+    D->>R: Add item to transaction
+    R->>K: POST /sessions/{id}/transactions/{id}/lines
+    K->>R: Line item added, total: S$1.40
+    R->>D: Transaction updated
     
     D->>U: Display response with updated receipt
     
     U->>D: "That's all, how much?"
-    D->>MCP: Process payment intent
-    MCP->>AI: Chat completion for payment processing
-    AI->>MCP: Intent: Complete transaction and request payment method
-    MCP->>D: Payment processing tool call
-    
-    D->>MCP: Generate payment method request
-    MCP->>AI: Payment options based on store config
-    AI->>MCP: Culturally appropriate payment prompt
-    MCP->>D: "Total is S$1.40. Cash or PayNow?"
+    D->>AI: Chat completion for payment processing
+    AI->>MCP: Tool call: request_payment()
+    MCP->>R: Request available payment methods
+    R->>MCP: Payment methods based on store config
+    MCP->>AI: Payment method options
+    AI->>D: "Total is S$1.40. Cash or PayNow?"
     
     U->>D: "Cash"
-    D->>MCP: Process payment method selection
-    MCP->>AI: Payment method validation
-    AI->>MCP: Cash payment accepted
-    MCP->>D: Payment confirmation tool call
-    
-    D->>K: POST /sessions/{id}/transactions/{id}/payment
-    K->>D: Payment processed, transaction complete
-    
-    D->>MCP: Generate completion message
-    MCP->>AI: Transaction completion acknowledgment
-    AI->>MCP: Cultural completion response
-    MCP->>D: "Terima kasih! Your kopi C is ready. S$1.40 received."
+    D->>AI: Payment method selection
+    AI->>MCP: Tool call: process_payment("cash", 140)
+    MCP->>R: Process payment request
+    R->>K: POST /sessions/{id}/transactions/{id}/payment
+    K->>R: Payment processed, transaction complete
+    R->>MCP: Payment confirmation
+    MCP->>AI: Payment confirmation result
+    AI->>D: "Terima kasih! Your kopi C is ready. S$1.40 received."
     D->>U: Display final message with receipt
     
     Note over U,K: Transaction Complete: 1x Kopi C (S$1.40) paid with cash
