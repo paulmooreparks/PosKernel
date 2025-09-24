@@ -45,14 +45,18 @@ namespace PosKernel.AI.Services
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             
+            // ARCHITECTURAL PRINCIPLE: Look for database in user-space (~/.poskernel) not solution directory
+            var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var userSpacePath = Path.Combine(userHome, ".poskernel", "extensions", "retail", "CoffeeShop", "catalog", "retail_catalog.db");
+            
             // Try multiple possible database paths
             var possiblePaths = new[]
             {
-                // From PosKernel.AI directory
+                // User-space location (correct architectural location)
+                userSpacePath,
+                // Legacy solution directory locations (for backward compatibility)
                 Path.Combine("..", "data", "catalog", "restaurant_catalog.db"),
-                // From solution root
                 Path.Combine("data", "catalog", "restaurant_catalog.db"),
-                // Absolute path to current location
                 @"C:\Users\paul\source\repos\PosKernel\data\catalog\restaurant_catalog.db"
             };
             
@@ -62,15 +66,23 @@ namespace PosKernel.AI.Services
                 if (File.Exists(path))
                 {
                     _databasePath = path;
+                    _logger.LogInformation("Found restaurant database at: {DatabasePath}", path);
                     break;
+                }
+                else
+                {
+                    _logger.LogDebug("Database not found at: {DatabasePath}", path);
                 }
             }
             
-            // If that doesn't exist, try the current directory structure
+            // ARCHITECTURAL PRINCIPLE: Fail fast if database not found - no silent fallbacks
             if (string.IsNullOrEmpty(_databasePath))
             {
-                _databasePath = Path.Combine("data", "catalog", "restaurant_catalog.db");
-                throw new FileNotFoundException($"Restaurant database not found. Checked paths: {string.Join(", ", possiblePaths)}");
+                throw new FileNotFoundException(
+                    $"DESIGN DEFICIENCY: Restaurant catalog database not found. " +
+                    $"Expected location: {userSpacePath}. " +
+                    $"Checked paths: {string.Join(", ", possiblePaths)}. " +
+                    $"Ensure RetailExtensionService has been started to create the database.");
             }
             
             // Initialize database connection

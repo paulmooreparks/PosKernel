@@ -50,7 +50,7 @@ namespace PosKernel.Extensions.Restaurant.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _modificationService = modificationService ?? throw new ArgumentNullException(nameof(modificationService));
             _localizationService = localizationService ?? throw new ArgumentNullException(nameof(localizationService));
-            _databasePath = databasePath ?? Path.Combine("data", "catalog", "kopitiam_catalog.db");
+            _databasePath = databasePath ?? Path.Combine("data", "catalog", "restaurant_catalog.db");
         }
 
         /// <summary>
@@ -474,42 +474,33 @@ namespace PosKernel.Extensions.Restaurant.Services
 
             if (!dbExists || await IsEmptyDatabaseAsync(connection, cancellationToken))
             {
-                _logger.LogInformation("Initializing kopitiam catalog database: {DatabasePath}", _databasePath);
+                _logger.LogInformation("Initializing coffee shop catalog database: {DatabasePath}", _databasePath);
 
-                // Execute modifications schema first
-                var modSchemaPath = Path.Combine("data", "catalog", "modifications_schema.sql");
-                if (File.Exists(modSchemaPath))
+                // Execute coffee shop schema first
+                var schemaPath = Path.Combine("data", "catalog", "coffee_shop_schema.sql");
+                if (File.Exists(schemaPath))
                 {
-                    var schema = await File.ReadAllTextAsync(modSchemaPath, cancellationToken);
+                    var schema = await File.ReadAllTextAsync(schemaPath, cancellationToken);
                     await ExecuteSqlAsync(connection, schema, cancellationToken);
-                    _logger.LogInformation("Modifications schema created successfully");
+                    _logger.LogInformation("Coffee shop schema created successfully");
                 }
 
-                // Execute localization migration
-                var migrationPath = Path.Combine("data", "catalog", "localization_migration.sql");
-                if (File.Exists(migrationPath))
-                {
-                    var migration = await File.ReadAllTextAsync(migrationPath, cancellationToken);
-                    await ExecuteSqlAsync(connection, migration, cancellationToken);
-                    _logger.LogInformation("Localization migration completed");
-                }
-
-                // Load kopitiam catalog data
-                var dataPath = Path.Combine("data", "catalog", "kopitiam_catalog_data.sql");
+                // Load coffee shop catalog data
+                var dataPath = Path.Combine("data", "catalog", "coffee_shop_data.sql");
                 if (File.Exists(dataPath))
                 {
                     var data = await File.ReadAllTextAsync(dataPath, cancellationToken);
                     await ExecuteSqlAsync(connection, data, cancellationToken);
-                    _logger.LogInformation("Kopitiam catalog data loaded successfully");
+                    _logger.LogInformation("Coffee shop catalog data loaded successfully");
                 }
 
-                // Load modifications data
-                var modDataPath = Path.Combine("data", "catalog", "kopitiam_modifications_data.sql");
+                // Load coffee shop modifications data
+                var modDataPath = Path.Combine("data", "catalog", "coffee_shop_modifications.sql");
                 if (File.Exists(modDataPath))
                 {
                     var data = await File.ReadAllTextAsync(modDataPath, cancellationToken);
                     await ExecuteSqlAsync(connection, data, cancellationToken);
-                    _logger.LogInformation("Kopitiam modifications data loaded successfully");
+                    _logger.LogInformation("Coffee shop modifications data loaded successfully");
                 }
             }
             else

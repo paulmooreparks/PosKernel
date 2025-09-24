@@ -22,7 +22,8 @@ using Microsoft.Extensions.Configuration;
 namespace PosKernel.Extensions.Restaurant 
 {
     /// <summary>
-    /// Main entry point for the restaurant domain extension service.
+    /// Main entry point for the retail domain extension service.
+    /// ARCHITECTURAL PRINCIPLE: Generic retail extension that serves any retail store type.
     /// This runs as a hosted service that provides product catalog operations
     /// via named pipe IPC for any client (AI demo, kernel service, etc.).
     /// </summary>
@@ -32,8 +33,8 @@ namespace PosKernel.Extensions.Restaurant
         {
             try 
             {
-                Console.WriteLine("🏪 POS Kernel Restaurant Extension v0.5.0");
-                Console.WriteLine("Domain service with named pipe IPC");
+                Console.WriteLine("🏪 POS Kernel Retail Extension v0.5.0");
+                Console.WriteLine("Generic retail domain service with named pipe IPC");
 
                 // Build host with proper DI and logging
                 var host = Host.CreateDefaultBuilder(args)
@@ -68,40 +69,21 @@ namespace PosKernel.Extensions.Restaurant
                     })
                     .ConfigureServices((context, services) =>
                     {
-                        // Register RestaurantExtensionService with configuration
-                        services.AddSingleton<RestaurantExtensionService>(serviceProvider =>
+                        // Register RetailExtensionService with configuration
+                        services.AddSingleton<RetailExtensionService>(serviceProvider =>
                         {
-                            var logger = serviceProvider.GetRequiredService<ILogger<RestaurantExtensionService>>();
+                            var logger = serviceProvider.GetRequiredService<ILogger<RetailExtensionService>>();
                             var configuration = serviceProvider.GetRequiredService<IConfiguration>();
                             
-                            // Get database path from configuration - try different approaches
-                            var databasePath = configuration["Restaurant:DatabasePath"];
-                            if (string.IsNullOrEmpty(databasePath))
-                            {
-                                databasePath = configuration.GetValue<string>("Restaurant:DatabasePath");
-                            }
+                            // ARCHITECTURAL PRINCIPLE: Store type comes from configuration, not hardcoded
+                            var storeType = configuration["Retail:StoreType"] ?? "CoffeeShop";
                             
-                            // Debug: Log what we're reading from configuration
-                            Console.WriteLine($"🔧 Configuration DatabasePath: '{databasePath}'");
-                            Console.WriteLine($"🔧 Full configuration dump:");
-                            Console.WriteLine($"   Restaurant:DatabasePath = '{configuration["Restaurant:DatabasePath"]}'");
-                            Console.WriteLine($"   Restaurant:StoreType = '{configuration["Restaurant:StoreType"]}'");
+                            Console.WriteLine($"🔧 Configured store type: {storeType}");
                             
-                            if (string.IsNullOrEmpty(databasePath))
-                            {
-                                Console.WriteLine("⚠️  DatabasePath is null/empty, using default");
-                                Console.WriteLine("📁 Current working directory: " + Directory.GetCurrentDirectory());
-                                Console.WriteLine("📄 Looking for appsettings.json in current directory");
-                            }
-                            else
-                            {
-                                Console.WriteLine($"✅ Using configured database path: {databasePath}");
-                            }
-                            
-                            return new RestaurantExtensionService(logger, databasePath: databasePath);
+                            return new RetailExtensionService(logger, storeType);
                         });
                         
-                        services.AddHostedService<RestaurantExtensionHost>();
+                        services.AddHostedService<RetailExtensionHost>();
                     })
                     .ConfigureLogging(logging =>
                     {
@@ -124,19 +106,19 @@ namespace PosKernel.Extensions.Restaurant
     }
 
     /// <summary>
-    /// Hosted service wrapper for the Restaurant Extension Service.
+    /// Hosted service wrapper for the Retail Extension Service.
     /// </summary>
-    public class RestaurantExtensionHost : BackgroundService
+    public class RetailExtensionHost : BackgroundService
     {
-        private readonly RestaurantExtensionService _service;
-        private readonly ILogger<RestaurantExtensionHost> _logger;
+        private readonly RetailExtensionService _service;
+        private readonly ILogger<RetailExtensionHost> _logger;
 
         /// <summary>
-        /// Initializes a new instance of the RestaurantExtensionHost.
+        /// Initializes a new instance of the RetailExtensionHost.
         /// </summary>
-        /// <param name="service">The restaurant extension service.</param>
+        /// <param name="service">The retail extension service.</param>
         /// <param name="logger">The logger.</param>
-        public RestaurantExtensionHost(RestaurantExtensionService service, ILogger<RestaurantExtensionHost> logger)
+        public RetailExtensionHost(RetailExtensionService service, ILogger<RetailExtensionHost> logger)
         {
             _service = service;
             _logger = logger;
@@ -149,7 +131,7 @@ namespace PosKernel.Extensions.Restaurant
         /// <returns>A task representing the operation.</returns>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Starting Restaurant Extension Service...");
+            _logger.LogInformation("Starting Retail Extension Service...");
             
             try
             {
@@ -164,12 +146,12 @@ namespace PosKernel.Extensions.Restaurant
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in Restaurant Extension Service");
+                _logger.LogError(ex, "Error in Retail Extension Service");
                 throw;
             }
             finally
             {
-                _logger.LogInformation("Stopping Restaurant Extension Service...");
+                _logger.LogInformation("Stopping Retail Extension Service...");
                 await _service.StopAsync(CancellationToken.None);
             }
         }

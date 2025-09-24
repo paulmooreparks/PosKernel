@@ -107,6 +107,9 @@ namespace PosKernel.AI.Core {
                 var timeOfDay = DateTime.Now.Hour < 12 ? "morning" : DateTime.Now.Hour < 17 ? "afternoon" : "evening";
                 var context = new PosKernel.AI.Services.PromptContext { TimeOfDay = timeOfDay, CurrentTime = DateTime.Now.ToString("HH:mm") };
                 
+                // CRITICAL DEBUG: Log exactly what personality is being used
+                _logger.LogInformation($"🔍 ORCHESTRATOR_DEBUG: Initializing with PersonalityType={_personality.Type}, StaffTitle={_personality.StaffTitle}");
+                
                 // ARCHITECTURAL FIX: Handle initialization differently for Real Kernel vs Mock
                 if (_useRealKernel && _kernelToolsProvider != null)
                 {
@@ -141,6 +144,7 @@ namespace PosKernel.AI.Core {
                 else if (_mockToolsProvider != null)
                 {
                     // Mock initialization - just greeting, no context loading needed
+                    _logger.LogInformation($"🔍 MOCK_DEBUG: About to call BuildPrompt with PersonalityType={_personality.Type}");
                     var greetingPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "greeting", context);
                     LastPrompt = greetingPrompt;
                     var emptyToolsList = new List<McpTool>(); // No tools for mock greeting

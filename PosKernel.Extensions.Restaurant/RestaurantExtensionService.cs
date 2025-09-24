@@ -18,41 +18,57 @@ using System.IO.Pipes;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
+using PosKernel.Abstractions.Services;
 
 namespace PosKernel.Extensions.Restaurant
 {
     /// <summary>
-    /// Restaurant Extension Service - provides product catalog operations via named pipe IPC.
-    /// This is the actual service that clients connect to.
+    /// Retail Extension Service - provides product catalog operations for retail stores via named pipe IPC.
+    /// ARCHITECTURAL PRINCIPLE: Generic retail extension that serves any retail store type through configuration.
     /// </summary>
-    public class RestaurantExtensionService : IDisposable
+    public class RetailExtensionService : IDisposable
     {
         private readonly string _pipeName;
+        private readonly string _storeType;
+        private readonly string _userDirectoryPath;
         private readonly string _databasePath;
-        private readonly ILogger<RestaurantExtensionService> _logger;
+        private readonly string _schemaPath;
+        private readonly string _dataPath;
+        private readonly ILogger<RetailExtensionService> _logger;
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         private Task? _serverTask;
         private bool _disposed = false;
 
         /// <summary>
-        /// Initializes a new instance of the RestaurantExtensionService.
+        /// Initializes a new instance of the RetailExtensionService.
+        /// ARCHITECTURAL PRINCIPLE: Store type comes from configuration, not hardcoded assumptions.
         /// </summary>
-        public RestaurantExtensionService(ILogger<RestaurantExtensionService> logger, string pipeName = "poskernel-restaurant-extension", string? databasePath = null)
+        public RetailExtensionService(ILogger<RetailExtensionService> logger, string storeType = "CoffeeShop", string pipeName = "poskernel-restaurant-extension")
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _pipeName = pipeName;
-            _databasePath = databasePath ?? Path.Combine("data", "catalog", "restaurant_catalog.db");
+            _storeType = storeType;
+
+            // ARCHITECTURAL PRINCIPLE: All runtime data goes under ~/.poskernel user directory
+            var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            _userDirectoryPath = Path.Combine(userHome, ".poskernel", "extensions", "retail", _storeType);
+            var catalogPath = Path.Combine(_userDirectoryPath, "catalog");
+
+            _databasePath = Path.Combine(catalogPath, "retail_catalog.db");
+            _schemaPath = Path.Combine(catalogPath, "retail_schema.sql");
+            _dataPath = Path.Combine(catalogPath, "retail_data.sql");
             
-            // Debug: Log the actual database path being used
-            _logger.LogInformation("Restaurant Extension Service configured with database path: {DatabasePath}", _databasePath);
+            _logger.LogInformation("Retail Extension Service configured for store type: {StoreType}", _storeType);
+            _logger.LogInformation("User directory: {UserDirectory}", _userDirectoryPath);
+            _logger.LogInformation("Database path: {DatabasePath}", _databasePath);
         }
 
         /// <summary>
-        /// Starts the restaurant extension service.
+        /// Starts the retail extension service.
         /// </summary>
         public async Task StartAsync(CancellationToken cancellationToken = default)
         {
-            _logger.LogInformation("Restaurant extension service starting on pipe: {PipeName}", _pipeName);
+            _logger.LogInformation("Retail extension service starting for {StoreType} on pipe: {PipeName}", _storeType, _pipeName);
             
             // Initialize database first
             await InitializeDatabaseAsync();
@@ -60,15 +76,15 @@ namespace PosKernel.Extensions.Restaurant
             // Start the named pipe server
             _serverTask = Task.Run(RunServerLoopAsync, cancellationToken);
             
-            _logger.LogInformation("Restaurant extension service started successfully");
+            _logger.LogInformation("Retail extension service started successfully for {StoreType}", _storeType);
         }
 
         /// <summary>
-        /// Stops the restaurant extension service.
+        /// Stops the retail extension service.
         /// </summary>
         public async Task StopAsync(CancellationToken cancellationToken = default)
         {
-            _logger.LogInformation("Restaurant extension service stopping...");
+            _logger.LogInformation("Retail extension service stopping...");
             
             _cancellationTokenSource.Cancel();
             
@@ -77,7 +93,7 @@ namespace PosKernel.Extensions.Restaurant
                 await _serverTask.WaitAsync(cancellationToken);
             }
             
-            _logger.LogInformation("Restaurant extension service stopped");
+            _logger.LogInformation("Retail extension service stopped");
         }
 
         private async Task RunServerLoopAsync()
@@ -98,7 +114,7 @@ namespace PosKernel.Extensions.Restaurant
                         PipeOptions.Asynchronous);
 
                     await server.WaitForConnectionAsync(_cancellationTokenSource.Token);
-                    _logger.LogInformation("Client connected to restaurant extension service");
+                    _logger.LogInformation("Client connected to retail extension service");
 
                     // Handle each client in a separate task to allow concurrent connections
                     var clientTask = Task.Run(async () =>
@@ -125,7 +141,7 @@ namespace PosKernel.Extensions.Restaurant
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error in restaurant extension server loop");
+                    _logger.LogError(ex, "Error in retail extension server loop");
                     // Continue to next iteration
                 }
             }
@@ -196,7 +212,7 @@ namespace PosKernel.Extensions.Restaurant
             }
             finally
             {
-                _logger.LogInformation("Client disconnected from restaurant extension service");
+                _logger.LogInformation("Client disconnected from retail extension service");
             }
         }
 
@@ -253,13 +269,15 @@ namespace PosKernel.Extensions.Restaurant
             using var reader = await command.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
-                var productInfo = new ProductInfo
+                var priceCents = reader.GetInt64(4); // base_price_cents from database
+                
+                var productInfo = new RestaurantCompatibleProductInfo
                 {
                     Sku = reader.GetString(0),
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     CategoryName = reader.GetString(3),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePriceCents = priceCents, // ← Fixed to use the actual price
                     IsActive = reader.GetBoolean(5)
                 };
 
@@ -270,7 +288,7 @@ namespace PosKernel.Extensions.Restaurant
                     Data = new Dictionary<string, object>
                     {
                         ["product_info"] = productInfo,
-                        ["effective_price_cents"] = productInfo.BasePriceCents
+                        ["effective_price_cents"] = priceCents
                     }
                 };
             }
@@ -329,25 +347,27 @@ namespace PosKernel.Extensions.Restaurant
             
             command.Parameters.AddWithValue("@maxResults", maxResults);
 
-            var products = new List<ProductSearchResult>();
+            var products = new List<RetailProductSearchResult>();
             using var reader = await command.ExecuteReaderAsync();
             
             while (await reader.ReadAsync())
             {
-                var productInfo = new ProductInfo
+                var priceCents = reader.GetInt64(4); // base_price_cents from database
+                
+                var productInfo = new RestaurantCompatibleProductInfo
                 {
                     Sku = reader.GetString(0),
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     CategoryName = reader.GetString(3),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePriceCents = priceCents, // ← This is the key fix!
                     IsActive = reader.GetBoolean(5)
                 };
 
-                products.Add(new ProductSearchResult
+                products.Add(new RetailProductSearchResult
                 {
                     ProductInfo = productInfo,
-                    EffectivePriceCents = productInfo.BasePriceCents
+                    EffectivePriceCents = priceCents
                 });
             }
 
@@ -376,33 +396,36 @@ namespace PosKernel.Extensions.Restaurant
                 WHERE p.is_active = 1
                 ORDER BY 
                     CASE c.name
-                        WHEN 'Hot Drinks' THEN 1
-                        WHEN 'Food' THEN 2
-                        WHEN 'Cold Drinks' THEN 3
-                        ELSE 4
+                        WHEN 'Hot Coffees' THEN 1
+                        WHEN 'Hot Drinks' THEN 2
+                        WHEN 'Pastries' THEN 3
+                        WHEN 'Iced Coffees' THEN 4
+                        ELSE 5
                     END,
                     p.name
                 LIMIT 10";
 
-            var products = new List<ProductSearchResult>();
+            var products = new List<RetailProductSearchResult>();
             using var reader = await command.ExecuteReaderAsync();
             
             while (await reader.ReadAsync())
             {
-                var productInfo = new ProductInfo
+                var priceCents = reader.GetInt64(4); // base_price_cents from database
+                
+                var productInfo = new RestaurantCompatibleProductInfo
                 {
                     Sku = reader.GetString(0),
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     CategoryName = reader.GetString(3),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePriceCents = priceCents, // ← Fixed to use the actual price
                     IsActive = reader.GetBoolean(5)
                 };
 
-                products.Add(new ProductSearchResult
+                products.Add(new RetailProductSearchResult
                 {
                     ProductInfo = productInfo,
-                    EffectivePriceCents = productInfo.BasePriceCents
+                    EffectivePriceCents = priceCents
                 });
             }
 
@@ -433,25 +456,27 @@ namespace PosKernel.Extensions.Restaurant
                 ORDER BY p.name";
             command.Parameters.AddWithValue("@category", category);
 
-            var products = new List<ProductSearchResult>();
+            var products = new List<RetailProductSearchResult>();
             using var reader = await command.ExecuteReaderAsync();
             
             while (await reader.ReadAsync())
             {
-                var productInfo = new ProductInfo
+                var priceCents = reader.GetInt64(4); // base_price_cents from database
+                
+                var productInfo = new RestaurantCompatibleProductInfo
                 {
                     Sku = reader.GetString(0),
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     CategoryName = reader.GetString(3),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePriceCents = priceCents, // ← Fixed to use the actual price
                     IsActive = reader.GetBoolean(5)
                 };
 
-                products.Add(new ProductSearchResult
+                products.Add(new RetailProductSearchResult
                 {
                     ProductInfo = productInfo,
-                    EffectivePriceCents = productInfo.BasePriceCents
+                    EffectivePriceCents = priceCents
                 });
             }
 
@@ -542,12 +567,12 @@ namespace PosKernel.Extensions.Restaurant
 
         private async Task InitializeDatabaseAsync()
         {
-            // Ensure database directory exists
-            var dbDirectory = Path.GetDirectoryName(_databasePath);
-            if (!string.IsNullOrEmpty(dbDirectory) && !Directory.Exists(dbDirectory))
+            // ARCHITECTURAL PRINCIPLE: Ensure user directory structure exists
+            var catalogDirectory = Path.GetDirectoryName(_databasePath);
+            if (!string.IsNullOrEmpty(catalogDirectory) && !Directory.Exists(catalogDirectory))
             {
-                Directory.CreateDirectory(dbDirectory);
-                _logger.LogInformation("Created database directory: {Directory}", dbDirectory);
+                Directory.CreateDirectory(catalogDirectory);
+                _logger.LogInformation("Created catalog directory: {Directory}", catalogDirectory);
             }
 
             // Check if database exists and is initialized
@@ -558,36 +583,34 @@ namespace PosKernel.Extensions.Restaurant
 
             if (!dbExists)
             {
-                _logger.LogInformation("Initializing new restaurant catalog database: {DatabasePath}", _databasePath);
+                _logger.LogInformation("Initializing new retail catalog database for {StoreType}: {DatabasePath}", _storeType, _databasePath);
                 
-                // Read and execute schema script
-                var schemaPath = Path.Combine("data", "catalog", "restaurant_catalog_schema.sql");
-                if (File.Exists(schemaPath))
+                // ARCHITECTURAL PRINCIPLE: Schema and data files come from user space, not solution directory
+                if (File.Exists(_schemaPath))
                 {
-                    var schema = await File.ReadAllTextAsync(schemaPath);
+                    var schema = await File.ReadAllTextAsync(_schemaPath);
                     using var command = connection.CreateCommand();
                     command.CommandText = schema;
                     command.ExecuteNonQuery();
-                    _logger.LogInformation("Database schema created successfully");
+                    _logger.LogInformation("Database schema created successfully from: {SchemaPath}", _schemaPath);
                 }
                 else
                 {
-                    _logger.LogWarning("Schema file not found: {SchemaPath}", schemaPath);
+                    _logger.LogWarning("Schema file not found: {SchemaPath} - creating default retail schema", _schemaPath);
+                    await CreateDefaultSchemaAsync(connection);
                 }
 
-                // Read and execute data script
-                var dataPath = Path.Combine("data", "catalog", "restaurant_catalog_data.sql");
-                if (File.Exists(dataPath))
+                if (File.Exists(_dataPath))
                 {
-                    var data = await File.ReadAllTextAsync(dataPath);
+                    var data = await File.ReadAllTextAsync(_dataPath);
                     using var command = connection.CreateCommand();
                     command.CommandText = data;
                     command.ExecuteNonQuery();
-                    _logger.LogInformation("Sample data loaded successfully");
+                    _logger.LogInformation("Sample data loaded successfully from: {DataPath}", _dataPath);
                 }
                 else
                 {
-                    _logger.LogWarning("Data file not found: {DataPath}", dataPath);
+                    _logger.LogWarning("Data file not found: {DataPath} - database will be empty", _dataPath);
                 }
             }
             else
@@ -602,8 +625,56 @@ namespace PosKernel.Extensions.Restaurant
                     throw new InvalidOperationException($"Database integrity check failed: {result}");
                 }
                 
-                _logger.LogInformation("Database integrity verified: {DatabasePath}", _databasePath);
+                _logger.LogInformation("Database integrity verified for {StoreType}: {DatabasePath}", _storeType, _databasePath);
             }
+        }
+
+        /// <summary>
+        /// Creates default retail schema when no schema file is provided.
+        /// ARCHITECTURAL PRINCIPLE: Generic retail schema that works for any store type.
+        /// </summary>
+        private async Task CreateDefaultSchemaAsync(SqliteConnection connection)
+        {
+            var defaultSchema = @"
+                -- Default Retail Extension Schema
+                -- Generic schema that works for any retail store type
+
+                CREATE TABLE IF NOT EXISTS categories (
+                    id VARCHAR(50) PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    description TEXT,
+                    display_order INT DEFAULT 0,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS products (
+                    sku VARCHAR(50) PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    description TEXT,
+                    category_id VARCHAR(50) NOT NULL,
+                    base_price_cents INTEGER NOT NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (category_id) REFERENCES categories(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+                CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
+                CREATE INDEX IF NOT EXISTS idx_products_search ON products(name, description);
+            ";
+
+            using var command = connection.CreateCommand();
+            command.CommandText = defaultSchema;
+            command.ExecuteNonQuery();
+            
+            _logger.LogInformation("Default retail schema created for {StoreType}", _storeType);
+
+            // Also write the schema to the expected file location for future reference
+            await File.WriteAllTextAsync(_schemaPath, defaultSchema);
+            _logger.LogInformation("Default schema written to: {SchemaPath}", _schemaPath);
         }
 
         /// <summary>
@@ -668,14 +739,52 @@ namespace PosKernel.Extensions.Restaurant
     }
 
     /// <summary>
-    /// Result from product search operations.
+    /// Restaurant-compatible product information that matches the client expectations.
+    /// ARCHITECTURAL PRINCIPLE: Ensure compatibility between client and service data structures.
     /// </summary>
-    public class ProductSearchResult
+    public class RestaurantCompatibleProductInfo
+    {
+        /// <summary>
+        /// Gets or sets the product SKU.
+        /// </summary>
+        public string Sku { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the product name.
+        /// </summary>
+        public string Name { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the product description.
+        /// </summary>
+        public string Description { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the category name.
+        /// </summary>
+        public string CategoryName { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the base price in cents.
+        /// ARCHITECTURAL PRINCIPLE: Store price as integers to avoid floating-point precision issues.
+        /// </summary>
+        public long BasePriceCents { get; set; }
+        
+        /// <summary>
+        /// Gets or sets whether the product is active.
+        /// </summary>
+        public bool IsActive { get; set; } = true;
+    }
+
+    /// <summary>
+    /// Result from product search operations with compatible structure.
+    /// </summary>
+    public class RetailProductSearchResult
     {
         /// <summary>
         /// Gets or sets the product information.
         /// </summary>
-        public ProductInfo ProductInfo { get; set; } = new();
+        public RestaurantCompatibleProductInfo ProductInfo { get; set; } = new();
         
         /// <summary>
         /// Gets or sets the effective price in cents.

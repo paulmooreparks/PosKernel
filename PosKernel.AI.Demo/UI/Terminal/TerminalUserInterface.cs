@@ -35,14 +35,39 @@ public class TerminalChatDisplay : IChatDisplay
 {
     private readonly TextView _chatView;
     private readonly TextField _inputField;
+    private readonly ScrollBar? _chatScrollBar;
     private readonly StringBuilder _chatContent;
     private TaskCompletionSource<string?>? _inputWaiter;
 
-    public TerminalChatDisplay(TextView chatView, TextField inputField)
+    public TerminalChatDisplay(TextView chatView, TextField inputField, ScrollBar? chatScrollBar = null)
     {
         _chatView = chatView ?? throw new ArgumentNullException(nameof(chatView));
         _inputField = inputField ?? throw new ArgumentNullException(nameof(inputField));
+        _chatScrollBar = chatScrollBar;
         _chatContent = new StringBuilder();
+
+        // Add scrollbar to chatView if provided
+        if (_chatScrollBar != null)
+        {
+            Application.Invoke(() => {
+                _chatView.Add(_chatScrollBar);
+            });
+
+            // ScrollBar position changes should update TextView scroll position
+            _chatScrollBar.PositionChanged += (sender, args) =>
+            {
+                _chatView.TopRow = args.CurrentValue;
+            };
+
+            // Handle when TextView scrolls (keyboard/mouse) - sync ScrollBar position
+            _chatView.KeyDown += (sender, e) => {
+                Application.Invoke(() => {
+                    if (_chatScrollBar.Visible) {
+                        _chatScrollBar.Position = _chatView.TopRow;
+                    }
+                });
+            };
+        }
     }
 
     public TextField InputField => _inputField;
@@ -70,7 +95,34 @@ public class TerminalChatDisplay : IChatDisplay
         Application.Invoke(() =>
         {
             _chatView.Text = _chatContent.ToString();
+
+            // Update ScrollBar based on content size if available
+            if (_chatScrollBar != null)
+            {
+                var lines = _chatContent.ToString().Split('\n').Length;
+                var viewHeight = _chatView.Frame.Height;
+
+                if (lines > viewHeight && viewHeight > 0)
+                {
+                    _chatScrollBar.ScrollableContentSize = lines;
+                    _chatScrollBar.Position = _chatView.TopRow;
+                    _chatScrollBar.Visible = true;
+                }
+                else
+                {
+                    _chatScrollBar.Visible = false;
+                }
+            }
+
             _chatView.MoveEnd(); // Auto-scroll to bottom for new messages
+
+            // Update scrollbar position to match auto-scroll
+            if (_chatScrollBar != null && _chatScrollBar.Visible)
+            {
+                var lines = _chatContent.ToString().Split('\n').Length;
+                var viewHeight = _chatView.Frame.Height;
+                _chatScrollBar.Position = Math.Max(0, lines - viewHeight);
+            }
         });
     }
 
@@ -261,10 +313,22 @@ public class TerminalReceiptDisplay : IReceiptDisplay
         _currencyFormatter = currencyFormatter;
         _storeConfig = storeConfig;
 
-        // Connect ScrollBar to TextView
+        // Add scrollbar to receiptView using working pattern
+        _receiptView.Add(_receiptScrollBar);
+
+        // ScrollBar position changes should update TextView scroll position
         _receiptScrollBar.PositionChanged += (sender, args) =>
         {
             _receiptView.TopRow = args.CurrentValue;
+        };
+
+        // Handle when TextView scrolls (keyboard/mouse) - sync ScrollBar position
+        _receiptView.KeyDown += (sender, e) => {
+            Application.Invoke(() => {
+                if (_receiptScrollBar.Visible) {
+                    _receiptScrollBar.Position = _receiptView.TopRow;
+                }
+            });
         };
     }
 
@@ -326,13 +390,14 @@ public class TerminalReceiptDisplay : IReceiptDisplay
         {
             _receiptView.Text = content.ToString();
 
-            // Update ScrollBar based on content size
+            // Update ScrollBar based on content size - no VisibleContentSize
             var lines = content.ToString().Split('\n').Length;
             var viewHeight = _receiptView.Frame.Height;
 
-            if (lines > viewHeight)
+            if (lines > viewHeight && viewHeight > 0)
             {
                 _receiptScrollBar.ScrollableContentSize = lines;
+                _receiptScrollBar.Position = _receiptView.TopRow;
                 _receiptScrollBar.Visible = true;
             }
             else
@@ -740,6 +805,76 @@ public class TerminalUserInterface : IUserInterface
             Disabled = new TGAttribute(Color.Gray, Color.Blue)
         };
 
+        // Create scrollbars for the display classes
+        var chatScrollBar = new ScrollBar
+        {
+            X = Pos.AnchorEnd(),
+            Y = 0,
+            Height = Dim.Fill(),
+            AutoShow = true
+        };
+
+        chatScrollBar.ColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.White, Color.Blue),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+        };
+
+        var logScrollBar = new ScrollBar
+        {
+            X = Pos.AnchorEnd(),
+            Y = 0,
+            Height = Dim.Fill(),
+            AutoShow = true
+        };
+
+        logScrollBar.ColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.White, Color.Blue),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+        };
+
+        var promptScrollBar = new ScrollBar
+        {
+            X = Pos.AnchorEnd(),
+            Y = 0,
+            Height = Dim.Fill(),
+            AutoShow = false
+        };
+
+        promptScrollBar.ColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.White, Color.Blue),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+        };
+
+        // Create receipt scrollbar 
+        var receiptScrollBar = new ScrollBar
+        {
+            X = Pos.AnchorEnd(),
+            Y = 0,
+            Height = Dim.Fill(),
+            AutoShow = false
+        };
+
+        receiptScrollBar.ColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.White, Color.Blue),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+        };
+
         Label? receiptLabel = new Label()
         {
             Text = "Receipt:",
@@ -768,24 +903,6 @@ public class TerminalUserInterface : IUserInterface
         };
 
         receiptView.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
-        };
-
-        // Add scroll bar for receipt view
-        var receiptScrollBar = new ScrollBar
-        {
-            X = Pos.AnchorEnd(),
-            Y = Pos.Bottom(receiptLabel),
-            Height = Dim.Percent(chatHeightPercent),
-            AutoShow = false
-        };
-
-        receiptScrollBar.ColorScheme = new ColorScheme()
         {
             Normal = new TGAttribute(Color.White, Color.Blue),
             Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
@@ -916,41 +1033,6 @@ public class TerminalUserInterface : IUserInterface
             Disabled = new TGAttribute(Color.Gray, Color.Cyan)
         };
 
-        // Create scrollbars for the display classes (they will add them to their TextViews)
-        var logScrollBar = new ScrollBar
-        {
-            X = Pos.AnchorEnd(),
-            Y = 0,
-            Height = Dim.Fill(),
-            AutoShow = false
-        };
-
-        logScrollBar.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
-        };
-
-        var promptScrollBar = new ScrollBar
-        {
-            X = Pos.AnchorEnd(),
-            Y = 0,
-            Height = Dim.Fill(),
-            AutoShow = false
-        };
-
-        promptScrollBar.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
-        };
-
         // Handle Enter key for input
         inputField.KeyDown += (_, e) =>
         {
@@ -1003,14 +1085,12 @@ public class TerminalUserInterface : IUserInterface
                 // When collapsed, keep container at minimum height but ensure label stays visible
                 logContainer.Height = 0; // Hide the container completely
                 logView.Visible = false;
-                // logScrollBar.Visible = false; // Now handled by TerminalLogDisplay
             }
             else
             {
                 // When expanded, show container and contents
                 logContainer.Height = Dim.Fill(1); // Fill remaining space
                 logView.Visible = true;
-                // logScrollBar.Visible = true; // Now handled by TerminalLogDisplay
             }
 
             // Update prompt container size based on debug pane state
@@ -1035,14 +1115,12 @@ public class TerminalUserInterface : IUserInterface
                     // When collapsed, hide container but keep label visible
                     logContainer.Height = 0;
                     logView.Visible = false;
-                    // logScrollBar.Visible = false; // Now handled by TerminalLogDisplay
                 }
                 else
                 {
                     // When expanded, show container and contents
                     logContainer.Height = Dim.Fill(1);
                     logView.Visible = true;
-                    // logScrollBar.Visible = true; // Now handled by TerminalLogDisplay
                 }
 
                 // Update prompt container size based on debug pane state
@@ -1067,16 +1145,16 @@ public class TerminalUserInterface : IUserInterface
             }
         };
 
-        _top.Add(inputField, inputPrompt, menuBar, chatLabel, chatView, receiptLabel, receiptView, receiptScrollBar,
+        _top.Add(inputField, inputPrompt, menuBar, chatLabel, chatView, receiptLabel, receiptView,
                 promptLabel, promptContainer, logLabel, logContainer, statusBar);
 
         // Initialize display components
-        _terminalChat = new TerminalChatDisplay(chatView, inputField);
+        _terminalChat = new TerminalChatDisplay(chatView, inputField, chatScrollBar);
         Chat = _terminalChat;
         _logDisplay = new TerminalLogDisplay(logView, logScrollBar);
         _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer);
 
-        // Receipt display needs currency service - this will be updated later when store config is available
+        // Receipt display needs currency service - this will be updated later when store config is available  
         Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay!);
         Log = _logDisplay; // Expose log display through ILogDisplay interface
 

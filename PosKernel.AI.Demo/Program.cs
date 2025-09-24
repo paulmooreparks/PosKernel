@@ -145,6 +145,10 @@ class Program
 
             // Create personality for store
             var personality = CreatePersonalityForStore(storeSelectionResult);
+            
+            // CRITICAL DEBUG: Verify personality creation
+            ui.Log.AddLog($"🔍 PERSONALITY_DEBUG: Created personality Type={personality.Type}, StaffTitle={personality.StaffTitle} for StoreType={storeSelectionResult.StoreType}");
+            ui.Log.AddLog($"🔍 STORE_DEBUG: Selected store PersonalityType={storeSelectionResult.PersonalityType}, StoreType={storeSelectionResult.StoreType}");
 
             // Add tools providers
             if (useRealKernel)

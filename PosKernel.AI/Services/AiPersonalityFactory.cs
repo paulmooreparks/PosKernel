@@ -445,6 +445,11 @@ Be friendly and responsive to customer needs.");
         public static string LoadPrompt(PersonalityType personalityType, string promptType)
         {
             var personalityFolder = personalityType.ToString();
+            
+            // CRITICAL DEBUG: Log exactly what personality is being requested
+            Console.WriteLine($"🔍 PROMPT_DEBUG: LoadPrompt called with PersonalityType={personalityType}, PromptType={promptType}");
+            Console.WriteLine($"🔍 PROMPT_DEBUG: PersonalityFolder={personalityFolder}");
+            
             return LoadPromptTemplate(personalityFolder, promptType);
         }
 
