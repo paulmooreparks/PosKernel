@@ -221,13 +221,18 @@ sequenceDiagram
     DB->>R: Product: {sku: "KOPI002", name: "Kopi C", price: 140}
     R->>MCP: RestaurantCompatibleProductInfo
     MCP->>AI: Tool execution result
+    
+    AI->>MCP: Tool call: add_item_to_transaction("Kopi C", 1, confidence: 0.8)
+    Note over MCP: MCP searches products again internally
+    MCP->>R: SearchProducts("Kopi C")  
+    R->>DB: Product lookup for transaction
+    DB->>R: Product details  
+    R->>MCP: Product info for kernel call
+    MCP->>K: POST /sessions/{id}/transactions/{id}/lines
+    K->>MCP: Line item added, total: S$1.40
+    MCP->>AI: "ADDED: Kopi C x1 @ S$1.40"
+    
     AI->>D: "Can lah! I've added Kopi C for you. S$1.40. Anything else?"
-    
-    D->>R: Add item to transaction
-    R->>K: POST /sessions/{id}/transactions/{id}/lines
-    K->>R: Line item added, total: S$1.40
-    R->>D: Transaction updated
-    
     D->>U: Display response with updated receipt
     
     U->>D: "That's all, how much?"
@@ -240,11 +245,9 @@ sequenceDiagram
     
     U->>D: "Cash"
     D->>AI: Payment method selection
-    AI->>MCP: Tool call: process_payment("cash", 140)
-    MCP->>R: Process payment request
-    R->>K: POST /sessions/{id}/transactions/{id}/payment
-    K->>R: Payment processed, transaction complete
-    R->>MCP: Payment confirmation
+    AI->>MCP: Tool call: process_payment("cash", 1.4)
+    MCP->>K: POST /sessions/{id}/transactions/{id}/payment
+    K->>MCP: Payment processed, transaction complete
     MCP->>AI: Payment confirmation result
     AI->>D: "Terima kasih! Your kopi C is ready. S$1.40 received."
     D->>U: Display final message with receipt
