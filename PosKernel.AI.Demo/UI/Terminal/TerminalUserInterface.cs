@@ -359,7 +359,8 @@ public class TerminalReceiptDisplay : IReceiptDisplay
 
         _logDisplay.AddLog($"DEBUG: Receipt has {receipt.Items.Count} items");
         _logDisplay.AddLog($"DEBUG: Receipt status: {receipt.Status}");
-        _logDisplay.AddLog($"DEBUG: Receipt total: {receipt.Total:F2}");
+        // ARCHITECTURAL FIX: Use proper currency formatting instead of hardcoded .F2
+        _logDisplay.AddLog($"DEBUG: Receipt total: {FormatCurrency(receipt.Total)}");
 
         content.AppendLine($"{receipt.Store.Name}");
         content.AppendLine($"Transaction #{receipt.TransactionId}");
@@ -698,7 +699,8 @@ public class TerminalUserInterface : IUserInterface
 
         _top = new Toplevel();
 
-        _top.ColorScheme = new ColorScheme()
+        // Define classic TurboVision-inspired color schemes
+        var mainColorScheme = new ColorScheme()
         {
             Normal = new TGAttribute(Color.Black, Color.White),
             Focus = new TGAttribute(Color.Black, Color.White),
@@ -706,6 +708,53 @@ public class TerminalUserInterface : IUserInterface
             HotFocus = new TGAttribute(Color.BrightRed, Color.White),
             Disabled = new TGAttribute(Color.DarkGray, Color.White)
         };
+
+        var menuColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.Black, Color.White),
+            Focus = new TGAttribute(Color.White, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightRed, Color.White),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.Gray, Color.White)
+        };
+
+        var inputColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.Yellow, Color.Blue),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.DarkGray, Color.Blue)
+        };
+
+        var contentColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.White, Color.Blue),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+        };
+
+        var promptColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.BrightGreen, Color.Blue),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+        };
+
+        var statusBarColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.Black, Color.White),
+            Focus = new TGAttribute(Color.Black, Color.White),
+            HotNormal = new TGAttribute(Color.BrightRed, Color.White),
+            HotFocus = new TGAttribute(Color.BrightRed, Color.White),
+            Disabled = new TGAttribute(Color.DarkGray, Color.White)
+        };
+
+        _top.ColorScheme = mainColorScheme;
 
         // Calculate layout dimensions
         var inputHeight = 3;
@@ -717,36 +766,21 @@ public class TerminalUserInterface : IUserInterface
         var quitItem = new MenuItem("_Quit", "", () => Application.RequestStop());
         var fileMenu = new MenuBarItem("_File", new MenuItem[] { quitItem });
         var helpItem = new MenuItem("Show _Help", "", ShowHelp);
-        var helpMenu = new MenuBarItem("_Help", new MenuItem[] { helpItem });
+        var testWindowItem = new MenuItem("Test _Draggable Window", "", () => ShowTestDraggableWindow());
+        var helpMenu = new MenuBarItem("_Help", new MenuItem[] { helpItem, testWindowItem });
 
         var menuBar = new MenuBar();
         menuBar.Menus = new MenuBarItem[] { fileMenu, helpMenu };
         menuBar.Y = 0; // Put menu at top
-
-        menuBar.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.Black, Color.Cyan),
-            Focus = new TGAttribute(Color.White, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightRed, Color.Cyan),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Cyan)
-        };
+        menuBar.ColorScheme = menuColorScheme;
 
         var inputPrompt = new Label()
         {
             Text = "Type your order here and press Enter to send:",
             X = 0,
             Y = Pos.Bottom(menuBar),
-            Width = Dim.Fill()
-        };
-
-        inputPrompt.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.Black, Color.White),
-            Focus = new TGAttribute(Color.Black, Color.White),
-            HotNormal = new TGAttribute(Color.BrightRed, Color.White),
-            HotFocus = new TGAttribute(Color.BrightRed, Color.White),
-            Disabled = new TGAttribute(Color.DarkGray, Color.White)
+            Width = Dim.Fill(),
+            ColorScheme = mainColorScheme
         };
 
         var inputField = new TextField()
@@ -757,15 +791,7 @@ public class TerminalUserInterface : IUserInterface
             Height = inputHeight,
             CanFocus = true,
             CursorVisibility = CursorVisibility.Default, // Ensure cursor is visible
-        };
-
-        inputField.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Black),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Black),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Black),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Black),
-            Disabled = new TGAttribute(Color.Gray, Color.Black)
+            ColorScheme = inputColorScheme
         };
 
         Label? chatLabel = new Label()
@@ -773,16 +799,8 @@ public class TerminalUserInterface : IUserInterface
             Text = "Chat content:",
             X = 0,
             Y = Pos.Bottom(inputField),
-            Width = Dim.Fill()
-        };
-
-        chatLabel.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.Black, Color.White),
-            Focus = new TGAttribute(Color.Black, Color.White),
-            HotNormal = new TGAttribute(Color.BrightRed, Color.White),
-            HotFocus = new TGAttribute(Color.BrightRed, Color.White),
-            Disabled = new TGAttribute(Color.DarkGray, Color.White)
+            Width = Dim.Fill(),
+            ColorScheme = mainColorScheme
         };
 
         var chatView = new TextView()
@@ -794,15 +812,7 @@ public class TerminalUserInterface : IUserInterface
             ReadOnly = true,
             WordWrap = true,
             CanFocus = true,
-        };
-
-        chatView.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            ColorScheme = contentColorScheme
         };
 
         // Create scrollbars for the display classes
@@ -811,16 +821,8 @@ public class TerminalUserInterface : IUserInterface
             X = Pos.AnchorEnd(),
             Y = 0,
             Height = Dim.Fill(),
-            AutoShow = true
-        };
-
-        chatScrollBar.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            AutoShow = true,
+            ColorScheme = contentColorScheme
         };
 
         var logScrollBar = new ScrollBar
@@ -828,16 +830,8 @@ public class TerminalUserInterface : IUserInterface
             X = Pos.AnchorEnd(),
             Y = 0,
             Height = Dim.Fill(),
-            AutoShow = true
-        };
-
-        logScrollBar.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            AutoShow = true,
+            ColorScheme = contentColorScheme
         };
 
         var promptScrollBar = new ScrollBar
@@ -845,16 +839,8 @@ public class TerminalUserInterface : IUserInterface
             X = Pos.AnchorEnd(),
             Y = 0,
             Height = Dim.Fill(),
-            AutoShow = false
-        };
-
-        promptScrollBar.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            AutoShow = false,
+            ColorScheme = contentColorScheme
         };
 
         // Create receipt scrollbar 
@@ -863,16 +849,8 @@ public class TerminalUserInterface : IUserInterface
             X = Pos.AnchorEnd(),
             Y = 0,
             Height = Dim.Fill(),
-            AutoShow = false
-        };
-
-        receiptScrollBar.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            AutoShow = false,
+            ColorScheme = contentColorScheme
         };
 
         Label? receiptLabel = new Label()
@@ -880,16 +858,8 @@ public class TerminalUserInterface : IUserInterface
             Text = "Receipt:",
             X = Pos.Right(chatView) + 1,
             Y = Pos.Bottom(inputField),
-            Width = Dim.Fill()
-        };
-
-        receiptLabel.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.Black, Color.White),
-            Focus = new TGAttribute(Color.Black, Color.White),
-            HotNormal = new TGAttribute(Color.BrightRed, Color.White),
-            HotFocus = new TGAttribute(Color.BrightRed, Color.White),
-            Disabled = new TGAttribute(Color.DarkGray, Color.White)
+            Width = Dim.Fill(),
+            ColorScheme = mainColorScheme
         };
 
         var receiptView = new TextView()
@@ -900,15 +870,7 @@ public class TerminalUserInterface : IUserInterface
             Height = Dim.Percent(chatHeightPercent),
             ReadOnly = true,
             CanFocus = true,
-        };
-
-        receiptView.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            ColorScheme = contentColorScheme
         };
 
         // Create prompt context view between input and log
@@ -918,16 +880,8 @@ public class TerminalUserInterface : IUserInterface
             X = 0,
             Y = Pos.Bottom(chatView),
             Width = Dim.Fill(),
-            CanFocus = true
-        };
-
-        promptLabel.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.Black, Color.White),
-            Focus = new TGAttribute(Color.BrightRed, Color.White),
-            HotNormal = new TGAttribute(Color.BrightRed, Color.White),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.White),
-            Disabled = new TGAttribute(Color.DarkGray, Color.White)
+            CanFocus = true,
+            ColorScheme = mainColorScheme
         };
 
         // Container view for prompt display (starts expanded)
@@ -950,15 +904,7 @@ public class TerminalUserInterface : IUserInterface
             WordWrap = true, // Disable word wrap for horizontal scrolling
             CanFocus = true, // Enable focus for scrolling
             Visible = true, // Show initially instead of hidden
-        };
-
-        promptView.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.White, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            ColorScheme = promptColorScheme
         };
 
         promptContainer.Add(promptView);
@@ -971,16 +917,8 @@ public class TerminalUserInterface : IUserInterface
             X = 0,
             Y = Pos.Bottom(promptContainer),
             Width = Dim.Fill(),
-            CanFocus = true
-        };
-
-        logLabel.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.Black, Color.White),
-            Focus = new TGAttribute(Color.BrightRed, Color.White),
-            HotNormal = new TGAttribute(Color.BrightRed, Color.White),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.White),
-            Disabled = new TGAttribute(Color.DarkGray, Color.White)
+            CanFocus = true,
+            ColorScheme = mainColorScheme
         };
 
         var logContainer = new View()
@@ -1001,15 +939,7 @@ public class TerminalUserInterface : IUserInterface
             ReadOnly = true,
             WordWrap = true, // Disable word wrap for horizontal scrolling
             CanFocus = true, // Enable focus for scrolling
-        };
-
-        logView.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.White, Color.Blue),
-            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
-            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
-            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+            ColorScheme = contentColorScheme
         };
 
         logContainer.Add(logView);
@@ -1022,15 +952,7 @@ public class TerminalUserInterface : IUserInterface
             X = 0,
             Y = Pos.AnchorEnd(),
             Width = Dim.Fill(),
-        };
-
-        statusBar.ColorScheme = new ColorScheme()
-        {
-            Normal = new TGAttribute(Color.Black, Color.Cyan),
-            Focus = new TGAttribute(Color.Black, Color.Cyan),
-            HotNormal = new TGAttribute(Color.Black, Color.Cyan),
-            HotFocus = new TGAttribute(Color.Black, Color.Cyan),
-            Disabled = new TGAttribute(Color.Gray, Color.Cyan)
+            ColorScheme = statusBarColorScheme
         };
 
         // Handle Enter key for input
@@ -1097,6 +1019,7 @@ public class TerminalUserInterface : IUserInterface
             var newPromptHeight = logCollapsed ? Dim.Fill(3) : Dim.Percent(promptHeightPercent);
             _promptDisplay?.UpdateContainerSize(newPromptHeight!);
 
+            // chatView.Height = Dim.Fill(3) - Dim.Height(promptContainer) - Dim.Height(logContainer);
             logContainer.SetNeedsLayout();
             e.Handled = true;
         };
@@ -1127,6 +1050,7 @@ public class TerminalUserInterface : IUserInterface
                 var newPromptHeight = logCollapsed ? Dim.Fill(3) : Dim.Percent(promptHeightPercent);
                 _promptDisplay?.UpdateContainerSize(newPromptHeight!);
 
+                // chatView.Height = Dim.Fill(3); // - Dim.Height(promptContainer) - Dim.Height(logContainer);
                 logContainer.SetNeedsLayout();
                 e.Handled = true;
             }
@@ -1152,7 +1076,7 @@ public class TerminalUserInterface : IUserInterface
         _terminalChat = new TerminalChatDisplay(chatView, inputField, chatScrollBar);
         Chat = _terminalChat;
         _logDisplay = new TerminalLogDisplay(logView, logScrollBar);
-        _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer);
+        _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer, chatView, receiptView, logContainer);
 
         // Receipt display needs currency service - this will be updated later when store config is available  
         Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay!);
@@ -1222,6 +1146,93 @@ public class TerminalUserInterface : IUserInterface
             "• Real Kernel: Uses Rust POS service + SQLite\n" +
             "• Mock: Development mode with simulated data",
             "OK");
+    }
+
+    private void ShowTestDraggableWindow()
+    {
+        // Create a draggable modeless window using Terminal.Gui v2 Arrangement property
+        var testWindow = new Window()
+        {
+            Title = "Test Draggable Window",
+            X = 15,
+            Y = 8,
+            Width = 50,
+            Height = 15, // Increased height to ensure button is visible
+            Modal = false, // Make it modeless
+            Arrangement = ViewArrangement.Movable | ViewArrangement.Resizable // Enable dragging and resizing
+        };
+
+        // Set border in Terminal.Gui v2 way
+        testWindow.BorderStyle = LineStyle.Single;
+
+#if false
+        testWindow.ColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.White, Color.Green),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Green),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Green),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Green),
+            Disabled = new TGAttribute(Color.Gray, Color.Green)
+        };
+#endif
+
+        // Add content to the window
+        var textView = new TextView()
+        {
+            X = 1,
+            Y = 1,
+            Width = Dim.Fill(2),
+            Height = Dim.Fill(4), // Leave more space for close button
+            ReadOnly = false,
+            WordWrap = true,
+            Text = "This is a draggable modeless window!\n\n" +
+                  "Try dragging it by clicking and dragging the title bar.\n\n" +
+                  "You can also resize it by dragging the edges.\n\n" +
+                  "The main interface should remain responsive while this window is open.\n\n" +
+                  "Type in this area or use the main interface."
+        };
+
+        textView.ColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.White, Color.Blue),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Blue),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Blue),
+            Disabled = new TGAttribute(Color.Gray, Color.Blue)
+        };
+
+        var closeButton = new Button()
+        {
+            Text = "Close",
+            X = Pos.Center(),
+            Y = Pos.AnchorEnd(2), // Move button up from bottom edge
+            Width = 10,
+            Height = 2
+        };
+
+#if false
+        closeButton.ColorScheme = new ColorScheme()
+        {
+            Normal = new TGAttribute(Color.White, Color.Red),
+            Focus = new TGAttribute(Color.BrightYellow, Color.Red),
+            HotNormal = new TGAttribute(Color.BrightCyan, Color.Red),
+            HotFocus = new TGAttribute(Color.BrightYellow, Color.Red),
+            Disabled = new TGAttribute(Color.Gray, Color.Red)
+        };
+#endif
+
+        // Use MouseClick event for Terminal.Gui button activation
+        closeButton.MouseClick += (sender, e) =>
+        {
+            _top?.Remove(testWindow);
+            testWindow?.Dispose();
+        };
+
+        testWindow.Add(textView, closeButton);
+
+        // Add to main window (modeless) - no need for custom drag handling
+        _top?.Add(testWindow);
+        testWindow.SetFocus();
     }
 }
 
@@ -1324,16 +1335,22 @@ public class TerminalPromptDisplay
     private readonly ScrollBar _promptScrollBar;
     private readonly Label _promptLabel;
     private readonly StringBuilder _promptContent;
+    private readonly TextView _chatView;
+    private readonly TextView _receiptView;
+    private readonly View _logContainer;
     private bool _isCollapsed = false;
     private readonly View _containerView;
 
-    public TerminalPromptDisplay(TextView promptView, ScrollBar promptScrollBar, Label promptLabel, View containerView)
+    public TerminalPromptDisplay(TextView promptView, ScrollBar promptScrollBar, Label promptLabel, View containerView, TextView chatView, TextView receiptView, View logContainer)
     {
         _promptView = promptView ?? throw new ArgumentNullException(nameof(promptView));
         _promptScrollBar = promptScrollBar ?? throw new ArgumentNullException(nameof(promptScrollBar));
         _promptLabel = promptLabel ?? throw new ArgumentNullException(nameof(promptLabel));
         _containerView = containerView ?? throw new ArgumentNullException(nameof(containerView));
         _promptContent = new StringBuilder();
+        _chatView = chatView ?? throw new ArgumentNullException(nameof(chatView));
+        _receiptView = receiptView ?? throw new ArgumentNullException(nameof(receiptView));
+        _logContainer = logContainer ?? throw new ArgumentNullException(nameof(logContainer));
 
         // Add scrollbar to textView (not to container) for proper mouse event handling
         // Do this AFTER the promptView has been added to its container
@@ -1472,6 +1489,7 @@ public class TerminalPromptDisplay
                 _promptView.MoveEnd();
             }
 
+            // _chatView.Height = _receiptView.Height = Dim.Fill(1 + _logContainer.Height + 1 + _containerView.Height + 1); // Adjust chat height accordingly
             _containerView.SetNeedsLayout();
         });
     }

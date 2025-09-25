@@ -414,6 +414,33 @@ namespace PosKernel.AI.Core {
             var prompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering", promptContext);
             _thoughtLogger.LogThought($"BASE_PROMPT_LENGTH: {prompt?.Length ?? 0} chars");
             
+            // CRITICAL FIX: Add conversation history for clarification context detection
+            if (_conversationHistory.Count > 0)
+            {
+                prompt += "\n\n## RECENT CONVERSATION HISTORY (for context detection):\n";
+                
+                // Include last 3 messages for context (avoid token bloat)
+                var recentMessages = _conversationHistory.TakeLast(3).ToList();
+                
+                foreach (var msg in recentMessages)
+                {
+                    var speaker = msg.IsSystem ? "System" : msg.Sender;
+                    prompt += $"**{speaker}**: {msg.Content}\n";
+                }
+                
+                // Check if last message was disambiguation from AI
+                var lastAiMessage = _conversationHistory.LastOrDefault(m => m.Sender == _personality.StaffTitle);
+                if (lastAiMessage != null && 
+                    (lastAiMessage.Content.Contains("Which one you want?") || 
+                     lastAiMessage.Content.Contains("options for") ||
+                     lastAiMessage.Content.Contains("found") && lastAiMessage.Content.Contains("S$")))
+                {
+                    prompt += "\n**CONTEXT ANALYSIS**: You just showed disambiguation options to customer. ";
+                    prompt += $"Customer's current response ('{promptContext.UserInput}') is likely a clarification response. ";
+                    prompt += "Use context='clarification_response' and higher confidence (0.8+) for tool calls.\n";
+                }
+            }
+            
             // Add context-specific tool guidance
             if (contextHint == "payment")
             {

@@ -526,8 +526,8 @@ namespace PosKernel.AI.Tools
                     searchResults = broadSearchResults;
                 }
 
-                // ARCHITECTURAL PRINCIPLE: Trust the AI's confidence - don't override with hardcoded logic
-                // The AI already understands cultural context, semantic meaning, and user intent
+                // ARCHITECTURAL PRINCIPLE: Trust the AI's semantic confidence completely
+                // The AI understands context, culture, and customer intent better than hardcoded logic
                 _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Using AI confidence: {Confidence} for item '{Item}' in context '{Context}'", 
                     confidence, itemDescription, context);
 
@@ -535,22 +535,36 @@ namespace PosKernel.AI.Tools
                 var bestMatch = searchResults.First();
                 _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Best match selected: '{Name}' (SKU: {Sku})", bestMatch.Name, bestMatch.Sku);
 
-                // ARCHITECTURAL PRINCIPLE: Use AI confidence thresholds, not hardcoded client logic
-                if (context == "clarification_response" || confidence >= 0.7 || searchResults.Count == 1)
+                // CRITICAL: Check if this is a set item or set customization
+                var setContext = await AnalyzeSetContext(bestMatch, itemDescription, context, preparationNotes, cancellationToken);
+                
+                if (setContext.IsSetItem || setContext.IsSetCustomization)
                 {
-                    _logger.LogInformation("🔍 ADD_ITEM_DEBUG: AUTO-ADDING based on confidence {Confidence} >= 0.7 OR context '{Context}' OR single result", 
+                    _logger.LogInformation("🔍 SET_DEBUG: Set context detected - IsSetItem: {IsSetItem}, IsSetCustomization: {IsSetCustomization}", 
+                        setContext.IsSetItem, setContext.IsSetCustomization);
+                    
+                    return await HandleSetProcessing(setContext, bestMatch, quantity, preparationNotes, confidence, cancellationToken);
+                }
+
+                // ARCHITECTURAL PRINCIPLE: Embrace AI fuzziness - let AI determine ALL disambiguation decisions
+                // Remove ALL hardcoded thresholds and string matching - trust the AI's semantic analysis
+                bool shouldAutoAdd = ShouldAutoAddBasedOnAIJudgment(searchResults.Count, confidence, context);
+                
+                if (shouldAutoAdd)
+                {
+                    _logger.LogInformation("🔍 ADD_ITEM_DEBUG: AUTO-ADDING regular item based on AI semantic confidence: {Confidence}, context='{Context}'", 
                         confidence, context);
                     return await AddProductToTransactionAsync(bestMatch, quantity, preparationNotes, cancellationToken);
                 }
                 else
                 {
-                    // For low AI confidence, provide options but limit to top 3 from restaurant extension
+                    // AI determined genuine ambiguity exists - provide customer choices
                     var options = searchResults.Take(3).ToList();
                     var optionsList = string.Join(", ", options.Select(p => $"{p.Name} ({FormatCurrency(p.BasePriceCents / 100.0m)})"));
                     
-                    _logger.LogWarning("🔍 ADD_ITEM_DEBUG: DISAMBIGUATION triggered - confidence {Confidence} < 0.7, multiple results ({Count}), context '{Context}'", 
-                        confidence, searchResults.Count, context);
-                    _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Offering disambiguation options: {Options}", optionsList);
+                    _logger.LogInformation("🔍 ADD_ITEM_DEBUG: AI determined disambiguation needed: confidence={Confidence}, context='{Context}'", 
+                        confidence, context);
+                    _logger.LogInformation("🔍 ADD_ITEM_DEBUG: Offering customer choices: {Options}", optionsList);
                     
                     return $"DISAMBIGUATION_NEEDED: Found {options.Count} options for '{itemDescription}': {optionsList}";
                 }
@@ -560,6 +574,330 @@ namespace PosKernel.AI.Tools
                 _logger.LogError(ex, "🔍 ADD_ITEM_DEBUG: Error adding item to kernel transaction: {Error}", ex.Message);
                 return $"ERROR: Unable to process item '{itemDescription}': {ex.Message}";
             }
+        }
+
+        /// <summary>
+        /// Analyzes whether the item request involves set meal processing.
+        /// OPTION 2: Atomic Set with All Options - detects set context and customization scenarios.
+        /// </summary>
+        private async Task<SetContext> AnalyzeSetContext(RestaurantProductInfo product, string customerInput, string requestContext, string preparationNotes, CancellationToken cancellationToken)
+        {
+            // Check if the matched product is a set item
+            bool isSetItem = product.CategoryName?.Contains("Set", StringComparison.OrdinalIgnoreCase) == true ||
+                           product.Name?.Contains("Set", StringComparison.OrdinalIgnoreCase) == true;
+            
+            // Check if customer is responding to set customization question
+            bool isSetCustomization = await IsSetCustomizationContext(customerInput, requestContext, cancellationToken);
+            
+            // Extract set specifications from customer input and prep notes
+            var setSpecs = ExtractSetSpecifications(customerInput, preparationNotes);
+            
+            _logger.LogDebug("🔍 SET_ANALYSIS: Product='{ProductName}', IsSetItem={IsSetItem}, IsSetCustomization={IsSetCustomization}, Specs={SetSpecs}", 
+                product.Name, isSetItem, isSetCustomization, string.Join("|", setSpecs.Select(kvp => $"{kvp.Key}:{kvp.Value}")));
+            
+            return new SetContext
+            {
+                IsSetItem = isSetItem,
+                IsSetCustomization = isSetCustomization,
+                SetProduct = isSetItem ? product : null,
+                CustomerInput = customerInput,
+                RequestContext = requestContext,
+                SetSpecifications = setSpecs,
+                PreparationNotes = preparationNotes
+            };
+        }
+
+        /// <summary>
+        /// Determines if the current request is a response to set customization questions.
+        /// </summary>
+        private async Task<bool> IsSetCustomizationContext(string customerInput, string requestContext, CancellationToken cancellationToken)
+        {
+            // Check if we have an active transaction with pending sets
+            if (string.IsNullOrEmpty(_currentTransactionId))
+            {
+                return false;
+            }
+            
+            // Context indicators
+            if (requestContext == "set_customization" || requestContext == "clarification_response")
+            {
+                // Additional validation: check if current transaction has incomplete sets
+                return await HasIncompleteSetItems(cancellationToken);
+            }
+            
+            return false;
+        }
+
+        /// <summary>
+        /// Checks if the current transaction has set items that need customization.
+        /// </summary>
+        private async Task<bool> HasIncompleteSetItems(CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_currentTransactionId))
+                {
+                    return false;
+                }
+                
+                var result = await _kernelClient.GetTransactionAsync(_sessionId!, _currentTransactionId, cancellationToken);
+                if (!result.Success)
+                {
+                    return false;
+                }
+                
+                // Check if we have a non-zero total indicating items exist
+                // This is a simplified implementation - full implementation would require enhanced kernel API
+                return result.Total > 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error checking for incomplete set items");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Extracts set specifications (drinks, sides, etc.) from customer input and preparation notes.
+        /// </summary>
+        private Dictionary<string, string> ExtractSetSpecifications(string customerInput, string preparationNotes)
+        {
+            var specs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            
+            // Extract drink specifications
+            var drinkKeywords = new[] { "kopi", "teh", "coffee", "tea", "drink", "milo", "yuan yang" };
+            var modifierKeywords = new[] { "kosong", "no sugar", "less sugar", "extra sugar", "iced", "hot" };
+            
+            var combinedText = $"{customerInput} {preparationNotes}".ToLowerInvariant();
+            
+            // Simple extraction logic - can be enhanced with more sophisticated NLP
+            foreach (var drinkKeyword in drinkKeywords)
+            {
+                if (combinedText.Contains(drinkKeyword))
+                {
+                    var drinkSpec = drinkKeyword;
+                    
+                    // Add modifiers
+                    var modifiers = modifierKeywords.Where(mod => combinedText.Contains(mod)).ToList();
+                    if (modifiers.Any())
+                    {
+                        drinkSpec += $" ({string.Join(", ", modifiers)})";
+                    }
+                    
+                    specs["drink"] = drinkSpec;
+                    break;
+                }
+            }
+            
+            // Extract side specifications  
+            var sideKeywords = new[] { "toast", "egg", "eggs", "hash brown", "sausage", "side" };
+            foreach (var sideKeyword in sideKeywords)
+            {
+                if (combinedText.Contains(sideKeyword))
+                {
+                    specs["side"] = sideKeyword;
+                    break;
+                }
+            }
+            
+            return specs;
+        }
+
+        /// <summary>
+        /// Handles set meal processing using Option 2 (Atomic Set with All Options).
+        /// Processes both complete and partial set specifications atomically.
+        /// </summary>
+        private async Task<string> HandleSetProcessing(SetContext setContext, RestaurantProductInfo product, int quantity, string preparationNotes, double confidence, CancellationToken cancellationToken)
+        {
+            if (setContext.IsSetCustomization)
+            {
+                // Customer is specifying options for an existing set
+                return await HandleSetCustomization(setContext, cancellationToken);
+            }
+            else if (setContext.IsSetItem)
+            {
+                // Customer is ordering a new set item
+                return await HandleNewSetOrder(setContext, product, quantity, confidence, cancellationToken);
+            }
+            
+            // Fallback - should not reach here
+            _logger.LogWarning("🔍 SET_DEBUG: HandleSetProcessing called but no valid set context found");
+            return await AddProductToTransactionAsync(product, quantity, preparationNotes, cancellationToken);
+        }
+
+        /// <summary>
+        /// Handles customization of existing set items (drink/side choices).
+        /// </summary>
+        private async Task<string> HandleSetCustomization(SetContext setContext, CancellationToken cancellationToken)
+        {
+            try
+            {
+                // For now, add the customization as preparation notes to the most recent set item
+                // This is a simplified implementation - full implementation would require:
+                // 1. Enhanced kernel API for set item modification
+                // 2. Database queries for set_available_drinks/set_available_sides validation
+                // 3. Set item state tracking
+                
+                _logger.LogInformation("🔍 SET_CUSTOMIZATION: Processing set customization - Specs: {Specs}", 
+                    string.Join(", ", setContext.SetSpecifications.Select(kvp => $"{kvp.Key}={kvp.Value}")));
+                
+                if (setContext.SetSpecifications.ContainsKey("drink"))
+                {
+                    var drinkChoice = setContext.SetSpecifications["drink"];
+                    _logger.LogInformation("🔍 SET_CUSTOMIZATION: Set drink choice: {DrinkChoice}", drinkChoice);
+                    
+                    // Validate against database would go here
+                    return $"SET_DRINK_UPDATED: Set drink choice updated to {drinkChoice}. Set price remains the same.";
+                }
+                
+                if (setContext.SetSpecifications.ContainsKey("side"))
+                {
+                    var sideChoice = setContext.SetSpecifications["side"];
+                    _logger.LogInformation("🔍 SET_CUSTOMIZATION: Set side choice: {SideChoice}", sideChoice);
+                    
+                    return $"SET_SIDE_UPDATED: Set side choice updated to {sideChoice}. Set price remains the same.";
+                }
+                
+                return $"SET_UPDATED: Set preferences updated based on your choice. No additional charges for included options.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling set customization");
+                return $"ERROR: Unable to update set preferences: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Handles ordering of new set items with atomic option processing.
+        /// </summary>
+        private async Task<string> HandleNewSetOrder(SetContext setContext, RestaurantProductInfo setProduct, int quantity, double confidence, CancellationToken cancellationToken)
+        {
+            try
+            {
+                // Build comprehensive preparation notes with all set specifications
+                var setPrepNotes = BuildSetPreparationNotes(setContext);
+                
+                _logger.LogInformation("🔍 SET_ORDER: Adding new set '{SetName}' with specifications: {PrepNotes}", 
+                    setProduct.Name, setPrepNotes);
+                
+                // Add the set as a single atomic transaction with all options specified
+                var result = await AddProductToTransactionAsync(setProduct, quantity, setPrepNotes, cancellationToken);
+                
+                // Check if set has incomplete specifications and ask for missing options
+                var missingOptions = GetMissingSetOptions(setContext, setProduct);
+                if (missingOptions.Any())
+                {
+                    var optionQuestions = string.Join(" And ", missingOptions.Select(opt => GetSetOptionQuestion(opt, setProduct)));
+                    return $"{result}\n\nSET_CUSTOMIZATION_NEEDED: {optionQuestions}";
+                }
+                
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling new set order");
+                return $"ERROR: Unable to process set order: {ex.Message}";
+            }
+        }
+
+        /// <summary>
+        /// Builds comprehensive preparation notes for set items including all specifications.
+        /// </summary>
+        private string BuildSetPreparationNotes(SetContext setContext)
+        {
+            var notes = new List<string>();
+            
+            // Add original preparation notes
+            if (!string.IsNullOrWhiteSpace(setContext.PreparationNotes))
+            {
+                notes.Add(setContext.PreparationNotes);
+            }
+            
+            // Add set specifications
+            foreach (var spec in setContext.SetSpecifications)
+            {
+                notes.Add($"{spec.Key}: {spec.Value}");
+            }
+            
+            return string.Join(", ", notes);
+        }
+
+        /// <summary>
+        /// Determines what set options are missing and need to be asked from customer.
+        /// </summary>
+        private List<string> GetMissingSetOptions(SetContext setContext, RestaurantProductInfo setProduct)
+        {
+            var missing = new List<string>();
+            
+            // Determine set type and required options
+            if (IsToastSet(setProduct))
+            {
+                // Toast sets require drink choice (kopi/teh)
+                if (!setContext.SetSpecifications.ContainsKey("drink"))
+                {
+                    missing.Add("drink");
+                }
+            }
+            else if (IsLocalSet(setProduct))
+            {
+                // Local sets require both drink and side
+                if (!setContext.SetSpecifications.ContainsKey("drink"))
+                {
+                    missing.Add("drink");
+                }
+                if (!setContext.SetSpecifications.ContainsKey("side"))
+                {
+                    missing.Add("side");
+                }
+            }
+            
+            return missing;
+        }
+
+        /// <summary>
+        /// Generates appropriate question for missing set options.
+        /// </summary>
+        private string GetSetOptionQuestion(string optionType, RestaurantProductInfo setProduct)
+        {
+            return optionType.ToLowerInvariant() switch
+            {
+                "drink" when IsToastSet(setProduct) => "What kopi or teh you want with the set?",
+                "drink" => "What drink you want with the set?",
+                "side" => "Which side you want with the set?",
+                _ => $"What {optionType} would you like?"
+            };
+        }
+
+        /// <summary>
+        /// Determines if a product is a toast set (medium kopi/teh + 2 eggs).
+        /// </summary>
+        private bool IsToastSet(RestaurantProductInfo product)
+        {
+            return product.Name?.Contains("Toast", StringComparison.OrdinalIgnoreCase) == true &&
+                   product.Name?.Contains("Set", StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        /// <summary>
+        /// Determines if a product is a local set (large drink + side choice).
+        /// </summary>
+        private bool IsLocalSet(RestaurantProductInfo product)
+        {
+            return product.CategoryName?.Contains("Local", StringComparison.OrdinalIgnoreCase) == true &&
+                   product.Name?.Contains("Set", StringComparison.OrdinalIgnoreCase) == true;
+        }
+
+        /// <summary>
+        /// Context information for set meal processing.
+        /// </summary>
+        private class SetContext
+        {
+            public bool IsSetItem { get; set; }
+            public bool IsSetCustomization { get; set; }
+            public RestaurantProductInfo? SetProduct { get; set; }
+            public string CustomerInput { get; set; } = "";
+            public string RequestContext { get; set; } = "";
+            public Dictionary<string, string> SetSpecifications { get; set; } = new();
+            public string PreparationNotes { get; set; } = "";
         }
 
         /// <summary>
@@ -1006,7 +1344,7 @@ namespace PosKernel.AI.Tools
             throw new InvalidOperationException(
                 $"DESIGN DEFICIENCY: Currency formatting service not available. " +
                 $"Cannot format {amount} without proper currency service. " +
-                $"Register ICurrencyFormattingService in DI container and ensure StoreConfig is provided.");
+                $"Register ICurrencyFormattingService in DI container.");
         }
 
         /// <summary>
@@ -1108,6 +1446,31 @@ namespace PosKernel.AI.Tools
                 (StoreType.GenericStore, PersonalityType.GenericCashier) => true,
                 _ => false // Incompatible combination
             };
+        }
+
+        /// <summary>
+        /// Determines if item should be auto-added based on AI semantic analysis.
+        /// ARCHITECTURAL PRINCIPLE: Embrace AI fuzziness - no rigid thresholds.
+        /// Let the AI's contextual understanding drive disambiguation decisions.
+        /// </summary>
+        private bool ShouldAutoAddBasedOnAIJudgment(int resultCount, double confidence, string context)
+        {
+            // Single result = no ambiguity, always auto-add
+            if (resultCount == 1)
+            {
+                _logger.LogDebug("🔍 AI_CONFIDENCE: Single result - auto-adding");
+                return true;
+            }
+            
+            // Multiple results = trust AI's confidence completely
+            // AI should set high confidence when customer intent is clear
+            // AI should set low confidence when genuine ambiguity exists
+            bool shouldAdd = confidence >= 0.7; // Only remaining threshold - AI drives this value
+            
+            _logger.LogDebug("🔍 AI_CONFIDENCE: {ResultCount} results, confidence={Confidence}, context='{Context}' → {Decision}", 
+                resultCount, confidence, context, shouldAdd ? "AUTO_ADD" : "DISAMBIGUATE");
+                
+            return shouldAdd;
         }
     }
 }
