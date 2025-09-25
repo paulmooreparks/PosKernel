@@ -18,7 +18,8 @@
 //! Focus: Get the Rust service compiling and running with basic functionality
 
 use std::collections::HashMap;
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 // === RESULT CODES ===
@@ -35,7 +36,6 @@ pub enum ResultCode {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
 pub struct PkResult {
     pub code: i32,
     pub reserved: i32
@@ -53,7 +53,6 @@ pub const PK_INVALID_HANDLE: PkTransactionHandle = 0;
 
 #[derive(Debug, Clone)]
 pub struct Currency {
-    #[allow(dead_code)] // Stored for future audit and display purposes
     code: String,
     decimal_places: u8,
 }
@@ -80,7 +79,6 @@ impl Currency {
 
 #[derive(Debug, Clone)]
 struct Line {
-    #[allow(dead_code)] // Stored for audit trail and transaction display
     sku: String,
     qty: i32,
     unit_minor: i64,
@@ -104,9 +102,7 @@ pub enum TxState {
 
 #[derive(Debug)]
 struct Transaction {
-    #[allow(dead_code)] // Stored for audit trail and transaction identification
     id: u64,
-    #[allow(dead_code)] // Stored for transaction context and audit purposes
     store: String,
     currency: Currency,
     lines: Vec<Line>,

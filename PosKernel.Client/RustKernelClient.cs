@@ -235,16 +235,7 @@ namespace PosKernel.Client.Rust
                 var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
                 var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
 
-                var result = new TransactionClientResult
-                {
-                    Success = responseData.GetProperty("success").GetBoolean(),
-                    Error = responseData.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null,
-                    SessionId = responseData.TryGetProperty("session_id", out var sidProp) ? sidProp.GetString() : sessionId,
-                    TransactionId = responseData.TryGetProperty("transaction_id", out var tidProp) ? tidProp.GetString() : transactionId,
-                    Total = responseData.TryGetProperty("total", out var totalProp) ? (decimal)totalProp.GetDouble() : 0,
-                    State = responseData.TryGetProperty("state", out var stateProp) ? stateProp.GetString() ?? "" : "",
-                    Data = responseData
-                };
+                var result = ParseTransactionResponse(responseData, sessionId, transactionId);
 
                 if (result.Success)
                 {
@@ -261,6 +252,115 @@ namespace PosKernel.Client.Rust
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding line item");
+                return new TransactionClientResult
+                {
+                    Success = false,
+                    Error = ex.Message,
+                    SessionId = sessionId,
+                    TransactionId = transactionId
+                };
+            }
+        }
+
+        /// <inheritdoc/>
+        public async Task<TransactionClientResult> AddModificationAsync(string sessionId, string transactionId, int parentLineNumber, string modificationId, int quantity, decimal unitPrice, LineItemType itemType = LineItemType.Modification, CancellationToken cancellationToken = default)
+        {
+            EnsureConnected();
+
+            _logger.LogDebug("Adding modification {ModificationId} x{Quantity} @ {UnitPrice:C} to line {ParentLineNumber} in transaction {TransactionId}", 
+                modificationId, quantity, unitPrice, parentLineNumber, transactionId);
+
+            try
+            {
+                var request = new
+                {
+                    session_id = sessionId,
+                    transaction_id = transactionId,
+                    parent_line_number = parentLineNumber,
+                    modification_id = modificationId,
+                    quantity = quantity,
+                    unit_price = (double)unitPrice,
+                    item_type = itemType.ToString().ToUpperInvariant()
+                };
+
+                var json = JsonSerializer.Serialize(request);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync($"/api/sessions/{sessionId}/transactions/{transactionId}/modifications", content, cancellationToken);
+                response.EnsureSuccessStatusCode();
+
+                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+                var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
+
+                var result = ParseTransactionResponse(responseData, sessionId, transactionId);
+
+                if (result.Success)
+                {
+                    _logger.LogInformation("Modification {ModificationId} added to line {ParentLineNumber} in transaction {TransactionId}, new total: {Total:C}", 
+                        modificationId, parentLineNumber, result.TransactionId, result.Total);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to add modification: {Error}", result.Error);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding modification");
+                return new TransactionClientResult
+                {
+                    Success = false,
+                    Error = ex.Message,
+                    SessionId = sessionId,
+                    TransactionId = transactionId
+                };
+            }
+        }
+
+        /// <inheritdoc/>
+        public async Task<TransactionClientResult> UpdateLineItemPreparationNotesAsync(string sessionId, string transactionId, int lineNumber, string preparationNotes, CancellationToken cancellationToken = default)
+        {
+            EnsureConnected();
+
+            _logger.LogDebug("Updating preparation notes for line {LineNumber} in transaction {TransactionId}: {PreparationNotes}", 
+                lineNumber, transactionId, preparationNotes);
+
+            try
+            {
+                // ARCHITECTURAL PRINCIPLE: This is critical for set meal customization - update existing line item
+                var request = new
+                {
+                    preparation_notes = preparationNotes
+                };
+
+                var json = JsonSerializer.Serialize(request);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PutAsync($"/api/sessions/{sessionId}/transactions/{transactionId}/lines/{lineNumber}/notes", content, cancellationToken);
+                response.EnsureSuccessStatusCode();
+
+                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+                var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
+
+                var result = ParseTransactionResponse(responseData, sessionId, transactionId);
+
+                if (result.Success)
+                {
+                    _logger.LogInformation("Preparation notes updated for line {LineNumber} in transaction {TransactionId}: {PreparationNotes}", 
+                        lineNumber, result.TransactionId, preparationNotes);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to update preparation notes: {Error}", result.Error);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating preparation notes");
                 return new TransactionClientResult
                 {
                     Success = false,
@@ -513,6 +613,72 @@ namespace PosKernel.Client.Rust
             // For now, just log the session close - the Rust service doesn't need explicit session cleanup
             _logger.LogInformation("Session {SessionId} closed", sessionId);
             return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Parses a transaction response from the Rust kernel service.
+        /// ARCHITECTURAL PRINCIPLE: Centralized response parsing with NRF-compliant line item support.
+        /// </summary>
+        private TransactionClientResult ParseTransactionResponse(JsonElement responseData, string sessionId, string transactionId)
+        {
+            var result = new TransactionClientResult
+            {
+                Success = responseData.GetProperty("success").GetBoolean(),
+                Error = responseData.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null,
+                SessionId = responseData.TryGetProperty("session_id", out var sidProp) ? sidProp.GetString() : sessionId,
+                TransactionId = responseData.TryGetProperty("transaction_id", out var tidProp) ? tidProp.GetString() : transactionId,
+                Total = responseData.TryGetProperty("total", out var totalProp) ? (decimal)totalProp.GetDouble() : 0,
+                State = responseData.TryGetProperty("state", out var stateProp) ? stateProp.GetString() ?? "" : "",
+                Data = responseData
+            };
+
+            // Parse line items with NRF hierarchical support
+            if (responseData.TryGetProperty("line_items", out var lineItemsProp) && lineItemsProp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var itemElement in lineItemsProp.EnumerateArray())
+                {
+                    var lineItem = new TransactionLineItem
+                    {
+                        LineNumber = itemElement.TryGetProperty("line_number", out var lnProp) ? lnProp.GetInt32() : 0,
+                        ParentLineNumber = itemElement.TryGetProperty("parent_line_number", out var plnProp) ? plnProp.GetInt32() : 0,
+                        ProductId = itemElement.TryGetProperty("product_id", out var pidProp) ? pidProp.GetString() ?? "" : "",
+                        ItemType = itemElement.TryGetProperty("item_type", out var itProp) ? ParseLineItemType(itProp.GetString()) : LineItemType.BaseProduct,
+                        Quantity = itemElement.TryGetProperty("quantity", out var qtyProp) ? qtyProp.GetInt32() : 0,
+                        UnitPrice = itemElement.TryGetProperty("unit_price_minor", out var upProp) ? (decimal)upProp.GetInt64() / 100 : 0,
+                        ExtendedPrice = itemElement.TryGetProperty("extended_price_minor", out var epProp) ? (decimal)epProp.GetInt64() / 100 : 0,
+                        DisplayIndentLevel = itemElement.TryGetProperty("display_indent_level", out var dilProp) ? dilProp.GetInt32() : 0,
+                        IsVoided = itemElement.TryGetProperty("is_voided", out var voidProp) ? voidProp.GetBoolean() : false,
+                        VoidReason = itemElement.TryGetProperty("void_reason", out var vrProp) ? vrProp.GetString() : null,
+                        PreparationNotes = itemElement.TryGetProperty("preparation_notes", out var pnProp) ? pnProp.GetString() ?? "" : ""
+                    };
+
+                    result.LineItems.Add(lineItem);
+                }
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Parses LineItemType from string representation.
+        /// </summary>
+        private LineItemType ParseLineItemType(string? itemTypeString)
+        {
+            if (string.IsNullOrEmpty(itemTypeString))
+            {
+                return LineItemType.BaseProduct;
+            }
+
+            return itemTypeString.ToUpperInvariant() switch
+            {
+                "BASE_PRODUCT" => LineItemType.BaseProduct,
+                "MODIFICATION" => LineItemType.Modification,
+                "AUTOMATIC_INCLUSION" => LineItemType.AutomaticInclusion,
+                "DISCOUNT" => LineItemType.Discount,
+                "TAX" => LineItemType.Tax,
+                "FEE" => LineItemType.Fee,
+                _ => LineItemType.BaseProduct
+            };
         }
 
         private void EnsureConnected()

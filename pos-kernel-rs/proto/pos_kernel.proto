@@ -15,6 +15,10 @@ service PosKernelService {
   // Transaction Operations
   rpc StartTransaction(StartTransactionRequest) returns (TransactionResponse);
   rpc AddLineItem(AddLineItemRequest) returns (TransactionResponse);
+  rpc AddModification(AddModificationRequest) returns (TransactionResponse); // NRF-compliant hierarchical mods
+  rpc VoidLineItem(VoidLineItemRequest) returns (TransactionResponse);
+  rpc UpdateLineItemQuantity(UpdateLineItemQuantityRequest) returns (TransactionResponse);
+  rpc UpdateLineItemPreparationNotes(UpdateLineItemPreparationNotesRequest) returns (TransactionResponse); // For set customization
   rpc ProcessPayment(ProcessPaymentRequest) returns (TransactionResponse);
   rpc GetTransaction(GetTransactionRequest) returns (TransactionResponse);
 
@@ -62,6 +66,40 @@ message AddLineItemRequest {
   map<string, string> metadata = 6;
 }
 
+// NRF-compliant hierarchical modifications
+message AddModificationRequest {
+  string session_id = 1;
+  string transaction_id = 2;
+  int32 parent_line_number = 3; // Line number of parent item (1-based)
+  string modification_id = 4;
+  int32 quantity = 5;
+  int64 unit_price_minor = 6; // Price adjustment in minor currency units
+  LineItemType item_type = 7;
+  map<string, string> metadata = 8;
+}
+
+message VoidLineItemRequest {
+  string session_id = 1;
+  string transaction_id = 2;
+  int32 line_number = 3; // 1-based line number
+  string reason = 4;
+}
+
+message UpdateLineItemQuantityRequest {
+  string session_id = 1;
+  string transaction_id = 2;
+  int32 line_number = 3; // 1-based line number
+  int32 new_quantity = 4;
+}
+
+// ARCHITECTURAL PRINCIPLE: Sets need preparation note updates, not separate line items
+message UpdateLineItemPreparationNotesRequest {
+  string session_id = 1;
+  string transaction_id = 2;
+  int32 line_number = 3; // 1-based line number  
+  string preparation_notes = 4; // Updated preparation notes
+}
+
 message ProcessPaymentRequest {
   string session_id = 1;
   string transaction_id = 2;
@@ -89,12 +127,30 @@ message TransactionResponse {
   TransactionTotals totals = 11;
 }
 
+// Enhanced line item with NRF-compliant hierarchical support
 message LineItem {
-  string product_id = 1;
-  int32 quantity = 2;
-  int64 unit_price_minor = 3;
-  int64 extended_price_minor = 4;
-  map<string, string> metadata = 5;
+  int32 line_number = 1; // 1-based line number for display/void operations
+  int32 parent_line_number = 2; // 0 for base items, parent line number for mods
+  string product_id = 3;
+  LineItemType item_type = 4;
+  int32 quantity = 5;
+  int64 unit_price_minor = 6;
+  int64 extended_price_minor = 7;
+  int32 display_indent_level = 8; // For NRF-style receipt formatting (0=base, 1+=mod)
+  bool is_voided = 9;
+  string void_reason = 10;
+  string preparation_notes = 11; // ARCHITECTURAL FIX: Include preparation notes in response
+  map<string, string> metadata = 12;
+}
+
+// NRF ARTS-compliant line item type enumeration
+enum LineItemType {
+  BASE_PRODUCT = 0;
+  MODIFICATION = 1;
+  AUTOMATIC_INCLUSION = 2; // For items like eggs in sets
+  DISCOUNT = 3;
+  TAX = 4;
+  FEE = 5;
 }
 
 message TransactionTotals {

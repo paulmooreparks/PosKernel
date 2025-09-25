@@ -207,6 +207,70 @@ namespace PosKernel.Client
         }
 
         /// <summary>
+        /// Adds a modification to an existing line item (NRF-compliant hierarchical).
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="parentLineNumber">The parent line number to add the modification to.</param>
+        /// <param name="modificationId">The modification identifier.</param>
+        /// <param name="quantity">The quantity of modifications to add.</param>
+        /// <param name="unitPrice">The unit price of the modification.</param>
+        /// <param name="itemType">The type of line item (default: Modification).</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The result of the add modification operation.</returns>
+        public async Task<TransactionClientResult> AddModificationAsync(string sessionId, string transactionId, int parentLineNumber, string modificationId, int quantity, decimal unitPrice, LineItemType itemType = LineItemType.Modification, CancellationToken cancellationToken = default)
+        {
+            var request = new
+            {
+                jsonrpc = "2.0",
+                method = "add_modification",
+                @params = new
+                {
+                    session_id = sessionId,
+                    transaction_id = transactionId,
+                    parent_line_number = parentLineNumber,
+                    modification_id = modificationId,
+                    quantity = quantity,
+                    unit_price = unitPrice,
+                    item_type = itemType.ToString()
+                },
+                id = GetNextRequestId()
+            };
+
+            var response = await SendRequestAsync<TransactionClientResult>(request, cancellationToken);
+            return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
+        }
+
+        /// <summary>
+        /// Updates the preparation notes for a line item (critical for set meal customization).
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="lineNumber">The line number to update.</param>
+        /// <param name="preparationNotes">The new preparation notes.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The result of the update operation.</returns>
+        public async Task<TransactionClientResult> UpdateLineItemPreparationNotesAsync(string sessionId, string transactionId, int lineNumber, string preparationNotes, CancellationToken cancellationToken = default)
+        {
+            var request = new
+            {
+                jsonrpc = "2.0",
+                method = "update_line_item_preparation_notes",
+                @params = new
+                {
+                    session_id = sessionId,
+                    transaction_id = transactionId,
+                    line_number = lineNumber,
+                    preparation_notes = preparationNotes
+                },
+                id = GetNextRequestId()
+            };
+
+            var response = await SendRequestAsync<TransactionClientResult>(request, cancellationToken);
+            return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
+        }
+
+        /// <summary>
         /// Voids a line item from the current transaction by line number.
         /// Creates a reversing entry to maintain audit trail compliance.
         /// </summary>

@@ -236,6 +236,12 @@ namespace PosKernel.Client
         public Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
             => EnsureConnected().AddLineItemAsync(sessionId, transactionId, productId, quantity, unitPrice, cancellationToken);
 
+        public Task<TransactionClientResult> AddModificationAsync(string sessionId, string transactionId, int parentLineNumber, string modificationId, int quantity, decimal unitPrice, LineItemType itemType = LineItemType.Modification, CancellationToken cancellationToken = default)
+            => EnsureConnected().AddModificationAsync(sessionId, transactionId, parentLineNumber, modificationId, quantity, unitPrice, itemType, cancellationToken);
+
+        public Task<TransactionClientResult> UpdateLineItemPreparationNotesAsync(string sessionId, string transactionId, int lineNumber, string preparationNotes, CancellationToken cancellationToken = default)
+            => EnsureConnected().UpdateLineItemPreparationNotesAsync(sessionId, transactionId, lineNumber, preparationNotes, cancellationToken);
+
         public Task<TransactionClientResult> VoidLineItemAsync(string sessionId, string transactionId, int lineNumber, CancellationToken cancellationToken = default)
             => EnsureConnected().VoidLineItemAsync(sessionId, transactionId, lineNumber, cancellationToken);
 

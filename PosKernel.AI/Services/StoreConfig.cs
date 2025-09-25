@@ -270,6 +270,49 @@ namespace PosKernel.AI.Services
                 StoreName = "Brew & Bean Coffee",
                 Currency = "USD",
                 CultureCode = "en-US",
+                
+                // ARCHITECTURAL FIX: Proper payment methods configuration
+                PaymentMethods = new PaymentMethodsConfiguration
+                {
+                    AcceptsCash = true,
+                    AcceptsDigitalPayments = true,
+                    DefaultMethod = "card",
+                    PaymentInstructions = "All major cards and digital wallets accepted",
+                    AcceptedMethods = new List<PaymentMethodConfig>
+                    {
+                        new() { 
+                            MethodId = "cash", 
+                            DisplayName = "Cash", 
+                            Type = PaymentMethodType.Cash, 
+                            IsEnabled = true 
+                        },
+                        new() { 
+                            MethodId = "visa", 
+                            DisplayName = "Visa", 
+                            Type = PaymentMethodType.CreditCard, 
+                            IsEnabled = true
+                        },
+                        new() { 
+                            MethodId = "mastercard", 
+                            DisplayName = "MasterCard", 
+                            Type = PaymentMethodType.CreditCard, 
+                            IsEnabled = true
+                        },
+                        new() { 
+                            MethodId = "apple_pay", 
+                            DisplayName = "Apple Pay", 
+                            Type = PaymentMethodType.DigitalWallet, 
+                            IsEnabled = true
+                        },
+                        new() { 
+                            MethodId = "google_pay", 
+                            DisplayName = "Google Pay", 
+                            Type = PaymentMethodType.DigitalWallet, 
+                            IsEnabled = true
+                        }
+                    }
+                },
+                
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Third-wave coffee",
@@ -290,12 +333,54 @@ namespace PosKernel.AI.Services
                 StoreName = "Uncle's Traditional Kopitiam",
                 Currency = "SGD",
                 CultureCode = "en-SG",
+                
+                // ARCHITECTURAL FIX: Proper payment methods configuration
+                PaymentMethods = new PaymentMethodsConfiguration
+                {
+                    AcceptsCash = true,
+                    AcceptsDigitalPayments = true,
+                    DefaultMethod = "cash",
+                    PaymentInstructions = "Cash preferred, digital payments accepted",
+                    AcceptedMethods = new List<PaymentMethodConfig>
+                    {
+                        new() { 
+                            MethodId = "cash", 
+                            DisplayName = "Cash", 
+                            Type = PaymentMethodType.Cash, 
+                            IsEnabled = true 
+                        },
+                        new() { 
+                            MethodId = "paynow", 
+                            DisplayName = "PayNow", 
+                            Type = PaymentMethodType.BankTransfer, 
+                            IsEnabled = true,
+                            MinimumAmount = 1.00m
+                        },
+                        new() { 
+                            MethodId = "nets", 
+                            DisplayName = "NETS", 
+                            Type = PaymentMethodType.DebitCard, 
+                            IsEnabled = true,
+                            MinimumAmount = 5.00m
+                        },
+                        new() { 
+                            MethodId = "grabpay", 
+                            DisplayName = "GrabPay", 
+                            Type = PaymentMethodType.DigitalWallet, 
+                            IsEnabled = true,
+                            MinimumAmount = 2.00m
+                        }
+                    }
+                },
+                
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Traditional kopitiam culture",
                     ["atmosphere"] = "Busy and authentic",
                     ["target_service_time"] = "2-4 minutes",
-                    ["languages"] = new[] { "English", "Mandarin", "Cantonese", "Hokkien", "Malay", "Tamil" }
+                    ["languages"] = new[] { "English", "Mandarin", "Cantonese", "Hokkien", "Malay", "Tamil" },
+                    ["terminal_id"] = "AI_TERMINAL",
+                    ["operator_id"] = "AI_ASSISTANT"
                 }
             };
         }
@@ -311,6 +396,38 @@ namespace PosKernel.AI.Services
                 StoreName = "La Belle Boulangerie",
                 Currency = "EUR",
                 CultureCode = "fr-FR",
+                
+                // ARCHITECTURAL FIX: Proper payment methods configuration
+                PaymentMethods = new PaymentMethodsConfiguration
+                {
+                    AcceptsCash = true,
+                    AcceptsDigitalPayments = true,
+                    DefaultMethod = "cash",
+                    PaymentInstructions = "Espèces préférées, cartes acceptées",
+                    AcceptedMethods = new List<PaymentMethodConfig>
+                    {
+                        new() { 
+                            MethodId = "cash", 
+                            DisplayName = "Espèces", 
+                            Type = PaymentMethodType.Cash, 
+                            IsEnabled = true 
+                        },
+                        new() { 
+                            MethodId = "carte_bancaire", 
+                            DisplayName = "Carte Bancaire", 
+                            Type = PaymentMethodType.DebitCard, 
+                            IsEnabled = true,
+                            MinimumAmount = 5.00m
+                        },
+                        new() { 
+                            MethodId = "contactless", 
+                            DisplayName = "Sans Contact", 
+                            Type = PaymentMethodType.DigitalWallet, 
+                            IsEnabled = true
+                        }
+                    }
+                },
+                
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Artisanal French baking",

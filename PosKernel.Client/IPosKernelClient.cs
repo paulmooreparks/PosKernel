@@ -53,6 +53,18 @@ namespace PosKernel.Client
         Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Adds a modification to an existing line item (NRF ARTS-compliant hierarchical).
+        /// ARCHITECTURAL PRINCIPLE: Implements NRF standards for product modifications with proper parent-child relationships.
+        /// </summary>
+        Task<TransactionClientResult> AddModificationAsync(string sessionId, string transactionId, int parentLineNumber, string modificationId, int quantity, decimal unitPrice, LineItemType itemType = LineItemType.Modification, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Updates the preparation notes for a line item (CRITICAL for set meal customization).
+        /// ARCHITECTURAL FIX: Allows updating existing set items instead of creating separate line items.
+        /// </summary>
+        Task<TransactionClientResult> UpdateLineItemPreparationNotesAsync(string sessionId, string transactionId, int lineNumber, string preparationNotes, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Voids a line item from the transaction by line number.
         /// Creates a reversing entry to maintain audit trail compliance with POS accounting standards.
         /// </summary>
@@ -115,9 +127,82 @@ namespace PosKernel.Client
         public string State { get; set; } = "";
 
         /// <summary>
+        /// Gets or sets the hierarchical line items in the transaction (NRF ARTS-compliant).
+        /// </summary>
+        public List<TransactionLineItem> LineItems { get; set; } = new();
+
+        /// <summary>
         /// Gets or sets additional result data.
         /// </summary>
         public object? Data { get; set; }
+    }
+
+    /// <summary>
+    /// Represents a line item in a transaction with NRF ARTS-compliant hierarchical support.
+    /// Based on industry standards for POS transaction line items with parent-child relationships.
+    /// </summary>
+    public class TransactionLineItem
+    {
+        /// <summary>
+        /// Gets or sets the line number (1-based for POS display/void operations).
+        /// </summary>
+        public int LineNumber { get; set; }
+
+        /// <summary>
+        /// Gets or sets the parent line number (0 for base items, parent line for modifications).
+        /// </summary>
+        public int ParentLineNumber { get; set; }
+
+        /// <summary>
+        /// Gets or sets the product identifier or modification ID.
+        /// </summary>
+        public string ProductId { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the NRF ARTS-compliant line item type.
+        /// </summary>
+        public LineItemType ItemType { get; set; }
+
+        /// <summary>
+        /// Gets or sets the quantity.
+        /// </summary>
+        public int Quantity { get; set; }
+
+        /// <summary>
+        /// Gets or sets the unit price (with proper currency handling via services).
+        /// </summary>
+        public decimal UnitPrice { get; set; }
+
+        /// <summary>
+        /// Gets or sets the extended price (calculated by kernel, not assumed).
+        /// </summary>
+        public decimal ExtendedPrice { get; set; }
+
+        /// <summary>
+        /// Gets or sets the display indent level for NRF-style receipt formatting.
+        /// </summary>
+        public int DisplayIndentLevel { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether this line item is voided.
+        /// </summary>
+        public bool IsVoided { get; set; }
+
+        /// <summary>
+        /// Gets or sets the void reason.
+        /// </summary>
+        public string? VoidReason { get; set; }
+
+        /// <summary>
+        /// Gets or sets the preparation notes (CRITICAL for set meal tracking).
+        /// ARCHITECTURAL PRINCIPLE: This is how we track set customizations properly.
+        /// </summary>
+        public string PreparationNotes { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets additional metadata.
+        /// </summary>
+        public Dictionary<string, string> Metadata { get; set; } = new();
     }
 
     /// <summary>
