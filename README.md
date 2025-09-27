@@ -8,7 +8,7 @@
 
 ## Overview
 
-POS Kernel is an AI-enabled, culture-neutral transaction processing kernel designed for global deployment. The low-level point-of-sale kernel is built with Rust for security and performance, providing both HTTP service and FFI interfaces with an comprehensive extension support for diverse retail environments.
+POS Kernel is an AI-enabled, culture-neutral transaction processing kernel designed for global deployment. The low-level point-of-sale kernel is built with Rust for security and performance, providing both HTTP service and FFI interfaces with comprehensive extension support for diverse retail environments.
 
 The kernel provides a plug-in architecture for retail extensions, allowing easy addition of new store types with user-space data management. Currently, layers above the kernel are implemented in .NET 9 with C#, but any language should work here as well.
 
@@ -19,8 +19,11 @@ Users may currently interact with the AI cashier via a terminal GUI application,
 ## Demo Video
 [![POS Kernel Demo](https://img.youtube.com/vi/OvtzOJsVfEg/0.jpg)](https://www.youtube.com/watch?v=OvtzOJsVfEg)
 
-## Current Status: Extensible Retail Architecture POC Complete
+## Current Status: Production-Ready Architecture Complete
 
+- **Culture-Neutral Kernel Architecture**: Zero hardcoded assumptions about currencies, languages, or payment methods
+- **Memory-Safe FFI Interface**: All unsafe operations properly documented and secured  
+- **Fail-Fast Error Handling**: Clear error messages when services are missing, no silent fallbacks
 - **Extensible Retail Architecture**: Generic retail extension supporting multiple store types
 - **User-Space Data Storage**: Runtime data isolated to `~/.poskernel` directory structure  
 - **Multi-Cultural AI Integration**: Store-specific AI personalities with cultural intelligence
@@ -28,30 +31,31 @@ Users may currently interact with the AI cashier via a terminal GUI application,
 - **Multi-Currency Operations**: Support for USD, SGD, EUR, JPY, INR with proper decimal handling
 - **Real Database Integration**: SQLite databases with authentic product catalogs per store type
 - **Service Architecture**: Named pipe IPC between AI demo and retail extension service
+- **AI Training System**: Experimental framework for automatic prompt optimization
 
 ## Architecture Status
 
-### Current v0.5.0 Stack (Extensible Architecture Complete)
+### Current v0.5.0 Stack (Production-Ready Architecture)
 
 ```mermaid
 graph TB
-    subgraph AL ["AI Application Layer"]
+    subgraph AL ["AI Application Layer (.NET 9)"]
         direction LR
         A["Terminal.Gui Interface<br/>Store Selection Dialog"]
         A --- B["Cultural AI Personalities<br/>5 Store Types Supported"]
-        B --- C["Real-time Receipt Updates<br/>Currency Formatting"]
+        B --- C["Real-time Receipt Updates<br/>Service-Based Currency Formatting"]
         C --- D["Multi-store Support<br/>Authentic Product Catalogs"]
     end
     
-    subgraph RL ["Retail Service Layer"]
+    subgraph RL ["Retail Service Layer (.NET 9)"]
         direction LR
         E["Generic Retail Service<br/>Multiple Store Type Support"]
         E --- F["Dynamic Configuration<br/>User-space Data"]
         F --- G["SQLite Database<br/>Authentic Product Data"]
-        G --- H["Compatible Data Structures<br/>Client-Server Communication"]
+        G --- H["Culture-Neutral Communication<br/>HTTP API to Kernel"]
     end
     
-    subgraph UL ["Store Configurations"]
+    subgraph UL ["User-Space Configuration"]
         direction LR
         I["~/.poskernel/extensions/retail/{StoreType}/"]
         I --- J["Store-specific Databases<br/>Authentic Product Catalogs"]
@@ -59,18 +63,57 @@ graph TB
         K --- L["Runtime Data Separation<br/>From Solution Source Code"]
     end
     
-    subgraph KL ["Rust Kernel Core"]
+    subgraph KL ["Rust Kernel Core (Culture-Neutral)"]
         direction LR
-        M["Culture-neutral Transaction Processing"]
-        M --- N["ACID-compliant Write-Ahead Logging"]
-        N --- O["Multi-currency Support<br/>No Hardcoded Assumptions"]
+        M["Culture-neutral Transaction Processing<br/>Client-Provided Currency Info"]
+        M --- N["Memory-Safe FFI Interface<br/>Documented Unsafe Operations"]
+        N --- O["Fail-Fast Error Handling<br/>No Silent Fallbacks"]
         O --- P["Precise Integer Storage<br/>Avoiding Floating-point Errors"]
     end
 
     AL -.-|Named Pipe IPC| RL
     RL -.-|File System Access| UL
-    UL -.-|HTTP API| KL
+    RL -.-|HTTP API| KL
+    
+    style KL fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style AL fill:#e1f5fe,stroke:#333,stroke-width:1px
+    style RL fill:#e8f5e8,stroke:#333,stroke-width:1px
+    style UL fill:#fff3e0,stroke:#333,stroke-width:1px
 ```
+
+### Key Architectural Principles
+
+The POS Kernel architecture is built on four core principles that ensure global deployability and maintainability:
+
+#### 1. **Culture-Neutral Kernel**
+The Rust kernel makes zero assumptions about:
+- Currency symbols, decimal places, or formatting
+- Language or locale-specific behavior  
+- Payment methods or business rules
+- Time formats or cultural time mappings
+
+All cultural information is provided by user-space services and configuration.
+
+#### 2. **Fail-Fast Error Handling**
+The system never provides "helpful" defaults or silent fallbacks:
+- Missing services cause immediate, clear error messages
+- Configuration problems are surfaced immediately  
+- No hardcoded assumptions that hide design deficiencies
+- All error messages include architectural guidance for fixes
+
+#### 3. **Memory-Safe FFI Interface**
+All Rust-to-C# communication is secured:
+- Comprehensive safety documentation for all unsafe operations
+- Pointer validation and bounds checking
+- Clear ownership and lifetime requirements
+- No undefined behavior in the FFI boundary
+
+#### 4. **Service-Based Architecture**
+All formatting, validation, and business logic is handled by services:
+- Currency formatting through `ICurrencyFormattingService`
+- Time formatting through culture services
+- Payment validation through store configuration
+- No client-side business decisions
 
 ## Supported Store Types
 
@@ -106,96 +149,38 @@ graph LR
 
 ### American Coffee Shop
 - **Location**: `~/.poskernel/extensions/retail/CoffeeShop/`
-- **Currency**: USD with standard coffee shop pricing
+- **Currency**: USD with 2 decimal places
 - **Products**: Americano, Caffe Latte, Cappuccino, Blueberry Muffin, Breakfast Sandwich
 - **AI Personality**: American Barista with coffee expertise
 - **Payment Methods**: Credit cards, Apple Pay, Google Pay, cash
 
 ### Singapore Kopitiam
 - **Location**: `~/.poskernel/extensions/retail/SingaporeKopitiam/`
-- **Currency**: SGD with traditional kopitiam pricing
+- **Currency**: SGD with 2 decimal places
 - **Products**: Kopi, Kopi C, Kopi O, Teh varieties, Kaya Toast, Half Boiled Eggs, local food
 - **AI Personality**: Singaporean Kopitiam Uncle with Singlish expressions
 - **Payment Methods**: Cash preferred, PayNow, NETS, GrabPay
 
 ### French Boulangerie
 - **Location**: `~/.poskernel/extensions/retail/FrenchBoulangerie/`
-- **Currency**: EUR with artisanal bakery pricing
+- **Currency**: EUR with 2 decimal places
 - **Products**: Croissant, Pain au Chocolat, Baguette, Éclair au Chocolat, traditional pastries
 - **AI Personality**: French Boulanger emphasizing quality and craftsmanship
 - **Payment Methods**: Card preferred, cash, contactless, chèque déjeuner
 
 ### Japanese Convenience Store
 - **Location**: `~/.poskernel/extensions/retail/JapaneseConbini/`
-- **Currency**: JPY with no decimal places
+- **Currency**: JPY with 0 decimal places
 - **Products**: Onigiri, Karaage, Takoyaki, Kit Kat (Matcha), convenience items
 - **AI Personality**: Japanese Convenience Store Clerk with efficient service
 - **Payment Methods**: IC cards (Suica/Pasmo), PayPay, LINE Pay, cash
 
 ### Indian Chai Stall
 - **Location**: `~/.poskernel/extensions/retail/IndianChaiStall/`
-- **Currency**: INR with street food pricing
+- **Currency**: INR with 2 decimal places
 - **Products**: Masala Chai, Vada Pav, Samosa, Jalebi, Gulab Jamun, traditional sweets
 - **AI Personality**: Indian Chai Wala with Hindi expressions and street-side atmosphere
 - **Payment Methods**: Cash preferred, UPI, Paytm, PhonePe, GPay
-
-## Product Modification Framework
-
-The system supports complex product customizations through a flexible modification framework, demonstrated in the American Coffee Shop configuration:
-
-```mermaid
-erDiagram
-    products ||--o{ product_modification_groups : "supports"
-    modification_groups ||--o{ product_modification_groups : "available_for"
-    modification_groups ||--o{ modification_group_items : "contains"
-    modifications ||--o{ modification_group_items : "belongs_to"
-    
-    products {
-        string sku PK
-        string name
-        string description
-        string category_id
-        int base_price_cents
-        bool is_active
-    }
-    
-    modifications {
-        string id PK
-        string name
-        string category
-        decimal price_adjustment
-        int sort_order
-    }
-    
-    modification_groups {
-        string id PK
-        string name
-        string selection_type
-        int min_selections
-        int max_selections
-        bool is_required
-    }
-    
-    product_modification_groups {
-        string product_id FK
-        string modification_group_id FK
-        bool is_active
-    }
-    
-    modification_group_items {
-        string group_id FK
-        string modification_id FK
-        int sort_order
-    }
-```
-
-**Example**: A Latte supports modification groups like:
-- **Size Options**: Tall (-$0.30), Grande (base), Venti (+$0.65)
-- **Milk Options**: 2% (free), Oat Milk (+$0.65), Almond Milk (+$0.65)
-- **Syrup Options**: Vanilla (+$0.65), Caramel (+$0.65), multiple selections allowed
-- **Shot Options**: Extra Shot (+$0.75), Decaf (free), Ristretto (free)
-
-This framework enables culturally appropriate customizations. For example, the Singapore Kopitiam uses similar patterns for traditional modifications like "gao" (extra strong) or "kosong" (no sugar).
 
 ## Transaction Flow Example
 
@@ -228,8 +213,8 @@ sequenceDiagram
     R->>DB: Product lookup for transaction
     DB->>R: Product details  
     R->>MCP: Product info for kernel call
-    MCP->>K: POST /sessions/{id}/transactions/{id}/lines
-    K->>MCP: Line item added, total: S$1.40
+    MCP->>K: HTTP POST /transactions/{id}/lines
+    K->>MCP: Line item added, total calculated
     MCP->>AI: "ADDED: Kopi C x1 @ S$1.40"
     
     AI->>D: "Can lah! I've added Kopi C for you. S$1.40. Anything else?"
@@ -246,7 +231,7 @@ sequenceDiagram
     U->>D: "Cash"
     D->>AI: Payment method selection
     AI->>MCP: Tool call: process_payment("cash", 1.4)
-    MCP->>K: POST /sessions/{id}/transactions/{id}/payment
+    MCP->>K: HTTP POST /transactions/{id}/payment
     K->>MCP: Payment processed, transaction complete
     MCP->>AI: Payment confirmation result
     AI->>D: "Terima kasih! Your kopi C is ready. S$1.40 received."
@@ -256,25 +241,52 @@ sequenceDiagram
 ```
 
 **Key architectural points:**
+- **Culture-Neutral Kernel**: Rust kernel processes transaction without currency assumptions
+- **Client-Provided Currency Info**: Decimal places and formatting rules from user-space
+- **Memory-Safe FFI**: All kernel communication through documented safe interfaces
+- **Service-Based Formatting**: Currency display handled by .NET services, not kernel
+- **Fail-Fast Error Handling**: Missing services cause clear error messages
 - **MCP Abstraction Layer**: Clean separation between business logic and AI provider specifics
-- **Cultural Intelligence**: AI understands "kopi c satu" (one Kopi C in Singlish) via MCP
 - **Provider Independence**: Same MCP interface works with OpenAI, Ollama, or other providers
-- **Tool/Function Calling**: MCP handles translation between business tools and AI provider formats
-- **User-Space Data**: Product lookup from Singapore kopitiam database
-- **Currency Handling**: Proper SGD formatting without hardcoded assumptions
-- **Payment Methods**: Store-specific payment options (cash, PayNow, NETS)
-- **AI Personality**: Kopitiam uncle responses ("Can lah!", "Terima kasih!") through MCP context
-- **Transaction Storage**: Rust kernel provides persistent transaction storage and ACID compliance
 
 ## Multi-Currency Architecture
 
-The system properly handles diverse currency formats without hardcoded assumptions:
+The system properly handles diverse currency formats through a culture-neutral design:
 
+```mermaid
+graph TB
+    subgraph "Client Layer (.NET)"
+        A[User Request<br/>"Add $1.50 item"]
+        A --> B[Currency Service<br/>USD: 2 decimals]
+        B --> C[Convert to Minor Units<br/>$1.50 → 150 cents]
+    end
+    
+    subgraph "Rust Kernel (Culture-Neutral)"
+        C --> D[Store Transaction<br/>amount_minor: 150]
+        D --> E[Calculate Totals<br/>Integer arithmetic]
+        E --> F[Return Minor Units<br/>total_minor: 150]
+    end
+    
+    subgraph "Display Layer (.NET)"
+        F --> G[Currency Service<br/>USD: 2 decimals]
+        G --> H[Convert to Major Units<br/>150 cents → $1.50]
+        H --> I[Format for Display<br/>"Total: $1.50"]
+    end
+    
+    style D fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style E fill:#f9f9f9,stroke:#333,stroke-width:2px
+```
+
+**Supported Currency Formats:**
 - **USD/SGD/EUR**: 2 decimal places (S$1.20, €2.20)
 - **JPY**: 0 decimal places (¥150)
 - **INR**: 2 decimal places (₹20.00)
 
-All currency formatting is handled by services, not hardcoded in the kernel or clients.
+**Architecture Benefits:**
+- **Kernel Neutrality**: Rust kernel never knows about currency symbols or decimal places
+- **Client Responsibility**: All currency rules provided by user-space services
+- **Precision**: Integer arithmetic in kernel avoids floating-point errors
+- **Extensibility**: Easy addition of new currencies without kernel changes
 
 ## User-Space Data Architecture
 
@@ -301,12 +313,16 @@ graph TB
             F["tool_acknowledgment.md<br/>Action confirmation prompts"]
             G["payment_complete.md<br/>Transaction completion prompts"]
         end
+        
+        subgraph "training/"
+            H["training-config.json<br/>Training parameters"]
+            I["stores/{StoreType}/<br/>Training data"]
+        end
     end
     
     B --> B1
     B --> B2
     B --> B3
-    
     C --> C1
 ```
 
@@ -316,17 +332,22 @@ graph TB
 
 **Windows:**
 - .NET 9 SDK
+- Rust toolchain (`rustup` from https://rustup.rs/)
 - Visual Studio 2022 or VS Code
 - Git for Windows
 - SQLite (optional, for manual database inspection)
 
 **Linux:**
 - .NET 9 SDK (`sudo apt install dotnet-sdk-9.0` on Ubuntu)
+- Rust toolchain (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 - Git
 - SQLite3 (`sudo apt install sqlite3`)
 
 **macOS:**
-- Theoretically supported but as-yet untested. Steps should be similar to Linux.
+- .NET 9 SDK (from Microsoft or via Homebrew)
+- Rust toolchain (via rustup)
+- Git (via Xcode Command Line Tools)
+- SQLite3 (usually pre-installed)
 
 ### Initial Setup
 
@@ -363,14 +384,16 @@ graph TB
 
 3. **Build the solution:**
    ```bash
+   # Build .NET projects
    dotnet build
+   
+   # Build Rust kernel
+   cd pos-kernel-rs
+   cargo build --release
+   cd ..
    ```
 
 ### Running the Demo
-
-**Prerequisites for Full Integration:**
-- Rust toolchain installed (`rustup` from https://rustup.rs/)
-- All .NET prerequisites from above
 
 **Full Demo with Complete Architecture:**
 
@@ -380,7 +403,13 @@ graph TB
    cargo run --bin pos-kernel-service
    ```
    
-   Keep this terminal open. The kernel will start on `http://localhost:8080`. You should see output indicating the service started successfully.
+   Keep this terminal open. The kernel will start on `http://localhost:8080`. You should see:
+   ```
+   🦀 POS Kernel Rust Service v0.4.0-minimal
+   🚀 Starting HTTP API on http://127.0.0.1:8080
+   ✅ Terminal RUST_SERVICE_01 initialized successfully
+   ✅ Service ready at http://127.0.0.1:8080
+   ```
 
 2. **In a new terminal, start the retail extension service:**
    ```bash
@@ -403,14 +432,12 @@ graph TB
    - Japanese Conbini: "salmon onigiri and green tea"
    - Indian Chai Stall: "masala chai aur samosa"
 
-**Development Mode (Limited Integration):**
+### Stopping Services
 
-If you need to test without the full architecture stack:
-```bash
-dotnet run --project PosKernel.AI.Demo --mock
-```
+**Important**: The Rust service runs indefinitely and must be stopped manually:
 
-**Note**: Development mode uses mock data and bypasses both the Rust kernel and retail extension service. This is only for development testing and does not demonstrate the complete architectural integration.
+- **Windows**: Use Task Manager to kill `pos-kernel-service.exe` or press Ctrl+C in the terminal
+- **Linux/macOS**: Press Ctrl+C in the terminal running the Rust service
 
 ### Verifying Installation
 
@@ -434,7 +461,11 @@ dotnet run --project PosKernel.AI.Demo --mock
    sqlite3 ~/.poskernel/extensions/retail/SingaporeKopitiam/catalog/retail_catalog.db "SELECT name, base_price_cents FROM products LIMIT 5;"
    ```
 
-3. **Test store switching** by running the demo multiple times and selecting different store types to verify distinct product catalogs and AI personalities.
+3. **Test kernel API** (optional):
+   ```bash
+   curl http://localhost:8080/health
+   curl http://localhost:8080/version
+   ```
 
 ### Troubleshooting
 
@@ -442,6 +473,11 @@ dotnet run --project PosKernel.AI.Demo --mock
 - Ensure the extension service is running: `dotnet run --project PosKernel.Extensions.Restaurant`
 - Check that no firewall is blocking named pipe communication
 - Try running in mock mode: `dotnet run --project PosKernel.AI.Demo --mock`
+
+**"Failed to initialize terminal" error:**
+- Ensure the Rust kernel service is running: `cargo run --bin pos-kernel-service`
+- Check that port 8080 is not in use by another application
+- Verify Rust toolchain is properly installed: `cargo --version`
 
 **AI provider errors:**
 - Verify your `~/.poskernel/.env` file exists and contains valid configuration
@@ -453,22 +489,36 @@ dotnet run --project PosKernel.AI.Demo --mock
 - Check that the user has write permissions to their home directory
 - Verify the extension service completed initialization before starting the demo
 
+**Build errors:**
+- Ensure .NET 9 SDK is installed: `dotnet --version`
+- Ensure Rust is installed: `rustc --version`
+- Try a clean build: `dotnet clean && dotnet build`
+
 ## Architecture Goals
 
 ### Culture Neutrality
 - **No hardcoded currency assumptions**: All formatting handled by services
 - **No language assumptions**: Multi-language support through configuration
 - **No payment method assumptions**: Store-specific payment method configuration
+- **No time format assumptions**: Culture services handle all time formatting
 
 ### Fail-Fast Design  
 - **No silent fallbacks**: Missing services cause clear error messages
 - **Configuration validation**: All required services must be properly registered
 - **Design deficiency detection**: Clear indication when architectural boundaries are crossed
+- **Architectural guidance**: Error messages include instructions for proper fixes
+
+### Memory Safety
+- **Documented unsafe operations**: All FFI code requires comprehensive safety documentation
+- **Pointer validation**: All memory access is bounds-checked and validated
+- **Clear ownership**: Explicit ownership and lifetime requirements for all data
+- **No undefined behavior**: Strict adherence to Rust safety guarantees
 
 ### Extensibility
 - **Generic retail framework**: Easy addition of new store types
 - **User-space configuration**: Runtime data separated from source code
 - **Service-oriented architecture**: Clean separation between AI, extensions, and kernel
+- **Provider independence**: Pluggable AI providers through MCP abstraction
 
 ## Development
 
@@ -490,14 +540,16 @@ dotnet run --project PosKernel.AI.Demo --mock
 - `PosKernel.AI.Training.Test/` - Training system validation and testing
 
 **Documentation:**
-- `docs/` - Architecture documentation
+- `docs/` - Architecture documentation and design principles
 
 ### Key Technologies
+- **Rust**: Culture-neutral transaction kernel with memory safety
 - **.NET 9**: AI integration and demo applications
 - **Terminal.Gui**: Cross-platform terminal user interface
 - **SQLite**: Product catalog databases with authentic regional data
 - **OpenAI/Ollama**: Large language model integration for AI personalities
 - **Named Pipes**: IPC between demo application and extension service
+- **HTTP**: Communication between extension service and Rust kernel
 
 ### Adding New Store Types
 
@@ -506,10 +558,21 @@ dotnet run --project PosKernel.AI.Demo --mock
 3. Add configuration: `config/store.config`
 4. Update `RetailExtensionService` configuration to include the new store type
 5. Add AI prompts for the new personality type
+6. Test with both OpenAI and Ollama providers
+
+### Contributing
+
+When contributing to POS Kernel:
+
+1. **Follow architectural principles**: No hardcoded assumptions, fail-fast error handling
+2. **Document unsafe operations**: All FFI code requires comprehensive safety documentation
+3. **Test with multiple currencies**: Verify zero decimal (JPY) and 3 decimal (BHD) currencies
+4. **Validate cultural neutrality**: Code should work in any locale without modification
+5. **Include proper error messages**: Use "DESIGN DEFICIENCY" pattern for architectural violations
 
 ## AI Training System
 
-The system includes an experimental AI training framework designed to automatically improve cashier personalities through simulated customer interactions. This system is in early development stages but demonstrates the potential for continuous learning and improvement of AI personalities.
+The system includes an experimental AI training framework designed to automatically improve cashier personalities through simulated customer interactions. This system demonstrates the potential for continuous learning and improvement of AI personalities.
 
 ### Training Architecture
 
@@ -536,16 +599,6 @@ graph TB
     TDS --> TP
 ```
 
-### How Training Works
-
-The training system operates by:
-
-1. **Scenario Generation**: Creates realistic customer interaction scenarios for specific store types
-2. **AI Response Collection**: Runs the AI personality through these scenarios and captures responses
-3. **Response Analysis**: Evaluates AI responses for appropriateness, cultural accuracy, and helpfulness
-4. **Enhancement Generation**: Uses the analysis to generate specific improvements to prompts
-5. **Prompt Refinement**: Updates the AI personality prompts based on training results
-
 ### Training Components
 
 Training is configured per store type with cultural context:
@@ -562,6 +615,7 @@ The training system is **experimental** and includes:
 - ✅ **Scenario Generation**: Configurable customer interaction scenarios
 - ✅ **Multi-Store Support**: Training configurations for each retail store type
 - ✅ **Response Analysis**: Automated evaluation of AI responses
+- ✅ **Culture-Neutral Design**: No hardcoded assumptions in training system
 - 🚧 **Enhancement Application**: Automatic prompt improvement (in development)
 - 🚧 **Feedback Loops**: Continuous learning from training results (planned)
 

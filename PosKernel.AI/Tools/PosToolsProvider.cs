@@ -22,6 +22,7 @@ using PosKernel.Abstractions.Services;
 using PosKernel.Extensions.Restaurant.Client;
 using PosKernel.Extensions.Restaurant;
 using PosKernel.AI.Services;
+using PosKernel.Configuration.Services;
 
 namespace PosKernel.AI.Tools
 {
@@ -35,6 +36,7 @@ namespace PosKernel.AI.Tools
         private readonly RestaurantExtensionClient? _restaurantClient;
         private readonly ILogger<PosToolsProvider> _logger;
         private readonly StoreConfig? _storeConfig;
+        private readonly ICurrencyFormattingService? _currencyFormatter; // NEW DEPENDENCY
 
         /// <summary>
         /// Initializes a new instance of the PosToolsProvider with IProductCatalogService.
@@ -42,12 +44,13 @@ namespace PosKernel.AI.Tools
         /// <param name="productCatalog">The product catalog service for database access.</param>
         /// <param name="logger">Logger for diagnostics and debugging.</param>
         /// <param name="storeConfig">Store configuration for currency and locale information.</param>
-        public PosToolsProvider(IProductCatalogService productCatalog, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null)
+        public PosToolsProvider(IProductCatalogService productCatalog, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null, ICurrencyFormattingService? currencyFormatter = null)
         {
             _productCatalog = productCatalog ?? throw new ArgumentNullException(nameof(productCatalog));
             _restaurantClient = null;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _storeConfig = storeConfig;
+            _currencyFormatter = currencyFormatter; // SET CURRENCY FORMATTER
         }
 
         /// <summary>
@@ -56,12 +59,13 @@ namespace PosKernel.AI.Tools
         /// <param name="restaurantClient">The restaurant extension client for product operations.</param>
         /// <param name="logger">Logger for diagnostics and debugging.</param>
         /// <param name="storeConfig">Store configuration for currency and locale information.</param>
-        public PosToolsProvider(RestaurantExtensionClient restaurantClient, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null)
+        public PosToolsProvider(RestaurantExtensionClient restaurantClient, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null, ICurrencyFormattingService? currencyFormatter = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
             _productCatalog = null;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _storeConfig = storeConfig;
+            _currencyFormatter = currencyFormatter; // SET CURRENCY FORMATTER
         }
 
         /// <summary>
@@ -937,25 +941,20 @@ namespace PosKernel.AI.Tools
         }
 
         /// <summary>
-        /// ARCHITECTURAL PRINCIPLE: Currency formatting uses store configuration - no hardcoded assumptions.
+        /// ARCHITECTURAL PRINCIPLE: Currency formatting must use service - no client-side assumptions.
         /// </summary>
-        private string FormatCurrency(decimal amount) {
-            if (_storeConfig?.Currency == null) {
-                throw new InvalidOperationException(
-                    $"DESIGN DEFICIENCY: Store configuration missing currency. " +
-                    $"Cannot format {amount} without valid currency in store config. " +
-                    $"Ensure StoreConfig has valid Currency property.");
+        private string FormatCurrency(decimal amount) 
+        {
+            if (_currencyFormatter != null && _storeConfig != null)
+            {
+                return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreId);
             }
             
-            // Use store currency configuration for basic formatting
-            return _storeConfig.Currency.ToUpperInvariant() switch {
-                "USD" => $"${amount:F2}",
-                "SGD" => $"S${amount:F2}",
-                "EUR" => $"€{amount:F2}",
-                "GBP" => $"£{amount:F2}",
-                "JPY" => $"¥{amount:F0}",
-                _ => $"{amount:F2} {_storeConfig.Currency}"
-            };
+            // ARCHITECTURAL PRINCIPLE: FAIL FAST - No fallback formatting
+            throw new InvalidOperationException(
+                $"DESIGN DEFICIENCY: Currency formatting service not available. " +
+                $"Cannot format {amount} without proper currency service. " +
+                $"Register ICurrencyFormattingService in DI container.");
         }
 
         private string AddProductToTransaction(IProductInfo product, int quantity, Transaction transaction)

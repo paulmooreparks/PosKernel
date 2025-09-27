@@ -17,6 +17,53 @@
 namespace PosKernel.Client
 {
     /// <summary>
+    /// NRF ARTS-compliant line item type enumeration.
+    /// Defines the standard types of line items in POS transactions.
+    /// </summary>
+    public enum LineItemType
+    {
+        /// <summary>
+        /// Standard sale item.
+        /// </summary>
+        Sale = 0,
+
+        /// <summary>
+        /// Return/refund item.
+        /// </summary>
+        Return = 1,
+
+        /// <summary>
+        /// Void/cancel item.
+        /// </summary>
+        Void = 2,
+
+        /// <summary>
+        /// Modification to another item (e.g., "extra cheese").
+        /// </summary>
+        Modification = 3,
+
+        /// <summary>
+        /// Discount applied to item or transaction.
+        /// </summary>
+        Discount = 4,
+
+        /// <summary>
+        /// Tax line item.
+        /// </summary>
+        Tax = 5,
+
+        /// <summary>
+        /// Service charge or fee.
+        /// </summary>
+        ServiceCharge = 6,
+
+        /// <summary>
+        /// Tip or gratuity.
+        /// </summary>
+        Tip = 7
+    }
+
+    /// <summary>
     /// Client interface for communicating with POS Kernel Service.
     /// Provides the same API as the in-process kernel but over IPC.
     /// </summary>
@@ -31,6 +78,16 @@ namespace PosKernel.Client
         /// Disconnects from the POS Kernel Service.
         /// </summary>
         Task DisconnectAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Disconnects from the POS Kernel Service (synchronous version).
+        /// </summary>
+        void Disconnect();
+
+        /// <summary>
+        /// Gets store configuration information.
+        /// </summary>
+        Task<object> GetStoreConfigAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Gets the connection status.
@@ -59,12 +116,6 @@ namespace PosKernel.Client
         Task<TransactionClientResult> AddModificationAsync(string sessionId, string transactionId, int parentLineNumber, string modificationId, int quantity, decimal unitPrice, LineItemType itemType = LineItemType.Modification, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Updates the preparation notes for a line item (CRITICAL for set meal customization).
-        /// ARCHITECTURAL FIX: Allows updating existing set items instead of creating separate line items.
-        /// </summary>
-        Task<TransactionClientResult> UpdateLineItemPreparationNotesAsync(string sessionId, string transactionId, int lineNumber, string preparationNotes, CancellationToken cancellationToken = default);
-
-        /// <summary>
         /// Voids a line item from the transaction by line number.
         /// Creates a reversing entry to maintain audit trail compliance with POS accounting standards.
         /// </summary>
@@ -89,6 +140,12 @@ namespace PosKernel.Client
         /// Closes a session.
         /// </summary>
         Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Adds a child line item with parent relationship for NRF-compliant hierarchical modifications.
+        /// ARCHITECTURAL PRINCIPLE: This replaces preparation notes with proper parent-child line item relationships.
+        /// </summary>
+        Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default);
     }
 
     /// <summary>
@@ -192,12 +249,6 @@ namespace PosKernel.Client
         /// Gets or sets the void reason.
         /// </summary>
         public string? VoidReason { get; set; }
-
-        /// <summary>
-        /// Gets or sets the preparation notes (CRITICAL for set meal tracking).
-        /// ARCHITECTURAL PRINCIPLE: This is how we track set customizations properly.
-        /// </summary>
-        public string PreparationNotes { get; set; } = "";
 
         /// <summary>
         /// Gets or sets additional metadata.

@@ -210,12 +210,10 @@ public class ProductionAITrainingSession : ITrainingSession
         // ARCHITECTURAL FIX: Get currency from the production services store configuration
         var storeConfig = _productionServices.GetRequiredService<StoreConfig>();
         
-        // Get current production prompt as baseline (EXACT same as what AI demo uses)
+        // Get current production prompt as baseline - AI handles time context naturally
         var currentPromptContext = new PromptContext 
         { 
-            TimeOfDay = "afternoon", 
-            CurrentTime = DateTime.Now.ToString("HH:mm"),
-            Currency = storeConfig.Currency  // ARCHITECTURAL FIX: Must provide currency from store configuration
+            Currency = storeConfig.Currency
         };
         var currentProductionPrompt = await _promptService.GetCurrentPromptAsync(_personalityType, _promptType, currentPromptContext);
         var optimizedPrompt = currentProductionPrompt;
@@ -509,11 +507,9 @@ public class ProductionAITrainingSession : ITrainingSession
     /// </summary>
     private async Task<string> GeneratePromptVariationAsync(int generation, TrainingConfiguration config, StoreConfig storeConfig)
     {
-        // Get the current baseline prompt
+        // Get the current baseline prompt - AI handles time context naturally
         var promptContext = new PromptContext 
         { 
-            TimeOfDay = "afternoon", 
-            CurrentTime = DateTime.Now.ToString("HH:mm"),
             Currency = storeConfig.Currency
         };
         
@@ -1752,17 +1748,16 @@ public class ProductionAITrainingSession : ITrainingSession
             // ARCHITECTURAL FIX: Add delay to ensure file system operations complete
             await Task.Delay(100);
             
-            // Reload the prompt that the cashier system would actually use
+            // Reload the prompt that the cashier system would actually use - AI handles time naturally
             var storeConfig = _productionServices.GetRequiredService<StoreConfig>();
             var promptContext = new PromptContext 
             { 
-                TimeOfDay = "afternoon", 
-                CurrentTime = DateTime.Now.ToString("HH:mm"),
                 Currency = storeConfig.Currency
             };
-            
+
+            // Get the reloaded prompt to compare against expected
             var reloadedPrompt = await _promptService.GetCurrentPromptAsync(_personalityType, _promptType, promptContext);
-            
+
             // ARCHITECTURAL FIX: Compare the core template content, not the fully built prompt with context
             // The BuildPrompt method adds context, so we need to compare the raw template
             var expectedTemplate = ExtractTemplateFromPrompt(expectedPrompt);

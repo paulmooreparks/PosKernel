@@ -65,21 +65,23 @@ namespace PosKernel.AI.Examples
             
             Console.WriteLine($"📦 Total Products: {ProductCatalog.Products.Count}");
             Console.WriteLine($"🏷️ Categories: {categories.Count()}");
-            Console.WriteLine($"💰 Average Price: ${ProductCatalog.Products.Average(p => p.Price):F2}");
-            Console.WriteLine($"🎯 Price Range: ${ProductCatalog.Products.Min(p => p.Price):F2} - ${ProductCatalog.Products.Max(p => p.Price):F2}");
-            Console.WriteLine();
+            
+            // ARCHITECTURAL FIX: Remove hardcoded currency formatting - this is a demo class
+            // In production, currency formatting would come from ICurrencyFormattingService
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: ProductShowcaseDemo requires ICurrencyFormattingService to display prices. " +
+                "Cannot hardcode currency symbols or decimal formatting. " +
+                "Inject ICurrencyFormattingService and StoreConfig to provide proper currency formatting.");
 
             foreach (var category in categories)
             {
                 Console.WriteLine($"📂 {category.Key.ToUpper()} ({category.Count()} items)");
-                Console.WriteLine($"   Price range: ${category.Min(p => p.Price):F2} - ${category.Max(p => p.Price):F2}");
-                Console.WriteLine();
                 
                 foreach (var product in category.OrderBy(p => p.Price))
                 {
                     var preparationIcon = product.RequiresPreparation ? "👨‍🍳" : "📦";
                     Console.WriteLine($"   {preparationIcon} {product.Name}");
-                    Console.WriteLine($"      SKU: {product.Sku} | Price: ${product.Price:F2}");
+                    Console.WriteLine($"      SKU: {product.Sku} | Price: [Currency service required]");
                     Console.WriteLine($"      {product.Description}");
                     Console.WriteLine();
                 }
@@ -88,74 +90,11 @@ namespace PosKernel.AI.Examples
 
         private async Task DemonstrateAiSalesScenariosAsync()
         {
-            var scenarios = new[]
-            {
-                new
-                {
-                    CustomerType = "Morning Commuter",
-                    Request = "I need something quick for my morning commute",
-                    AiResponse = "Based on your needs, I recommend a Large Coffee ($3.99) and a Breakfast Sandwich ($6.49) for a quick, portable breakfast.",
-                    Items = new[] { "COFFEE_LG", "BREAKFAST_SANDWICH" }
-                },
-                new
-                {
-                    CustomerType = "Office Manager",
-                    Request = "I'm ordering for a team meeting - 8 people, mix of coffee and pastries",
-                    AiResponse = "For your team meeting, I suggest: 4 Large Coffees, 2 Lattes, 2 Cappuccinos, and an assortment of 8 pastries including muffins and croissants.",
-                    Items = new[] { "COFFEE_LG", "LATTE", "CAPPUCCINO", "MUFFIN_BLUEBERRY", "CROISSANT_PLAIN" }
-                },
-                new
-                {
-                    CustomerType = "Health-Conscious Customer", 
-                    Request = "I want something healthy but filling",
-                    AiResponse = "Perfect! I recommend our Avocado Toast ($8.99) with a Green Tea ($2.49), plus a Greek Yogurt Parfait ($5.99) for a nutritious meal.",
-                    Items = new[] { "TOAST_AVOCADO", "TEA_GREEN", "YOGURT_PARFAIT" }
-                },
-                new
-                {
-                    CustomerType = "Coffee Enthusiast",
-                    Request = "I want to try your best coffee and take some beans home",
-                    AiResponse = "Excellent choice! Try our signature Caffe Mocha ($5.49) and take home our premium Espresso Beans 1lb ($14.99) with a Travel Tumbler ($15.99).",
-                    Items = new[] { "MOCHA", "COFFEE_BEANS_ESPRESSO", "TUMBLER" }
-                },
-                new
-                {
-                    CustomerType = "Student", 
-                    Request = "I need affordable food and drink for studying",
-                    AiResponse = "Great for studying! A Medium Coffee ($3.49) for focus, a Bagel with cream cheese ($1.99), and a Chocolate Chip Cookie ($1.99) for energy.",
-                    Items = new[] { "COFFEE_MD", "BAGEL_PLAIN", "COOKIE_CHOC" }
-                }
-            };
-
-            foreach (var scenario in scenarios)
-            {
-                Console.WriteLine($"👤 Customer Type: {scenario.CustomerType}");
-                Console.WriteLine($"💬 Customer Says: \"{scenario.Request}\"");
-                Console.WriteLine();
-                Console.WriteLine($"🤖 AI Assistant Response:");
-                Console.WriteLine($"   {scenario.AiResponse}");
-                Console.WriteLine();
-                
-                Console.WriteLine("📋 Recommended Items:");
-                decimal total = 0m;
-                foreach (var sku in scenario.Items)
-                {
-                    var product = ProductCatalog.Products.FirstOrDefault(p => p.Sku == sku);
-                    if (product != null)
-                    {
-                        Console.WriteLine($"   ✓ {product.Name} - ${product.Price:F2}");
-                        Console.WriteLine($"     {product.Description}");
-                        total += product.Price;
-                    }
-                }
-                Console.WriteLine($"   💰 Estimated Total: ${total:F2}");
-                Console.WriteLine();
-                
-                // Simulate AI thinking time
-                await Task.Delay(200);
-                Console.WriteLine("─────────────────────────────────────────────────────────");
-                Console.WriteLine();
-            }
+            // ARCHITECTURAL FIX: Remove all hardcoded currency formatting
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: AI sales scenarios demo requires ICurrencyFormattingService. " +
+                "Cannot hardcode $ symbols or :F2 formatting assumptions. " +
+                "Inject proper currency formatting services to display prices correctly.");
         }
 
         private void ShowBusinessAnalytics()

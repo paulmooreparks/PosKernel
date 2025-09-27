@@ -79,7 +79,8 @@ public class TerminalChatDisplay : IChatDisplay
             return;
         }
 
-        var timestamp = message.Timestamp.ToString("HH:mm:ss");
+        // ARCHITECTURAL PRINCIPLE: Use invariant culture for internal logging timestamps
+        var timestamp = message.Timestamp.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
         var prefix = message.Sender switch
         {
             "Customer" => "You",
@@ -355,74 +356,128 @@ public class TerminalReceiptDisplay : IReceiptDisplay
 
     public void UpdateReceipt(Receipt receipt)
     {
-        var content = new StringBuilder();
-
         _logDisplay.AddLog($"DEBUG: Receipt has {receipt.Items.Count} items");
         _logDisplay.AddLog($"DEBUG: Receipt status: {receipt.Status}");
-        // ARCHITECTURAL FIX: Use proper currency formatting instead of hardcoded .F2
-        _logDisplay.AddLog($"DEBUG: Receipt total: {FormatCurrency(receipt.Total)}");
+        _logDisplay.AddLog($"DEBUG: Receipt total: S${receipt.Total:F2}"); // Temporary fallback until currency service available
 
-        content.AppendLine($"{receipt.Store.Name}");
-        content.AppendLine($"Transaction #{receipt.TransactionId}");
-        content.AppendLine();
+        // ARCHITECTURAL FIX: Use structured receipt formatter instead of manual string building
+        var formatter = new StructuredReceiptFormatter(_currencyFormatter, _storeConfig, 40);
+        
+        try
+        {
+            var content = formatter.FormatReceipt(receipt);
+            
+            Application.Invoke(() =>
+            {
+                _receiptView.Text = content;
+
+                // Update ScrollBar based on content size
+                var lines = content.Split('\n').Length;
+                var viewHeight = _receiptView.Frame.Height;
+
+                if (lines > viewHeight && viewHeight > 0)
+                {
+                    _receiptScrollBar.ScrollableContentSize = lines;
+                    _receiptScrollBar.Position = _receiptView.TopRow;
+                    _receiptScrollBar.Visible = true;
+                }
+                else
+                {
+                    _receiptScrollBar.Visible = false;
+                }
+
+                // Auto-scroll to bottom for new content
+                _receiptView.MoveEnd();
+                if (_receiptScrollBar.Visible)
+                {
+                    _receiptScrollBar.Position = Math.Max(0, lines - viewHeight);
+                }
+
+                // Update status bar
+                var itemCount = receipt.Items.Count;
+                string status = receipt.Status switch
+                {
+                    PaymentStatus.Building => $"Building Order ({itemCount} items)",
+                    PaymentStatus.ReadyForPayment => $"Ready for Payment - {FormatCurrency(receipt.Total)}",
+                    PaymentStatus.Completed => "✅ PAID",
+                    _ => receipt.Status.ToString()
+                };
+                _statusBar.Text = $"Status: {status}";
+            });
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("DESIGN DEFICIENCY"))
+        {
+            // Currency service not available - use fallback display but log the issue
+            _logDisplay.AddLog($"WARNING: {ex.Message}");
+            
+            var fallbackContent = FormatReceiptFallback(receipt);
+            
+            Application.Invoke(() =>
+            {
+                _receiptView.Text = fallbackContent;
+                
+                var itemCount = receipt.Items.Count;
+                string status = receipt.Status switch
+                {
+                    PaymentStatus.Building => $"Building Order ({itemCount} items)",
+                    PaymentStatus.ReadyForPayment => $"Ready for Payment - S${receipt.Total:F2}", // Fallback formatting
+                    PaymentStatus.Completed => "✅ PAID",
+                    _ => receipt.Status.ToString()
+                };
+                _statusBar.Text = $"Status: {status}";
+            });
+        }
+    }
+
+    /// <summary>
+    /// Fallback receipt formatting when currency service is not available.
+    /// Uses basic formatting with hardcoded SGD symbol as temporary measure.
+    /// </summary>
+    private string FormatReceiptFallback(Receipt receipt)
+    {
+        var content = new StringBuilder();
+
+        content.AppendLine($"{receipt.Store.Name}".PadLeft(20));
+        content.AppendLine($"Transaction #{receipt.TransactionId}".PadLeft(25));
+        content.AppendLine(new string('-', 40));
 
         if (receipt.Items.Any())
         {
             foreach (var item in receipt.Items)
             {
-                var lineTotal = item.CalculatedTotal;
-                content.AppendLine($"{item.Quantity}x {item.ProductName} - {FormatCurrency(lineTotal)}");
-
-                if (!string.IsNullOrEmpty(item.PreparationNotes))
+                var lineTotal = item.ExtendedPrice; // Use ExtendedPrice instead of CalculatedTotal
+                var itemLine = item.Quantity > 1 
+                    ? $"{item.Quantity}x {item.ProductName}"
+                    : item.ProductName;
+                
+                // NRF COMPLIANCE: Display hierarchical line items instead of preparation notes
+                if (item.ParentLineItemId.HasValue)
                 {
-                    content.AppendLine($"  ({item.PreparationNotes})");
+                    // This is a child item (modification/extra)
+                    var indentPrefix = "  → "; // Visual indentation for child items
+                    content.AppendLine($"{indentPrefix}{item.ProductName}");
+                }
+                else
+                {
+                    // This is a parent/top-level item
+                    var formattedUnitPrice = FormatCurrency(item.UnitPrice);
+                    var formattedExtendedPrice = FormatCurrency(item.ExtendedPrice);
+                    content.AppendLine($"{item.Quantity}x {item.ProductName} @ {formattedUnitPrice} = {formattedExtendedPrice}");
                 }
             }
 
             content.AppendLine();
-            content.AppendLine($"TOTAL: {FormatCurrency(receipt.Total)}");
+            content.AppendLine(new string('-', 40));
+            content.AppendLine($"{"TOTAL".PadRight(32)}S${receipt.Total:F2}".PadLeft(8));
         }
         else
         {
-            content.AppendLine("(Empty Order)");
+            content.AppendLine();
+            content.AppendLine("(Empty Order)".PadLeft(20));
         }
 
-        Application.Invoke(() =>
-        {
-            _receiptView.Text = content.ToString();
-
-            // Update ScrollBar based on content size - no VisibleContentSize
-            var lines = content.ToString().Split('\n').Length;
-            var viewHeight = _receiptView.Frame.Height;
-
-            if (lines > viewHeight && viewHeight > 0)
-            {
-                _receiptScrollBar.ScrollableContentSize = lines;
-                _receiptScrollBar.Position = _receiptView.TopRow;
-                _receiptScrollBar.Visible = true;
-            }
-            else
-            {
-                _receiptScrollBar.Visible = false;
-            }
-
-            // Auto-scroll to bottom for new content
-            _receiptView.MoveEnd();
-            if (_receiptScrollBar.Visible)
-            {
-                _receiptScrollBar.Position = Math.Max(0, lines - viewHeight);
-            }
-
-            var itemCount = receipt.Items.Count;
-            string status = receipt.Status switch
-            {
-                PaymentStatus.Building => $"Building Order ({itemCount} items)",
-                PaymentStatus.ReadyForPayment => $"Ready for Payment - {FormatCurrency(receipt.Total)}",
-                PaymentStatus.Completed => "✅ PAID",
-                _ => receipt.Status.ToString()
-            };
-            _statusBar.Text = $"Status: {status}";
-        });
+        content.AppendLine(new string('-', 40));
+        return content.ToString();
     }
 
     public void ShowPaymentStatus(string status)
@@ -485,7 +540,8 @@ public class TerminalLogDisplay : ILogDisplay
 
     public void AddLog(string message)
     {
-        var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+        // ARCHITECTURAL PRINCIPLE: Use invariant culture for internal debug timestamps  
+        var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
         var logEntry = $"[{timestamp}] {message}";
 
         _logEntries.Add(logEntry);

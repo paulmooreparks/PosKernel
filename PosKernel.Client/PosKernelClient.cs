@@ -120,6 +120,21 @@ namespace PosKernel.Client
         }
 
         /// <summary>
+        /// Synchronous version of DisconnectAsync for interface compatibility.
+        /// </summary>
+        public void Disconnect()
+        {
+            try
+            {
+                DisconnectAsync(CancellationToken.None).Wait(5000);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during synchronous disconnect");
+            }
+        }
+
+        /// <summary>
         /// Creates a new transaction session on the POS Kernel Service.
         /// </summary>
         /// <param name="terminalId">The terminal identifier.</param>
@@ -233,35 +248,6 @@ namespace PosKernel.Client
                     quantity = quantity,
                     unit_price = unitPrice,
                     item_type = itemType.ToString()
-                },
-                id = GetNextRequestId()
-            };
-
-            var response = await SendRequestAsync<TransactionClientResult>(request, cancellationToken);
-            return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
-        }
-
-        /// <summary>
-        /// Updates the preparation notes for a line item (critical for set meal customization).
-        /// </summary>
-        /// <param name="sessionId">The session identifier.</param>
-        /// <param name="transactionId">The transaction identifier.</param>
-        /// <param name="lineNumber">The line number to update.</param>
-        /// <param name="preparationNotes">The new preparation notes.</param>
-        /// <param name="cancellationToken">Token to cancel the operation.</param>
-        /// <returns>The result of the update operation.</returns>
-        public async Task<TransactionClientResult> UpdateLineItemPreparationNotesAsync(string sessionId, string transactionId, int lineNumber, string preparationNotes, CancellationToken cancellationToken = default)
-        {
-            var request = new
-            {
-                jsonrpc = "2.0",
-                method = "update_line_item_preparation_notes",
-                @params = new
-                {
-                    session_id = sessionId,
-                    transaction_id = transactionId,
-                    line_number = lineNumber,
-                    preparation_notes = preparationNotes
                 },
                 id = GetNextRequestId()
             };
@@ -401,6 +387,58 @@ namespace PosKernel.Client
             };
 
             await SendRequestAsync<dynamic>(request, cancellationToken);
+        }
+
+        /// <summary>
+        /// Gets store configuration from the POS Kernel Service.
+        /// </summary>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The store configuration object.</returns>
+        public async Task<object> GetStoreConfigAsync(CancellationToken cancellationToken = default)
+        {
+            var request = new
+            {
+                jsonrpc = "2.0",
+                method = "get_store_config",
+                @params = new { },
+                id = GetNextRequestId()
+            };
+
+            var response = await SendRequestAsync<object>(request, cancellationToken);
+            return response ?? new { };
+        }
+
+        /// <summary>
+        /// Adds a child line item to the current transaction (NRF hierarchical line items).
+        /// </summary>
+        /// <param name="sessionId">The session identifier.</param>
+        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="productId">The product identifier or SKU.</param>
+        /// <param name="quantity">The quantity of items to add.</param>
+        /// <param name="unitPrice">The unit price of the item.</param>
+        /// <param name="parentLineNumber">The parent line number this item modifies.</param>
+        /// <param name="cancellationToken">Token to cancel the operation.</param>
+        /// <returns>The result of the add child line item operation.</returns>
+        public async Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default)
+        {
+            var request = new
+            {
+                jsonrpc = "2.0",
+                method = "add_child_line_item",
+                @params = new
+                {
+                    session_id = sessionId,
+                    transaction_id = transactionId,
+                    product_id = productId,
+                    quantity = quantity,
+                    unit_price = unitPrice,
+                    parent_line_number = parentLineNumber
+                },
+                id = GetNextRequestId()
+            };
+
+            var response = await SendRequestAsync<TransactionClientResult>(request, cancellationToken);
+            return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
         }
 
         private async Task<T?> SendRequestAsync<T>(object request, CancellationToken cancellationToken = default)

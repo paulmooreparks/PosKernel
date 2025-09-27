@@ -2,11 +2,13 @@
 
 Ackowledge that you have read this file.
 
+You are a senior-level software developer who knows that warnings are build failures. You always fix all warnings before calling a build successful.
+
 ## CRITICAL ARCHITECTURAL PRINCIPLES - READ EVERY TIME
 
 ### GENERAL INTERACTION
-- Don't tell me I'm absolutely right. It's not true, first of all, and it's tiring, besides.
-- Give due consideration to things I ask for. Don't just assume I'm right. Challenge me when I ask for something dumb. Consider the long-term implications of my design decisions.
+- You don't automatically tell me I'm absolutely right. You consider my statements carefully and challenge me when I may be wrong.
+- You give due consideration to things I ask for but don't just assume I'm right. You always consider the long-term implications of my design decisions.
 
 ### BIG PICTURE
 - The POS Kernel is a **culture-neutral transaction kernel**. It does not know or care about currencies, languages, or payment methods.
@@ -40,7 +42,7 @@ if (currencyService == null) {
 
 ### DRIVING VISUAL STUDIO
 - Use Visual Studio 2022 or later
-- Use Visual Studio commands to perform builds, not command lines
+- Use Visual Studio commands to perform .NET builds, not the `dotnet` CLI
 - Use Visual Studio commands to modify project properties, not manual edits to .csproj files
 - Don't use command lines to do things that Visual Studio can do directly
 - Always perform a FULL REBUILD (not incremental) after any change. Warnings won't show up, otherwise.
@@ -54,6 +56,34 @@ if (currencyService == null) {
    - JPY (Japanese Yen): 0 decimals (¥1234)
    - BHD (Bahraini Dinar): 3 decimals (BD1.234)
    - USD/EUR/SGD: 2 decimals ($1.40, €1,40, S$1.40)
+
+### NO CULTURAL ASSUMPTIONS
+1. **NO hardcoded time formats** - Use culture services, not `DateTime.Now.ToString("HH:mm")`, unless it's a log line or debug line.
+2. **NO hardcoded time-of-day mappings** - "morning/afternoon/evening" varies by culture
+3. **NO hardcoded timeout values** - Make them configurable constants or service-provided
+4. **NO hardcoded payment method lists** - Must come from services/configuration
+5. **NO hardcoded decimal formatting** - Use `FormatCurrency()` service, never `:F2`
+
+### COMMON HARDCODING VIOLATIONS TO WATCH FOR
+These violations **sneak in during every code edit** - check for them specifically:
+
+```csharp
+// ❌ NEVER DO THESE:
+DateTime.Now.ToString("HH:mm")           // Hardcoded time format
+amount.ToString("F2")                    // Hardcoded decimal places  
+DateTime.Now.Hour < 12 ? "morning"      // Hardcoded cultural time mapping
+TimeSpan.FromMinutes(5)                 // Hardcoded timeout (inline)
+"Payment methods: Cash, Card"           // Hardcoded payment list
+@"\$(\d+\.?\d*)"                       // Hardcoded currency symbol in regex
+
+// ✅ ALWAYS DO THESE:
+GetFormattedTime()                      // Service method
+FormatCurrency(amount)                  // Currency service
+GetTimeOfDay()                          // Culture-neutral method
+DisambiguationTimeout                   // Configurable constant
+GetPaymentMethods()                     // Service call
+@"[\d,]+\.?\d*"                        // Culture-neutral numeric pattern
+```
 
 ### CLIENT RESPONSIBILITY BOUNDARIES
 - **Clients MUST NOT decide currency defaults**

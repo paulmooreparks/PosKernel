@@ -8,12 +8,12 @@ fn main() {
     
     // Try to get git hash
     if let Ok(output) = std::process::Command::new("git")
-        .args(&["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short", "HEAD"])
         .output()
     {
         if output.status.success() {
             let git_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            println!("cargo:rustc-env=GIT_HASH={}", git_hash);
+            println!("cargo:rustc-env=GIT_HASH={git_hash}");
         } else {
             println!("cargo:rustc-env=GIT_HASH=unknown");
         }

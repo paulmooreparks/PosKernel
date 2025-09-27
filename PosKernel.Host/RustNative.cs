@@ -60,6 +60,7 @@ namespace PosKernel.Host
         internal static extern PkResult pk_begin_transaction(
             byte[] store, UIntPtr storeLen,
             byte[] currency, UIntPtr currencyLen,
+            byte currencyDecimalPlaces,
             out ulong handle);
 
         [DllImport(LIB, EntryPoint = "pk_close_transaction", CallingConvention = CallingConvention.Cdecl)]

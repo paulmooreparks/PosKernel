@@ -47,11 +47,11 @@ public class PromptManagementService : IPromptManagementService
     {
         try
         {
-            _logger.LogDebug("Loading prompt for {PersonalityType}/{PromptType} with context: TimeOfDay={TimeOfDay}", 
-                personalityType, promptType, context.TimeOfDay);
+            _logger.LogDebug("Loading prompt for {PersonalityType}/{PromptType}", 
+                personalityType, promptType);
 
-            // ARCHITECTURAL PRINCIPLE: Integrate with existing AiPersonalityFactory instead of separate storage
-            // The AiPersonalityFactory will handle the PosKernelConfiguration.Initialize() call internally
+            // ARCHITECTURAL PRINCIPLE: AI personalities handle time and cultural context naturally
+            // No need to provide time context - AI can access current time and apply cultural intelligence
             var prompt = AiPersonalityFactory.BuildPrompt(personalityType, promptType, context);
             
             if (string.IsNullOrEmpty(prompt))

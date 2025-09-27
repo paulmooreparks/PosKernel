@@ -66,6 +66,12 @@ namespace PosKernel.AI.Services
         /// Gets or sets additional store configuration.
         /// </summary>
         public Dictionary<string, object> AdditionalConfig { get; set; } = new();
+
+        /// <summary>
+        /// ARCHITECTURAL PRINCIPLE: Configurable timeout instead of hardcoded value.
+        /// Disambiguation timeout in minutes - how long to wait for customer clarification.
+        /// </summary>
+        public int? DisambiguationTimeoutMinutes { get; set; }
     }
 
     /// <summary>
@@ -381,7 +387,10 @@ namespace PosKernel.AI.Services
                     ["languages"] = new[] { "English", "Mandarin", "Cantonese", "Hokkien", "Malay", "Tamil" },
                     ["terminal_id"] = "AI_TERMINAL",
                     ["operator_id"] = "AI_ASSISTANT"
-                }
+                },
+                
+                // ARCHITECTURAL PRINCIPLE: Configurable timeout instead of hardcoded
+                DisambiguationTimeoutMinutes = 3 // Shorter for busy kopitiam environment
             };
         }
 

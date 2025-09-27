@@ -59,14 +59,11 @@ pub struct Currency {
 }
 
 impl Currency {
-    fn new(code: &str) -> Result<Self, &'static str> {
+    fn new(code: &str, decimal_places: u8) -> Result<Self, &'static str> {
         let code_upper = code.to_uppercase();
-        let decimal_places = match code_upper.as_str() {
-            "JPY" => 0,
-            "USD" | "EUR" | "GBP" | "CAD" | "AUD" | "SGD" => 2,
-            _ => 2, // Default to 2 decimal places
-        };
         
+        // ARCHITECTURAL PRINCIPLE: Kernel is culture-neutral - client provides decimal places
+        // Currency formatting and rules are user-space concerns, not kernel concerns
         Ok(Currency {
             code: code_upper,
             decimal_places,
@@ -84,15 +81,41 @@ struct Line {
     sku: String,
     qty: i32,
     unit_minor: i64,
+    // NRF COMPLIANCE: Support linked items (parent-child relationships) ONLY
+    parent_line_item_id: Option<u32>,
 }
 
 impl Line {
     fn new(sku: String, qty: i32, unit_minor: i64) -> Self {
-        Self { sku, qty, unit_minor }
+        Self { 
+            sku, 
+            qty, 
+            unit_minor,
+            parent_line_item_id: None, // Initialize as top-level item
+        }
+    }
+    
+    // Constructor for child items with parent reference
+    fn new_with_parent(sku: String, qty: i32, unit_minor: i64, parent_line_id: u32) -> Self {
+        Self { 
+            sku, 
+            qty, 
+            unit_minor,
+            parent_line_item_id: Some(parent_line_id),
+        }
     }
     
     fn total_minor(&self) -> i64 {
         self.unit_minor * self.qty as i64
+    }
+    
+    fn get_parent_line_item_id(&self) -> Option<u32> {
+        self.parent_line_item_id
+    }
+    
+    #[allow(dead_code)] // TODO: Will be used when HTTP service supports parent relationship updates
+    fn set_parent_line_item_id(&mut self, parent_id: Option<u32>) {
+        self.parent_line_item_id = parent_id;
     }
 }
 
@@ -138,6 +161,17 @@ impl Transaction {
         self.lines.push(Line::new(sku, qty, unit_minor));
     }
     
+    // NRF COMPLIANCE: Add child item with parent reference
+    fn add_child_line(&mut self, sku: String, qty: i32, unit_minor: i64, parent_line_id: u32) -> Result<(), String> {
+        // Validate parent exists
+        if parent_line_id == 0 || parent_line_id as usize > self.lines.len() {
+            return Err("Invalid parent line item ID".to_string());
+        }
+        
+        self.lines.push(Line::new_with_parent(sku, qty, unit_minor, parent_line_id));
+        Ok(())
+    }
+    
     fn add_tender(&mut self, amount_minor: i64) {
         self.tendered_minor += amount_minor;
         if self.tendered_minor >= self.total_minor() {
@@ -147,6 +181,51 @@ impl Transaction {
     
     fn line_count(&self) -> u32 {
         self.lines.len() as u32
+    }
+    
+    // NRF COMPLIANCE: Find all child items recursively for void cascade
+    fn find_all_children(&self, parent_line_number: u32) -> Vec<u32> {
+        let mut children = Vec::new();
+        
+        // Find direct children
+        for (index, line) in self.lines.iter().enumerate() {
+            if let Some(parent_id) = line.get_parent_line_item_id() {
+                if parent_id == parent_line_number {
+                    let child_line_number = (index + 1) as u32; // 1-based line numbers
+                    children.push(child_line_number);
+                    
+                    // Recursively find grandchildren
+                    let grandchildren = self.find_all_children(child_line_number);
+                    children.extend(grandchildren);
+                }
+            }
+        }
+        
+        children
+    }
+    
+    // NRF COMPLIANCE: Get parent line item ID for a given line
+    fn get_line_parent_id(&self, line_index: u32) -> Option<u32> {
+        if line_index == 0 || line_index as usize > self.lines.len() {
+            return None;
+        }
+        
+        self.lines[(line_index - 1) as usize].get_parent_line_item_id()
+    }
+    
+    // NRF COMPLIANCE: Void a single line item (used by cascade)
+    fn void_single_line_item(&mut self, line_number: u32, _reason: &str) -> Result<(), String> {
+        if line_number == 0 || line_number as usize > self.lines.len() {
+            return Err("Invalid line number".to_string());
+        }
+        
+        let line_index = (line_number - 1) as usize;
+        // For now, just mark as voided (would need voided flag in real implementation)
+        // TODO: Add voided flag to Line struct for proper void tracking
+        // TODO: Use _reason parameter for audit logging when void tracking is implemented
+        self.lines[line_index].qty = 0; // Simple void implementation
+        
+        Ok(())
     }
 }
 
@@ -184,6 +263,18 @@ impl LegalKernelStore {
         Ok(())
     }
     
+    // NRF COMPLIANCE: Add child line item with parent reference
+    fn add_child_line_legal(&mut self, handle: u64, sku: String, qty: i32, unit_minor: i64, parent_line_id: u32) -> Result<(), String> {
+        let tx = self.active_transactions.get_mut(&handle)
+            .ok_or("Transaction not found")?;
+        
+        if tx.state != TxState::Building {
+            return Err("Transaction not in building state".to_string());
+        }
+        
+        tx.add_child_line(sku, qty, unit_minor, parent_line_id)
+    }
+    
     fn add_cash_tender_legal(&mut self, handle: u64, amount_minor: i64) -> Result<(), String> {
         let tx = self.active_transactions.get_mut(&handle)
             .ok_or("Transaction not found")?;
@@ -218,6 +309,66 @@ impl LegalKernelStore {
         let tx = self.active_transactions.get(&handle)
             .ok_or("Transaction not found")?;
         Ok(tx.currency.decimal_places())
+    }
+    
+    // ARCHITECTURAL FIX: Update get_line_item_details to return parent_line_item_id instead of preparation notes
+    fn get_line_item_details(&self, handle: u64, line_index: u32) -> Result<(String, i32, i64, Option<u32>), String> {
+        let tx = self.active_transactions.get(&handle)
+            .ok_or("Transaction not found")?;
+        
+        if line_index as usize >= tx.lines.len() {
+            return Err("Line index out of range".to_string());
+        }
+        
+        let line = &tx.lines[line_index as usize];
+        Ok((line.sku.clone(), line.qty, line.unit_minor, line.parent_line_item_id))
+    }
+    
+    // NRF COMPLIANCE: Get parent line item ID for a given line
+    fn get_line_parent_id(&self, handle: u64, line_number: u32) -> Result<Option<u32>, String> {
+        let tx = self.active_transactions.get(&handle)
+            .ok_or("Transaction not found")?;
+        
+        Ok(tx.get_line_parent_id(line_number))
+    }
+    
+    // NRF COMPLIANCE: Find all children of a line item (for void cascade)
+    fn find_line_children(&self, handle: u64, parent_line_number: u32) -> Result<Vec<u32>, String> {
+        let tx = self.active_transactions.get(&handle)
+            .ok_or("Transaction not found")?;
+        
+        Ok(tx.find_all_children(parent_line_number))
+    }
+    
+    // ARCHITECTURAL COMPONENT: Voids a line item with NRF-compliant cascade to child items.
+    // Critical NRF requirement: When parent items are voided, all linked child items must be voided.
+    // 
+    // # Safety
+    // The caller must ensure that:
+    // - `handle` refers to a valid, active transaction
+    // - `line_number` is within the valid range of line items (1-based)
+    // - `reason_ptr` points to valid memory containing a UTF-8 encoded reason string
+    // - `reason_len` accurately represents the length of the data at `reason_ptr`
+    fn void_line_with_cascade(&mut self, handle: u64, line_number: u32, reason: &str) -> Result<(), String> {
+        let tx = self.active_transactions.get_mut(&handle)
+            .ok_or("Transaction not found")?;
+        
+        if tx.state != TxState::Building {
+            return Err("Cannot void items in committed transaction".to_string());
+        }
+        
+        // Find all child items recursively
+        let children = tx.find_all_children(line_number);
+        
+        // Void children first (reverse hierarchy order) 
+        for child_line_number in children.iter().rev() {
+            tx.void_single_line_item(*child_line_number, &format!("Parent voided: {}", reason))?;
+        }
+        
+        // Void parent item
+        tx.void_single_line_item(line_number, reason)?;
+        
+        Ok(())
     }
 }
 
@@ -261,8 +412,14 @@ pub extern "C" fn pk_get_version() -> *const std::os::raw::c_char {
     VERSION.as_ptr() as *const std::os::raw::c_char
 }
 
+/// ARCHITECTURAL COMPONENT: Gets terminal initialization status and parameters.
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `terminal_id_ptr` points to valid memory containing a UTF-8 encoded terminal ID
+/// - `terminal_id_len` accurately represents the length of the data at `terminal_id_ptr`
 #[no_mangle]
-pub extern "C" fn pk_initialize_terminal(
+pub unsafe extern "C" fn pk_initialize_terminal(
     terminal_id_ptr: *const u8,
     terminal_id_len: usize
 ) -> PkResult {
@@ -270,7 +427,7 @@ pub extern "C" fn pk_initialize_terminal(
         return PkResult::err(ResultCode::ValidationFailed);
     }
     
-    let _terminal_id = unsafe { read_str(terminal_id_ptr, terminal_id_len) };
+    let _terminal_id = read_str(terminal_id_ptr, terminal_id_len);
     
     // Initialize the kernel store
     let _ = legal_kernel_store();
@@ -278,22 +435,35 @@ pub extern "C" fn pk_initialize_terminal(
     PkResult::ok()
 }
 
+/// ARCHITECTURAL COMPONENT: Begins a new transaction in the kernel store.
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `store_ptr` points to valid memory containing a UTF-8 encoded store name
+/// - `store_len` accurately represents the length of the data at `store_ptr`
+/// - `currency_ptr` points to valid memory containing a UTF-8 encoded currency code
+/// - `currency_len` accurately represents the length of the data at `currency_ptr`
+/// - `currency_decimal_places` specifies the decimal places for currency (user-space decision)
+/// - `out_handle` points to valid memory where the transaction handle can be written
+/// - All pointers remain valid for the duration of this call
 #[no_mangle]
-pub extern "C" fn pk_begin_transaction(
+pub unsafe extern "C" fn pk_begin_transaction(
     store_ptr: *const u8,
     store_len: usize,
     currency_ptr: *const u8,
     currency_len: usize,
+    currency_decimal_places: u8,
     out_handle: *mut PkTransactionHandle
 ) -> PkResult {
     if store_ptr.is_null() || store_len == 0 || currency_ptr.is_null() || currency_len == 0 || out_handle.is_null() {
         return PkResult::err(ResultCode::ValidationFailed);
     }
     
-    let store = unsafe { read_str(store_ptr, store_len) };
-    let currency_code = unsafe { read_str(currency_ptr, currency_len) };
+    let store = read_str(store_ptr, store_len);
+    let currency_code = read_str(currency_ptr, currency_len);
     
-    let currency = match Currency::new(&currency_code) {
+    // ARCHITECTURAL PRINCIPLE: Kernel is culture-neutral - client provides all currency info
+    let currency = match Currency::new(&currency_code, currency_decimal_places) {
         Ok(c) => c,
         Err(_) => return PkResult::err(ResultCode::ValidationFailed)
     };
@@ -305,15 +475,24 @@ pub extern "C" fn pk_begin_transaction(
     
     match kernel_store.begin_transaction_legal(store, currency) {
         Ok(handle) => {
-            unsafe { *out_handle = handle; }
+            *out_handle = handle;
             PkResult::ok()
         },
         Err(_) => PkResult::err(ResultCode::InternalError)
     }
 }
 
+/// ARCHITECTURAL COMPONENT: Adds a line item to an existing transaction.
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `sku_ptr` points to valid memory containing a UTF-8 encoded SKU string
+/// - `sku_len` accurately represents the length of the data at `sku_ptr`
+/// - The memory pointed to by `sku_ptr` remains valid for the duration of this call
+/// - `handle` refers to a valid, active transaction
+/// - `qty` is greater than zero
 #[no_mangle]
-pub extern "C" fn pk_add_line(
+pub unsafe extern "C" fn pk_add_line(
     handle: PkTransactionHandle,
     sku_ptr: *const u8,
     sku_len: usize,
@@ -324,7 +503,7 @@ pub extern "C" fn pk_add_line(
         return PkResult::err(ResultCode::ValidationFailed);
     }
     
-    let sku = unsafe { read_str(sku_ptr, sku_len) };
+    let sku = read_str(sku_ptr, sku_len);
     
     let mut kernel_store = match legal_kernel_store().write() {
         Ok(s) => s,
@@ -357,8 +536,18 @@ pub extern "C" fn pk_add_cash_tender(
     }
 }
 
+/// ARCHITECTURAL COMPONENT: Retrieves transaction totals and state information.
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `handle` refers to a valid, active transaction
+/// - `out_total` points to valid memory where the total amount can be written
+/// - `out_tendered` points to valid memory where the tendered amount can be written
+/// - `out_change` points to valid memory where the change amount can be written
+/// - `out_state` points to valid memory where the transaction state can be written
+/// - All output pointers remain valid for the duration of this call
 #[no_mangle]
-pub extern "C" fn pk_get_totals(
+pub unsafe extern "C" fn pk_get_totals(
     handle: PkTransactionHandle,
     out_total: *mut i64,
     out_tendered: *mut i64,
@@ -376,20 +565,25 @@ pub extern "C" fn pk_get_totals(
     
     match kernel_store.get_transaction_totals(handle) {
         Ok((total, tendered, change, state)) => {
-            unsafe {
-                *out_total = total;
-                *out_tendered = tendered;
-                *out_change = change;
-                *out_state = state as i32;
-            }
+            *out_total = total;
+            *out_tendered = tendered;
+            *out_change = change;
+            *out_state = state as i32;
             PkResult::ok()
         },
         Err(_) => PkResult::err(ResultCode::NotFound)
     }
 }
 
+/// ARCHITECTURAL COMPONENT: Retrieves the number of line items in a transaction.
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `handle` refers to a valid, active transaction
+/// - `out_count` points to valid memory where the line count can be written
+/// - The output pointer remains valid for the duration of this call
 #[no_mangle]
-pub extern "C" fn pk_get_line_count(
+pub unsafe extern "C" fn pk_get_line_count(
     handle: PkTransactionHandle,
     out_count: *mut u32
 ) -> PkResult {
@@ -404,15 +598,22 @@ pub extern "C" fn pk_get_line_count(
     
     match kernel_store.get_line_count_legal(handle) {
         Ok(count) => {
-            unsafe { *out_count = count; }
+            *out_count = count;
             PkResult::ok()
         },
         Err(_) => PkResult::err(ResultCode::NotFound)
     }
 }
 
+/// ARCHITECTURAL COMPONENT: Retrieves the number of decimal places for the transaction's currency.
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `handle` refers to a valid, active transaction
+/// - `out_decimal_places` points to valid memory where the decimal places value can be written
+/// - The output pointer remains valid for the duration of this call
 #[no_mangle]
-pub extern "C" fn pk_get_currency_decimal_places(
+pub unsafe extern "C" fn pk_get_currency_decimal_places(
     handle: PkTransactionHandle,
     out_decimal_places: *mut u8
 ) -> PkResult {
@@ -427,7 +628,243 @@ pub extern "C" fn pk_get_currency_decimal_places(
     
     match kernel_store.get_currency_decimal_places(handle) {
         Ok(decimal_places) => {
-            unsafe { *out_decimal_places = decimal_places; }
+            *out_decimal_places = decimal_places;
+            PkResult::ok()
+        },
+        Err(_) => PkResult::err(ResultCode::NotFound)
+    }
+}
+
+/// ARCHITECTURAL COMPONENT: Retrieves details of a specific line item with parent relationship.
+/// NRF COMPLIANCE: Returns parent_line_item_id for hierarchical display.
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `handle` refers to a valid, active transaction
+/// - `line_index` is within the valid range of line items (0 to line_count-1)
+/// - `out_sku_ptr` points to valid memory buffer for the SKU string
+/// - `out_sku_len` specifies the size of the buffer, receives actual string length
+/// - `out_qty`, `out_unit_minor`, and `out_parent_id` point to valid memory for output values
+/// - `out_has_parent` points to valid memory for parent existence flag
+/// - All output pointers remain valid for the duration of this call
+#[no_mangle]
+pub unsafe extern "C" fn pk_get_line_item_with_parent(
+    handle: PkTransactionHandle,
+    line_index: u32,
+    out_sku_ptr: *mut u8,
+    out_sku_len: *mut usize,
+    out_qty: *mut i32,
+    out_unit_minor: *mut i64,
+    out_parent_id: *mut u32,
+    out_has_parent: *mut bool
+) -> PkResult {
+    if handle == PK_INVALID_HANDLE || out_sku_ptr.is_null() || out_sku_len.is_null() || out_qty.is_null() || out_unit_minor.is_null() || out_parent_id.is_null() || out_has_parent.is_null() {
+        return PkResult::err(ResultCode::ValidationFailed);
+    }
+    
+    let kernel_store = match legal_kernel_store().read() {
+        Ok(s) => s,
+        Err(_) => return PkResult::err(ResultCode::InternalError)
+    };
+    
+    match kernel_store.get_line_item_details(handle, line_index) {
+        Ok((sku, qty, unit_minor, parent_id)) => {
+            let sku_bytes = sku.as_bytes();
+            let buffer_size = *out_sku_len;
+            
+            if sku_bytes.len() >= buffer_size {
+                // Buffer too small, return required size
+                *out_sku_len = sku_bytes.len() + 1; // +1 for null terminator
+                return PkResult::err(ResultCode::InsufficientBuffer);
+            }
+            
+            // Copy SKU to output buffer
+            std::ptr::copy_nonoverlapping(sku_bytes.as_ptr(), out_sku_ptr, sku_bytes.len());
+            *out_sku_ptr.add(sku_bytes.len()) = 0; // Null terminator
+            
+            *out_sku_len = sku_bytes.len();
+            *out_qty = qty;
+            *out_unit_minor = unit_minor;
+            
+            // Set parent information
+            if let Some(parent) = parent_id {
+                *out_parent_id = parent;
+                *out_has_parent = true;
+            } else {
+                *out_parent_id = 0;
+                *out_has_parent = false;
+            }
+            
+            PkResult::ok()
+        },
+        Err(_) => PkResult::err(ResultCode::NotFound)
+    }
+}
+
+/// ARCHITECTURAL COMPONENT: Adds a child line item to an existing transaction with parent reference.
+/// NRF COMPLIANCE: Supports linked items (parent-child relationships).
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `sku_ptr` points to valid memory containing a UTF-8 encoded SKU string
+/// - `sku_len` accurately represents the length of the data at `sku_ptr`
+/// - The memory pointed to by `sku_ptr` remains valid for the duration of this call
+/// - `handle` refers to a valid, active transaction
+/// - `qty` is greater than zero
+/// - `parent_line_id` is a valid parent line item ID within the transaction
+#[no_mangle]
+pub unsafe extern "C" fn pk_add_child_line(
+    handle: PkTransactionHandle,
+    sku_ptr: *const u8,
+    sku_len: usize,
+    qty: i32,
+    unit_minor: i64,
+    parent_line_id: u32
+) -> PkResult {
+    if handle == PK_INVALID_HANDLE || sku_ptr.is_null() || sku_len == 0 || qty <= 0 {
+        return PkResult::err(ResultCode::ValidationFailed);
+    }
+    
+    let sku = read_str(sku_ptr, sku_len);
+    
+    let mut kernel_store = match legal_kernel_store().write() {
+        Ok(s) => s,
+        Err(_) => return PkResult::err(ResultCode::InternalError)
+    };
+    
+    match kernel_store.add_child_line_legal(handle, sku, qty, unit_minor, parent_line_id) {
+        Ok(_) => PkResult::ok(),
+        Err(_) => PkResult::err(ResultCode::ValidationFailed)
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn pk_add_line_with_parent(
+    handle: PkTransactionHandle,
+    sku_ptr: *const u8,
+    sku_len: usize,
+    qty: i32,
+    unit_minor: i64,
+    parent_line_id: u32  // 0 means no parent
+) -> PkResult {
+    if handle == PK_INVALID_HANDLE || sku_ptr.is_null() || sku_len == 0 || qty <= 0 {
+        return PkResult::err(ResultCode::ValidationFailed);
+    }
+    
+    let sku = read_str(sku_ptr, sku_len);
+    
+    let mut kernel_store = match legal_kernel_store().write() {
+        Ok(s) => s,
+        Err(_) => return PkResult::err(ResultCode::InternalError)
+    };
+    
+    match kernel_store.add_child_line_legal(handle, sku, qty, unit_minor, parent_line_id) {
+        Ok(_) => PkResult::ok(),
+        Err(_) => PkResult::err(ResultCode::ValidationFailed)
+    }
+}
+
+/// ARCHITECTURAL COMPONENT: Voids a line item with NRF-compliant cascade to child items.
+/// Critical NRF requirement: When parent items are voided, all linked child items must be voided.
+/// 
+/// # Safety
+/// The caller must ensure that:
+/// - `handle` refers to a valid, active transaction
+/// - `line_number` is within the valid range of line items (1-based)
+/// - `reason_ptr` points to valid memory containing a UTF-8 encoded reason string
+/// - `reason_len` accurately represents the length of the data at `reason_ptr`
+#[no_mangle]
+pub unsafe extern "C" fn pk_void_line_item_with_cascade(
+    handle: PkTransactionHandle,
+    line_number: u32,
+    reason_ptr: *const u8,
+    reason_len: usize
+) -> PkResult {
+    if handle == PK_INVALID_HANDLE || line_number == 0 || reason_ptr.is_null() {
+        return PkResult::err(ResultCode::ValidationFailed);
+    }
+    
+    let reason = read_str(reason_ptr, reason_len);
+    
+    let mut kernel_store = match legal_kernel_store().write() {
+        Ok(s) => s,
+        Err(_) => return PkResult::err(ResultCode::InternalError)
+    };
+    
+    // Use the NRF void cascade logic
+    match kernel_store.void_line_with_cascade(handle, line_number, &reason) {
+        Ok(_) => PkResult::ok(),
+        Err(_) => PkResult::err(ResultCode::ValidationFailed)
+    }
+}
+
+/// ARCHITECTURAL COMPONENT: Gets the parent line item ID for a specific line item.
+/// NRF COMPLIANCE: Supports querying linked items hierarchy.
+#[no_mangle]
+pub unsafe extern "C" fn pk_get_line_parent_id(
+    handle: PkTransactionHandle,
+    line_number: u32,
+    out_parent_id: *mut u32,
+    out_has_parent: *mut bool
+) -> PkResult {
+    if handle == PK_INVALID_HANDLE || line_number == 0 || out_parent_id.is_null() || out_has_parent.is_null() {
+        return PkResult::err(ResultCode::ValidationFailed);
+    }
+    
+    let kernel_store = match legal_kernel_store().read() {
+        Ok(s) => s,
+        Err(_) => return PkResult::err(ResultCode::InternalError)
+    };
+    
+    match kernel_store.get_line_parent_id(handle, line_number) {
+        Ok(parent_id_opt) => {
+            if let Some(parent_id) = parent_id_opt {
+                *out_parent_id = parent_id;
+                *out_has_parent = true;
+            } else {
+                *out_parent_id = 0;
+                *out_has_parent = false;
+            }
+            PkResult::ok()
+        },
+        Err(_) => PkResult::err(ResultCode::NotFound)
+    }
+}
+
+/// ARCHITECTURAL COMPONENT: Finds all child line items of a parent (for void cascade).
+/// NRF COMPLIANCE: Supports void cascade for linked items.
+#[no_mangle]
+pub unsafe extern "C" fn pk_find_line_children(
+    handle: PkTransactionHandle,
+    parent_line_number: u32,
+    out_children_ptr: *mut u32,
+    out_children_len: *mut usize
+) -> PkResult {
+    if handle == PK_INVALID_HANDLE || parent_line_number == 0 || out_children_ptr.is_null() || out_children_len.is_null() {
+        return PkResult::err(ResultCode::ValidationFailed);
+    }
+    
+    let kernel_store = match legal_kernel_store().read() {
+        Ok(s) => s,
+        Err(_) => return PkResult::err(ResultCode::InternalError)
+    };
+    
+    match kernel_store.find_line_children(handle, parent_line_number) {
+        Ok(children) => {
+            let buffer_size = *out_children_len;
+            
+            if children.len() > buffer_size {
+                // Buffer too small, return required size
+                *out_children_len = children.len();
+                return PkResult::err(ResultCode::InsufficientBuffer);
+            }
+            
+            // Copy child line numbers to output buffer
+            for (i, &child_id) in children.iter().enumerate() {
+                *out_children_ptr.add(i) = child_id;
+            }
+            
+            *out_children_len = children.len();
             PkResult::ok()
         },
         Err(_) => PkResult::err(ResultCode::NotFound)

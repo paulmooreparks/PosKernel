@@ -689,6 +689,114 @@ namespace PosKernel.Extensions.Restaurant
                 _disposed = true;
             }
         }
+
+        /// <summary>
+        /// Gets set meal components for a specific product SKU.
+        /// ARCHITECTURAL PRINCIPLE: Data-driven set configuration from database, not hardcoded rules.
+        /// </summary>
+        /// <param name="productSku">The set product SKU to query.</param>
+        /// <returns>List of set meal components.</returns>
+        public async Task<IReadOnlyList<SetMealComponent>> GetSetMealComponentsAsync(string productSku)
+        {
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT 
+                    component_id,
+                    set_product_sku,
+                    component_type,
+                    modification_id,
+                    is_required,
+                    is_automatic,
+                    quantity,
+                    price_adjustment_cents,
+                    display_order
+                FROM set_meal_components
+                WHERE set_product_sku = @productSku 
+                  AND is_active = 1
+                ORDER BY display_order, component_type";
+            command.Parameters.AddWithValue("@productSku", productSku);
+
+            var components = new List<SetMealComponent>();
+            using var reader = await command.ExecuteReaderAsync();
+            
+            while (await reader.ReadAsync())
+            {
+                components.Add(new SetMealComponent
+                {
+                    ComponentId = reader.GetString(0),
+                    SetProductSku = reader.GetString(1),
+                    ComponentType = reader.GetString(2),
+                    ModificationId = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    IsRequired = reader.GetBoolean(4),
+                    IsAutomatic = reader.GetBoolean(5),
+                    Quantity = reader.GetInt32(6),
+                    PriceAdjustmentCents = reader.GetInt64(7),
+                    DisplayOrder = reader.GetInt32(8)
+                });
+            }
+
+            return components;
+        }
+
+        /// <summary>
+        /// Gets available modifications for a specific product and component type.
+        /// ARCHITECTURAL PRINCIPLE: Query actual database for modification options, don't assume.
+        /// </summary>
+        /// <param name="productSku">The product SKU to query modifications for.</param>
+        /// <param name="componentType">The component type (e.g., "DRINK_CHOICE", "SIDE_CHOICE").</param>
+        /// <returns>List of available modifications.</returns>
+        public async Task<IReadOnlyList<ProductModification>> GetAvailableModificationsAsync(string productSku, string componentType)
+        {
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync();
+
+            using var command = connection.CreateCommand();
+            command.CommandText = @"
+                SELECT DISTINCT
+                    pm.modification_id,
+                    pm.name,
+                    pm.description,
+                    pm.modification_type,
+                    pm.price_adjustment_type,
+                    pm.base_price_cents,
+                    pm.display_order
+                FROM product_modifications pm
+                INNER JOIN modification_availability ma ON ma.modification_id = pm.modification_id
+                WHERE ma.parent_sku = @productSku 
+                  AND ma.parent_type = 'PRODUCT'
+                  AND pm.is_active = 1
+                  AND ma.is_active = 1
+                  AND EXISTS (
+                      SELECT 1 FROM set_meal_components smc 
+                      WHERE smc.set_product_sku = @productSku 
+                        AND smc.component_type = @componentType
+                  )
+                ORDER BY pm.display_order, pm.name";
+            command.Parameters.AddWithValue("@productSku", productSku);
+            command.Parameters.AddWithValue("@componentType", componentType);
+
+            var modifications = new List<ProductModification>();
+            using var reader = await command.ExecuteReaderAsync();
+            
+            while (await reader.ReadAsync())
+            {
+                modifications.Add(new ProductModification
+                {
+                    ModificationId = reader.GetString(0),
+                    Name = reader.GetString(1),
+                    Description = reader.IsDBNull(2) ? null : reader.GetString(2),
+                    ModificationType = reader.GetString(3),
+                    PriceAdjustmentType = reader.GetString(4),
+                    BasePriceCents = reader.GetInt64(5),
+                    DisplayOrder = reader.GetInt32(6)
+                });
+            }
+
+            return modifications;
+        }
     }
 
     /// <summary>
@@ -790,5 +898,105 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets or sets the effective price in cents.
         /// </summary>
         public long EffectivePriceCents { get; set; }
+    }
+
+    /// <summary>
+    /// Represents a set meal component for a product.
+    /// ARCHITECTURAL PRINCIPLE: Model all product-related data as first-class entities.
+    /// </summary>
+    public class SetMealComponent
+    {
+        /// <summary>
+        /// Gets or sets the component identifier.
+        /// </summary>
+        public string ComponentId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the set product SKU that this component belongs to.
+        /// </summary>
+        public string SetProductSku { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the component type (e.g., "DRINK_CHOICE", "SIDE_CHOICE").
+        /// </summary>
+        public string ComponentType { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the modification identifier if this component has a modification.
+        /// </summary>
+        public string? ModificationId { get; set; }
+        
+        /// <summary>
+        /// Gets or sets whether this component is required.
+        /// </summary>
+        public bool IsRequired { get; set; }
+        
+        /// <summary>
+        /// Gets or sets whether this component is automatic (i.e., added by default).
+        /// </summary>
+        public bool IsAutomatic { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the quantity of this component.
+        /// </summary>
+        public int Quantity { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the price adjustment in cents for this component.
+        /// ARCHITECTURAL PRINCIPLE: All monetary values in cents to avoid floating-point issues.
+        /// </summary>
+        public long PriceAdjustmentCents { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the display order for this component in the set meal.
+        /// </summary>
+        public int DisplayOrder { get; set; }
+    }
+
+    /// <summary>
+    /// Represents a product modification option.
+    /// ARCHITECTURAL PRINCIPLE: Model all product-related data as first-class entities.
+    /// </summary>
+    public class ProductModification
+    {
+        /// <summary>
+        /// Gets or sets the modification identifier.
+        /// </summary>
+        public string ModificationId { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the modification name.
+        /// </summary>
+        public string Name { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the modification description.
+        /// </summary>
+        public string? Description { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the modification type.
+        /// </summary>
+        public string ModificationType { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the price adjustment type.
+        /// </summary>
+        public string PriceAdjustmentType { get; set; } = "";
+        
+        /// <summary>
+        /// Gets or sets the base price in cents.
+        /// </summary>
+        public long BasePriceCents { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the display order.
+        /// </summary>
+        public int DisplayOrder { get; set; }
+
+        /// <summary>
+        /// Gets the price adjustment as decimal for display purposes.
+        /// </summary>
+        public decimal PriceAdjustment => BasePriceCents / 100.0m;
     }
 }

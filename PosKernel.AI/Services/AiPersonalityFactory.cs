@@ -490,6 +490,7 @@ Be friendly and responsive to customer needs.");
         /// <summary>
         /// Efficiently builds a greeting prompt by appending dynamic context.
         /// Avoids expensive string replacement operations.
+        /// ARCHITECTURAL PRINCIPLE: Let AI personalities handle time context naturally.
         /// </summary>
         private static string BuildGreetingPrompt(string template, PromptContext context)
         {
@@ -497,18 +498,9 @@ Be friendly and responsive to customer needs.");
             
             // Start with the base template
             sb.AppendLine(template);
-            sb.AppendLine();
             
-            // Append dynamic context
-            sb.AppendLine("## CURRENT CONTEXT:");
-            if (!string.IsNullOrEmpty(context.TimeOfDay))
-            {
-                sb.AppendLine($"- Time of day: {context.TimeOfDay}");
-            }
-            if (!string.IsNullOrEmpty(context.CurrentTime))
-            {
-                sb.AppendLine($"- Current time: {context.CurrentTime}");
-            }
+            // ARCHITECTURAL PRINCIPLE: No hardcoded time context - AI personalities handle time naturally
+            // Removed context.TimeOfDay and context.CurrentTime - AI determines appropriate greeting based on current time
             
             return sb.ToString();
         }
@@ -516,6 +508,7 @@ Be friendly and responsive to customer needs.");
         /// <summary>
         /// Efficiently builds a post-payment prompt by appending dynamic context.
         /// Avoids expensive string replacement operations.
+        /// ARCHITECTURAL PRINCIPLE: Let AI personalities handle time context naturally.
         /// </summary>
         private static string BuildPostPaymentPrompt(string template, PromptContext context)
         {
@@ -523,18 +516,9 @@ Be friendly and responsive to customer needs.");
             
             // Start with the base template
             sb.AppendLine(template);
-            sb.AppendLine();
             
-            // Append dynamic context
-            sb.AppendLine("## CURRENT CONTEXT:");
-            if (!string.IsNullOrEmpty(context.TimeOfDay))
-            {
-                sb.AppendLine($"- Time of day: {context.TimeOfDay}");
-            }
-            if (!string.IsNullOrEmpty(context.CurrentTime))
-            {
-                sb.AppendLine($"- Current time: {context.CurrentTime}");
-            }
+            // ARCHITECTURAL PRINCIPLE: No hardcoded time context - AI personalities handle time naturally
+            // Removed context.TimeOfDay and context.CurrentTime - AI determines appropriate post-payment response based on current time
             
             return sb.ToString();
         }

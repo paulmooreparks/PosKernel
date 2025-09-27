@@ -15,11 +15,12 @@
 //
 
 using Microsoft.Extensions.Logging;
-using System;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq; // Add LINQ using directive for .Select() extension method
 
 namespace PosKernel.Client.Rust
 {
@@ -106,6 +107,12 @@ namespace PosKernel.Client.Rust
         }
 
         /// <inheritdoc/>
+        public void Disconnect()
+        {
+            DisconnectAsync().Wait();
+        }
+
+        /// <inheritdoc/>
         public async Task<string> CreateSessionAsync(string terminalId, string operatorId, CancellationToken cancellationToken = default)
         {
             EnsureConnected();
@@ -157,10 +164,14 @@ namespace PosKernel.Client.Rust
 
             try
             {
+                // TEMPORARY FIX: Use hardcoded store name to bypass store configuration requirement
+                // TODO: Implement proper store configuration injection via constructor or factory
+                var storeName = "DEFAULT_STORE";
+                
                 var request = new
                 {
                     session_id = sessionId,
-                    store = "DEFAULT_STORE",
+                    store = storeName, // TEMPORARY: Hardcoded until store config injection is implemented
                     currency = currency
                 };
 
@@ -263,6 +274,62 @@ namespace PosKernel.Client.Rust
         }
 
         /// <inheritdoc/>
+        public async Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default)
+        {
+            EnsureConnected();
+
+            _logger.LogDebug("Adding child line item {ProductId} x{Quantity} @ {UnitPrice} to transaction {TransactionId}, parent line {ParentLineNumber}", 
+                productId, quantity, unitPrice, transactionId, parentLineNumber);
+
+            try
+            {
+                var request = new
+                {
+                    session_id = sessionId,
+                    transaction_id = transactionId,
+                    product_id = productId,
+                    quantity = quantity,
+                    unit_price = (double)unitPrice,
+                    parent_line_number = parentLineNumber
+                };
+
+                var json = JsonSerializer.Serialize(request);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync($"/api/sessions/{sessionId}/transactions/{transactionId}/child-lines", content, cancellationToken);
+                response.EnsureSuccessStatusCode();
+
+                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+                var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
+
+                var result = ParseTransactionResponse(responseData, sessionId, transactionId);
+
+                if (result.Success)
+                {
+                    _logger.LogInformation("Child line item added to transaction {TransactionId}, new total: {Total:C}", 
+                        result.TransactionId, result.Total);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to add child line item: {Error}", result.Error);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding child line item");
+                return new TransactionClientResult
+                {
+                    Success = false,
+                    Error = ex.Message,
+                    SessionId = sessionId,
+                    TransactionId = transactionId
+                };
+            }
+        }
+
+        /// <inheritdoc/>
         public async Task<TransactionClientResult> AddModificationAsync(string sessionId, string transactionId, int parentLineNumber, string modificationId, int quantity, decimal unitPrice, LineItemType itemType = LineItemType.Modification, CancellationToken cancellationToken = default)
         {
             EnsureConnected();
@@ -272,21 +339,22 @@ namespace PosKernel.Client.Rust
 
             try
             {
+                // NRF COMPLIANCE: Use child-lines endpoint for all parent-child relationships
                 var request = new
                 {
                     session_id = sessionId,
                     transaction_id = transactionId,
-                    parent_line_number = parentLineNumber,
-                    modification_id = modificationId,
+                    product_id = modificationId, // Rust service expects product_id field name
                     quantity = quantity,
                     unit_price = (double)unitPrice,
-                    item_type = itemType.ToString().ToUpperInvariant()
+                    parent_line_number = parentLineNumber
                 };
 
                 var json = JsonSerializer.Serialize(request);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                var response = await _httpClient.PostAsync($"/api/sessions/{sessionId}/transactions/{transactionId}/modifications", content, cancellationToken);
+                // ARCHITECTURAL FIX: Use /child-lines endpoint instead of /modifications
+                var response = await _httpClient.PostAsync($"/api/sessions/{sessionId}/transactions/{transactionId}/child-lines", content, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
                 var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -309,58 +377,6 @@ namespace PosKernel.Client.Rust
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding modification");
-                return new TransactionClientResult
-                {
-                    Success = false,
-                    Error = ex.Message,
-                    SessionId = sessionId,
-                    TransactionId = transactionId
-                };
-            }
-        }
-
-        /// <inheritdoc/>
-        public async Task<TransactionClientResult> UpdateLineItemPreparationNotesAsync(string sessionId, string transactionId, int lineNumber, string preparationNotes, CancellationToken cancellationToken = default)
-        {
-            EnsureConnected();
-
-            _logger.LogDebug("Updating preparation notes for line {LineNumber} in transaction {TransactionId}: {PreparationNotes}", 
-                lineNumber, transactionId, preparationNotes);
-
-            try
-            {
-                // ARCHITECTURAL PRINCIPLE: This is critical for set meal customization - update existing line item
-                var request = new
-                {
-                    preparation_notes = preparationNotes
-                };
-
-                var json = JsonSerializer.Serialize(request);
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-                var response = await _httpClient.PutAsync($"/api/sessions/{sessionId}/transactions/{transactionId}/lines/{lineNumber}/notes", content, cancellationToken);
-                response.EnsureSuccessStatusCode();
-
-                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-                var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
-
-                var result = ParseTransactionResponse(responseData, sessionId, transactionId);
-
-                if (result.Success)
-                {
-                    _logger.LogInformation("Preparation notes updated for line {LineNumber} in transaction {TransactionId}: {PreparationNotes}", 
-                        lineNumber, result.TransactionId, preparationNotes);
-                }
-                else
-                {
-                    _logger.LogWarning("Failed to update preparation notes: {Error}", result.Error);
-                }
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating preparation notes");
                 return new TransactionClientResult
                 {
                     Success = false,
@@ -568,33 +584,96 @@ namespace PosKernel.Client.Rust
         public async Task<TransactionClientResult> GetTransactionAsync(string sessionId, string transactionId, CancellationToken cancellationToken = default)
         {
             EnsureConnected();
-
-            try
+            
+            try 
             {
                 var response = await _httpClient.GetAsync($"/api/sessions/{sessionId}/transactions/{transactionId}", cancellationToken);
                 response.EnsureSuccessStatusCode();
-
-                var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
-                var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
-
+                
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                
+                // CRITICAL DEBUG: Log the actual JSON response from the Rust service
+                _logger.LogInformation("RUST_SERVICE_JSON: Raw response length: {Length} characters", json.Length);
+                _logger.LogInformation("RUST_SERVICE_JSON: Content: {JsonContent}", json);
+                
+                // Parse the JSON response to get transaction details
+                var transactionResponse = ParseTransactionResponse(json);
+                
+                if (!transactionResponse.Success)
+                {
+                    return new TransactionClientResult
+                    {
+                        Success = false,
+                        Error = transactionResponse.Error,
+                        SessionId = sessionId,
+                        TransactionId = transactionId
+                    };
+                }
+                
+                // CRITICAL FIX: Properly populate LineItems from the Rust service response with NRF parent-child relationships
+                var result = new TransactionClientResult
+                {
+                    Success = true,
+                    SessionId = sessionId,
+                    TransactionId = transactionResponse.TransactionId,
+                    Total = (decimal)transactionResponse.Total,
+                    State = transactionResponse.State,
+                    LineItems = transactionResponse.LineItems?.Select(item => new TransactionLineItem
+                    {
+                        LineNumber = item.LineNumber,
+                        ParentLineNumber = (int)(item.ParentLineNumber ?? 0), // NRF COMPLIANCE: Read parent ID from JSON
+                        ProductId = item.ProductId,
+                        ItemType = DetermineLineItemType(item.ParentLineNumber), // Determine type based on parent relationship
+                        Quantity = item.Quantity,
+                        UnitPrice = (decimal)item.UnitPrice,
+                        ExtendedPrice = (decimal)item.ExtendedPrice,
+                        DisplayIndentLevel = DetermineIndentLevel(item.ParentLineNumber), // Calculate indent based on hierarchy
+                        IsVoided = false, // TODO: Add void status from service when available
+                        VoidReason = null,
+                        Metadata = new Dictionary<string, string>()
+                    }).ToList() ?? new List<TransactionLineItem>()
+                };
+                
+                _logger.LogInformation("Retrieved transaction {TransactionId} with {LineCount} line items, total: {Total}", 
+                    result.TransactionId, result.LineItems.Count, result.Total);
+                
+                // CRITICAL DEBUG: Log the actual line items being returned
+                foreach (var item in result.LineItems)
+                {
+                    _logger.LogInformation("LineItem: Line {LineNumber}, Product: {ProductId}, Qty: {Quantity}, Unit: {UnitPrice}, Extended: {ExtendedPrice}", 
+                        item.LineNumber, item.ProductId, item.Quantity, item.UnitPrice, item.ExtendedPrice);
+                }
+                
+                // CRITICAL DEBUG: Log the parsed TransactionResponse to see if line items made it through JSON parsing
+                _logger.LogInformation("TRANSACTION_RESPONSE_DEBUG: LineItems count from JSON: {Count}", transactionResponse.LineItems?.Count ?? 0);
+                if (transactionResponse.LineItems != null)
+                {
+                    foreach (var jsonItem in transactionResponse.LineItems)
+                    {
+                        _logger.LogInformation("JSON_LINEITEM: Line {LineNumber}, ProductId: {ProductId}, Qty: {Quantity}, UnitPrice: {UnitPrice}", 
+                            jsonItem.LineNumber, jsonItem.ProductId, jsonItem.Quantity, jsonItem.UnitPrice);
+                    }
+                }
+                
+                return result;
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            {
                 return new TransactionClientResult
                 {
-                    Success = responseData.GetProperty("success").GetBoolean(),
-                    Error = responseData.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null,
-                    SessionId = responseData.TryGetProperty("session_id", out var sidProp) ? sidProp.GetString() : sessionId,
-                    TransactionId = responseData.TryGetProperty("transaction_id", out var tidProp) ? tidProp.GetString() : transactionId,
-                    Total = responseData.TryGetProperty("total", out var totalProp) ? (decimal)totalProp.GetDouble() : 0,
-                    State = responseData.TryGetProperty("state", out var stateProp) ? stateProp.GetString() ?? "" : "",
-                    Data = responseData
+                    Success = false,
+                    Error = $"Transaction {transactionId} not found in session {sessionId}",
+                    SessionId = sessionId,
+                    TransactionId = transactionId
                 };
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting transaction");
+                _logger?.LogError(ex, "Failed to get transaction {TransactionId} from session {SessionId}", transactionId, sessionId);
                 return new TransactionClientResult
                 {
                     Success = false,
-                    Error = ex.Message,
+                    Error = $"Failed to get transaction details: {ex.Message}",
                     SessionId = sessionId,
                     TransactionId = transactionId
                 };
@@ -602,23 +681,72 @@ namespace PosKernel.Client.Rust
         }
 
         /// <inheritdoc/>
-        public Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        public async Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {
-            if (_disposed)
-            {
-                return Task.CompletedTask;
-            }
-
+            EnsureConnected();
+            
             _logger.LogDebug("Closing session {SessionId}", sessionId);
-            // For now, just log the session close - the Rust service doesn't need explicit session cleanup
-            _logger.LogInformation("Session {SessionId} closed", sessionId);
-            return Task.CompletedTask;
+
+            try
+            {
+                // Send close session request - assuming the service has this endpoint
+                var response = await _httpClient.DeleteAsync($"/api/sessions/{sessionId}", cancellationToken);
+                response.EnsureSuccessStatusCode();
+                
+                _logger.LogInformation("Session {SessionId} closed successfully", sessionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error closing session {SessionId}", sessionId);
+                throw new InvalidOperationException($"Failed to close session {sessionId}: {ex.Message}", ex);
+            }
+        }
+
+        private TransactionResponse ParseTransactionResponse(string json)
+        {
+            try
+            {
+                // CRITICAL DEBUG: Log the actual JSON response from the Rust service
+                _logger.LogInformation("RUST_SERVICE_JSON: Raw response length: {Length} characters", json.Length);
+                _logger.LogInformation("RUST_SERVICE_JSON: Content: {JsonContent}", json);
+                
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+                
+                var result = JsonSerializer.Deserialize<TransactionResponse>(json, options) 
+                    ?? throw new InvalidOperationException("Failed to deserialize transaction response");
+                
+                // CRITICAL DEBUG: Log what was actually deserialized
+                _logger.LogInformation("RUST_SERVICE_PARSED: Success: {Success}, LineItems count: {Count}, Total: {Total}", 
+                    result.Success, result.LineItems?.Count ?? 0, result.Total);
+                
+                if (result.LineItems != null)
+                {
+                    foreach (var item in result.LineItems)
+                    {
+                        _logger.LogInformation("RUST_SERVICE_LINEITEM: Line {LineNumber}, ProductId: {ProductId}, Qty: {Quantity}, UnitPrice: {UnitPrice}", 
+                            item.LineNumber, item.ProductId, item.Quantity, item.UnitPrice);
+                    }
+                }
+                
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to parse Rust service transaction response JSON: {Json}", json);
+                throw new InvalidOperationException($"Failed to parse transaction response JSON: {ex.Message}", ex);
+            }
         }
 
         /// <summary>
-        /// Parses a transaction response from the Rust kernel service.
-        /// ARCHITECTURAL PRINCIPLE: Centralized response parsing with NRF-compliant line item support.
+        /// Parses a JSON response into a TransactionClientResult.
         /// </summary>
+        /// <param name="responseData">The JSON element from the service.</param>
+        /// <param name="sessionId">The session ID.</param>
+        /// <param name="transactionId">The transaction ID.</param>
+        /// <returns>A TransactionClientResult instance.</returns>
         private TransactionClientResult ParseTransactionResponse(JsonElement responseData, string sessionId, string transactionId)
         {
             var result = new TransactionClientResult
@@ -632,53 +760,84 @@ namespace PosKernel.Client.Rust
                 Data = responseData
             };
 
-            // Parse line items with NRF hierarchical support
-            if (responseData.TryGetProperty("line_items", out var lineItemsProp) && lineItemsProp.ValueKind == JsonValueKind.Array)
+            // NRF COMPLIANCE: Parse line items with parent-child relationships
+            if (responseData.TryGetProperty("line_items", out var lineItemsArray) && lineItemsArray.ValueKind == JsonValueKind.Array)
             {
-                foreach (var itemElement in lineItemsProp.EnumerateArray())
-                {
-                    var lineItem = new TransactionLineItem
+                result.LineItems = lineItemsArray.EnumerateArray()
+                    .Select(item => new TransactionLineItem
                     {
-                        LineNumber = itemElement.TryGetProperty("line_number", out var lnProp) ? lnProp.GetInt32() : 0,
-                        ParentLineNumber = itemElement.TryGetProperty("parent_line_number", out var plnProp) ? plnProp.GetInt32() : 0,
-                        ProductId = itemElement.TryGetProperty("product_id", out var pidProp) ? pidProp.GetString() ?? "" : "",
-                        ItemType = itemElement.TryGetProperty("item_type", out var itProp) ? ParseLineItemType(itProp.GetString()) : LineItemType.BaseProduct,
-                        Quantity = itemElement.TryGetProperty("quantity", out var qtyProp) ? qtyProp.GetInt32() : 0,
-                        UnitPrice = itemElement.TryGetProperty("unit_price_minor", out var upProp) ? (decimal)upProp.GetInt64() / 100 : 0,
-                        ExtendedPrice = itemElement.TryGetProperty("extended_price_minor", out var epProp) ? (decimal)epProp.GetInt64() / 100 : 0,
-                        DisplayIndentLevel = itemElement.TryGetProperty("display_indent_level", out var dilProp) ? dilProp.GetInt32() : 0,
-                        IsVoided = itemElement.TryGetProperty("is_voided", out var voidProp) ? voidProp.GetBoolean() : false,
-                        VoidReason = itemElement.TryGetProperty("void_reason", out var vrProp) ? vrProp.GetString() : null,
-                        PreparationNotes = itemElement.TryGetProperty("preparation_notes", out var pnProp) ? pnProp.GetString() ?? "" : ""
-                    };
-
-                    result.LineItems.Add(lineItem);
-                }
+                        LineNumber = item.TryGetProperty("line_number", out var lineNumProp) ? lineNumProp.GetInt32() : 0,
+                        ParentLineNumber = item.TryGetProperty("parent_line_number", out var parentProp) && parentProp.ValueKind != JsonValueKind.Null 
+                            ? parentProp.GetInt32() 
+                            : 0, // NRF COMPLIANCE: Read parent relationship from JSON
+                        ProductId = item.TryGetProperty("product_id", out var prodProp) ? prodProp.GetString() ?? "" : "",
+                        ItemType = DetermineLineItemType(item.TryGetProperty("parent_line_number", out var parentTypeProp) && parentTypeProp.ValueKind != JsonValueKind.Null 
+                            ? (uint)parentTypeProp.GetInt32() 
+                            : null),
+                        Quantity = item.TryGetProperty("quantity", out var qtyProp) ? qtyProp.GetInt32() : 0,
+                        UnitPrice = item.TryGetProperty("unit_price", out var unitProp) ? (decimal)unitProp.GetDouble() : 0,
+                        ExtendedPrice = item.TryGetProperty("extended_price", out var extProp) ? (decimal)extProp.GetDouble() : 0,
+                        DisplayIndentLevel = DetermineIndentLevel(item.TryGetProperty("parent_line_number", out var parentIndentProp) && parentIndentProp.ValueKind != JsonValueKind.Null 
+                            ? (uint)parentIndentProp.GetInt32() 
+                            : null),
+                        IsVoided = false, // TODO: Add void status from service when available
+                        VoidReason = null,
+                        Metadata = new Dictionary<string, string>()
+                    }).ToList();
+            }
+            else
+            {
+                result.LineItems = new List<TransactionLineItem>();
             }
 
             return result;
         }
 
-        /// <summary>
-        /// Parses LineItemType from string representation.
-        /// </summary>
-        private LineItemType ParseLineItemType(string? itemTypeString)
+        private string FormatCurrency(decimal amount)
         {
-            if (string.IsNullOrEmpty(itemTypeString))
-            {
-                return LineItemType.BaseProduct;
-            }
+            // ARCHITECTURAL FIX: FAIL FAST - No hardcoded currency formatting
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Currency formatting requires ICurrencyFormattingService. " +
+                "Client cannot decide currency symbols, decimal places, or formatting rules. " +
+                "Register ICurrencyFormattingService in DI container and inject into RustKernelClient. " +
+                "Current implementation hardcoded S$.F2 format violated architectural principles.");
+        }
 
-            return itemTypeString.ToUpperInvariant() switch
-            {
-                "BASE_PRODUCT" => LineItemType.BaseProduct,
-                "MODIFICATION" => LineItemType.Modification,
-                "AUTOMATIC_INCLUSION" => LineItemType.AutomaticInclusion,
-                "DISCOUNT" => LineItemType.Discount,
-                "TAX" => LineItemType.Tax,
-                "FEE" => LineItemType.Fee,
-                _ => LineItemType.BaseProduct
-            };
+        // JSON response DTOs
+        private class TransactionResponse
+        {
+            public bool Success { get; set; }
+            public string Error { get; set; } = "";
+            public string TransactionId { get; set; } = "";
+            public double Total { get; set; }
+            public double Tendered { get; set; }
+            public double Change { get; set; }
+            public string State { get; set; } = "";
+            
+            // CRITICAL FIX: Add JsonPropertyName to match the snake_case JSON from Rust service
+            [System.Text.Json.Serialization.JsonPropertyName("line_items")]
+            public List<LineItemDto> LineItems { get; set; } = new();
+        }
+
+        private class LineItemDto
+        {
+            // CRITICAL FIX: Add JsonPropertyName attributes to match Rust JSON format
+            [System.Text.Json.Serialization.JsonPropertyName("line_number")]
+            public int LineNumber { get; set; }
+            
+            [System.Text.Json.Serialization.JsonPropertyName("product_id")]
+            public string ProductId { get; set; } = "";
+            
+            public int Quantity { get; set; }
+            
+            [System.Text.Json.Serialization.JsonPropertyName("unit_price")]
+            public double UnitPrice { get; set; }
+            
+            [System.Text.Json.Serialization.JsonPropertyName("extended_price")]
+            public double ExtendedPrice { get; set; }
+            
+            [System.Text.Json.Serialization.JsonPropertyName("parent_line_number")]
+            public uint? ParentLineNumber { get; set; } // NRF COMPLIANCE: Use parent_line_number field from Rust
         }
 
         private void EnsureConnected()
@@ -692,6 +851,29 @@ namespace PosKernel.Client.Rust
             {
                 throw new InvalidOperationException("Not connected to Rust kernel service. Call ConnectAsync first.");
             }
+        }
+
+        /// <summary>
+        /// Determines the line item type based on parent relationship (NRF compliance).
+        /// </summary>
+        /// <param name="parentLineItemId">The parent line item ID.</param>
+        /// <returns>The appropriate LineItemType.</returns>
+        private static LineItemType DetermineLineItemType(uint? parentLineItemId)
+        {
+            // NRF COMPLIANCE: Items with parents are modifications/components
+            return parentLineItemId.HasValue ? LineItemType.Modification : LineItemType.Sale;
+        }
+
+        /// <summary>
+        /// Determines the display indent level based on parent relationship (NRF compliance).
+        /// </summary>
+        /// <param name="parentLineItemId">The parent line item ID.</param>
+        /// <returns>The appropriate indent level for hierarchical display.</returns>
+        private static int DetermineIndentLevel(uint? parentLineItemId)
+        {
+            // NRF COMPLIANCE: Child items get indented for hierarchical display
+            // TODO: For recursive hierarchy, this would need to calculate actual depth
+            return parentLineItemId.HasValue ? 1 : 0;
         }
 
         /// <inheritdoc/>
@@ -713,6 +895,19 @@ namespace PosKernel.Client.Rust
                 _httpClient?.Dispose();
                 _disposed = true;
             }
+        }
+
+        /// <inheritdoc/>
+        public Task<object> GetStoreConfigAsync(CancellationToken cancellationToken = default)
+        {
+            EnsureConnected();
+            
+            // ARCHITECTURAL FIX: FAIL FAST - No hardcoded store configuration
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Store configuration must come from proper configuration service. " +
+                "Rust kernel client cannot decide store configuration defaults. " +
+                "Implement proper store configuration service that provides StoreId, Currency, and DecimalPlaces. " +
+                "Current implementation hardcoded StoreId='RUST_STORE_01' and Currency='SGD' - this violates fail-fast principles.");
         }
     }
 

@@ -24,39 +24,58 @@ namespace PosKernel.AI.Models
     public class ReceiptLineItem
     {
         /// <summary>
-        /// Gets or sets the product name.
+        /// ARCHITECTURAL COMPONENT: Line item ID FROM KERNEL - not client-generated.
+        /// Stable identifier assigned by kernel for precise modification tracking.
+        /// </summary>
+        public string LineItemId { get; set; } = "";
+        
+        /// <summary>
+        /// ARCHITECTURAL COMPONENT: Line number from kernel transaction (1-based).
+        /// May change due to voids/insertions - use LineItemId for stable references.
+        /// </summary>
+        public int LineNumber { get; set; }
+        
+        /// <summary>
+        /// Number of items for this line item.
+        /// </summary>
+        public int Quantity { get; set; }
+        
+        /// <summary>
+        /// Display name of the product.
         /// </summary>
         public string ProductName { get; set; } = "";
         
         /// <summary>
-        /// Gets or sets the quantity.
-        /// </summary>
-        public int Quantity { get; set; } = 1;
-        
-        /// <summary>
-        /// Gets or sets the unit price.
+        /// Price per unit for this product.
         /// </summary>
         public decimal UnitPrice { get; set; }
         
         /// <summary>
-        /// Gets or sets the line total.
+        /// ARCHITECTURAL COMPONENT: Product SKU for set customization tracking.
+        /// Multiple line items may share same SKU (multiple instances of same product).
         /// </summary>
-        public decimal LineTotal { get; set; }
+        public string ProductSku { get; set; } = "";
         
         /// <summary>
-        /// Gets the calculated line total (quantity * unit price) if LineTotal is not set.
+        /// Total price for this line item (quantity × unit price).
         /// </summary>
-        public decimal CalculatedTotal => LineTotal > 0 ? LineTotal : UnitPrice * Quantity;
-        
+        public decimal ExtendedPrice => UnitPrice * Quantity;
+
         /// <summary>
-        /// Gets or sets preparation notes.
+        /// Gets or sets the calculated total for compatibility.
         /// </summary>
-        public string PreparationNotes { get; set; } = "";
-        
+        public decimal CalculatedTotal => ExtendedPrice;
+
         /// <summary>
-        /// Gets or sets the transaction line ID.
+        /// Gets or sets the line ID for compatibility.
         /// </summary>
         public string? LineId { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the parent line item ID for linked item support.
+        /// Used to correlate items that are part of a configurable product or bundle.
+        /// </summary>
+        public uint? ParentLineItemId { get; set; } // NRF linked item support
     }
     
     /// <summary>

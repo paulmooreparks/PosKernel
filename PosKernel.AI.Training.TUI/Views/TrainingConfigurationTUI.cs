@@ -503,7 +503,8 @@ public class TrainingConfigurationTUI
     }
 
     private void AddLog(string message) {
-        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        // ARCHITECTURAL PRINCIPLE: Use simple ISO timestamp - no cultural assumptions
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         var logEntry = $"[{timestamp}] {message}";
 
         _logContent.AppendLine(logEntry);
@@ -794,11 +795,9 @@ public class TrainingConfigurationTUI
         try
         {
             var promptService = _serviceProvider.GetRequiredService<IPromptManagementService>();
-            var context = new PromptContext 
-            { 
-                TimeOfDay = "afternoon", 
-                CurrentTime = DateTime.Now.ToString("HH:mm") 
-            };
+            
+            // ARCHITECTURAL PRINCIPLE: Let AI personalities handle time context - no orchestrator assumptions
+            var context = new PromptContext(); // Empty context - AI handles time naturally
             
             var currentPrompt = promptService.GetCurrentPromptAsync(personalityType, promptType, context).GetAwaiter().GetResult();
             

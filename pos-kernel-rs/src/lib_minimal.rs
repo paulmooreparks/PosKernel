@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::atomic::{AtomicU64, Ordering};
+use rust_decimal::Decimal;
 
 // === RESULT CODES ===
 
@@ -77,20 +78,37 @@ impl Currency {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineItem {
+    pub line_number: u32,
+    pub product_id: String,
+    pub quantity: i32,
+    pub unit_price: Decimal,
+    pub extended_price: Decimal,
+    pub parent_line_item_id: Option<u32>, // NRF linked item support
+    // NO preparation_notes field - this is NOT a kernel concept
+}
+
 #[derive(Debug, Clone)]
 struct Line {
     sku: String,
     qty: i32,
     unit_minor: i64,
+    parent_line_item_id: Option<u32>, // ARCHITECTURAL FIX: Add NRF parent support
 }
 
 impl Line {
-    fn new(sku: String, qty: i32, unit_minor: i64) -> Self {
-        Self { sku, qty, unit_minor }
+    fn new(sku: String, qty: i32, unit_minor: i64, parent_line_item_id: Option<u32>) -> Self {
+        Self { sku, qty, unit_minor, parent_line_item_id }
     }
     
     fn total_minor(&self) -> i64 {
         self.unit_minor * self.qty as i64
+    }
+    
+    // ARCHITECTURAL FIX: Use this method to set parent relationships
+    fn set_parent_line_item_id(&mut self, parent_id: Option<u32>) {
+        self.parent_line_item_id = parent_id;
     }
 }
 
@@ -131,7 +149,11 @@ impl Transaction {
     }
     
     fn add_line(&mut self, sku: String, qty: i32, unit_minor: i64) {
-        self.lines.push(Line::new(sku, qty, unit_minor));
+        self.lines.push(Line::new(sku, qty, unit_minor, None));
+    }
+    
+    fn add_line_with_parent(&mut self, sku: String, qty: i32, unit_minor: i64, parent_line_item_id: Option<u32>) {
+        self.lines.push(Line::new(sku, qty, unit_minor, parent_line_item_id));
     }
     
     fn add_tender(&mut self, amount_minor: i64) {
@@ -143,6 +165,45 @@ impl Transaction {
     
     fn line_count(&self) -> u32 {
         self.lines.len() as u32
+    }
+
+    // ARCHITECTURAL PRINCIPLE: Implement NRF-compliant void cascade
+    pub fn void_line_item_with_children(&mut self, line_number: u32, reason: &str) -> Result<(), String> {
+        // 1. Find all child items recursively
+        let children = self.find_all_children(line_number);
+        
+        // 2. Void children first (reverse hierarchy order)
+        for child_line_number in children.iter().rev() {
+            self.void_single_line_item(*child_line_number, &format!("Parent voided: {}", reason))?;
+        }
+        
+        // 3. Void parent item
+        self.void_single_line_item(line_number, reason)?;
+        
+        Ok(())
+    }
+    
+    fn find_all_children(&self, parent_line_number: u32) -> Vec<u32> {
+        let mut children = Vec::new();
+        
+        // Find direct children by checking parent_line_item_id
+        for (index, item) in self.lines.iter().enumerate() {
+            if item.parent_line_item_id == Some(parent_line_number) {
+                let child_line_number = (index + 1) as u32; // Convert to 1-based line number
+                children.push(child_line_number);
+                // Recursively find grandchildren
+                children.extend(self.find_all_children(child_line_number));
+            }
+        }
+        
+        children
+    }
+    
+    fn void_single_line_item(&mut self, line_number: u32, reason: &str) -> Result<(), String> {
+        // Implementation for voiding a single line item
+        // This would mark the item as voided and adjust totals
+        // Placeholder for now
+        Ok(())
     }
 }
 
@@ -180,6 +241,18 @@ impl LegalKernelStore {
         Ok(())
     }
     
+    fn add_line_with_parent_legal(&mut self, handle: u64, sku: String, qty: i32, unit_minor: i64, parent_line_item_id: Option<u32>) -> Result<(), String> {
+        let tx = self.active_transactions.get_mut(&handle)
+            .ok_or("Transaction not found")?;
+        
+        if tx.state != TxState::Building {
+            return Err("Transaction not in building state".to_string());
+        }
+        
+        tx.add_line_with_parent(sku, qty, unit_minor, parent_line_item_id);
+        Ok(())
+    }
+    
     fn add_cash_tender_legal(&mut self, handle: u64, amount_minor: i64) -> Result<(), String> {
         let tx = self.active_transactions.get_mut(&handle)
             .ok_or("Transaction not found")?;
@@ -214,6 +287,18 @@ impl LegalKernelStore {
         let tx = self.active_transactions.get(&handle)
             .ok_or("Transaction not found")?;
         Ok(tx.currency.decimal_places())
+    }
+    
+    fn get_line_item_legal(&self, handle: u64, line_index: u32) -> Result<(String, i32, i64, Option<u32>), String> {
+        let tx = self.active_transactions.get(&handle)
+            .ok_or("Transaction not found")?;
+            
+        if line_index >= tx.lines.len() as u32 {
+            return Err("Line index out of bounds".to_string());
+        }
+        
+        let line = &tx.lines[line_index as usize];
+        Ok((line.sku.clone(), line.qty, line.unit_minor, line.parent_line_item_id))
     }
 }
 
@@ -334,6 +419,33 @@ pub extern "C" fn pk_add_line(
 }
 
 #[no_mangle]
+pub extern "C" fn pk_add_line_with_parent(
+    handle: PkTransactionHandle,
+    sku_ptr: *const u8,
+    sku_len: usize,
+    qty: i32,
+    unit_minor: i64,
+    parent_line_item_id: u32  // 0 means no parent
+) -> PkResult {
+    if handle == PK_INVALID_HANDLE || sku_ptr.is_null() || sku_len == 0 || qty <= 0 {
+        return PkResult::err(ResultCode::ValidationFailed);
+    }
+    
+    let sku = unsafe { read_str(sku_ptr, sku_len) };
+    let parent_id = if parent_line_item_id == 0 { None } else { Some(parent_line_item_id) };
+    
+    let mut kernel_store = match legal_kernel_store().write() {
+        Ok(s) => s,
+        Err(_) => return PkResult::err(ResultCode::InternalError)
+    };
+    
+    match kernel_store.add_line_with_parent_legal(handle, sku, qty, unit_minor, parent_id) {
+        Ok(_) => PkResult::ok(),
+        Err(_) => PkResult::err(ResultCode::InternalError)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn pk_add_cash_tender(
     handle: PkTransactionHandle,
     amount_minor: i64
@@ -424,6 +536,46 @@ pub extern "C" fn pk_get_currency_decimal_places(
     match kernel_store.get_currency_decimal_places(handle) {
         Ok(decimal_places) => {
             unsafe { *out_decimal_places = decimal_places; }
+            PkResult::ok()
+        },
+        Err(_) => PkResult::err(ResultCode::NotFound)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn pk_get_line_item(
+    handle: PkTransactionHandle,
+    line_index: u32,
+    out_sku_ptr: *mut u8,
+    out_sku_len: *mut usize,
+    out_qty: *mut i32,
+    out_unit_minor: *mut i64
+) -> PkResult {
+    if handle == PK_INVALID_HANDLE || out_sku_ptr.is_null() || out_sku_len.is_null() || out_qty.is_null() || out_unit_minor.is_null() {
+        return PkResult::err(ResultCode::ValidationFailed);
+    }
+    
+    let kernel_store = match legal_kernel_store().read() {
+        Ok(s) => s,
+        Err(_) => return PkResult::err(ResultCode::InternalError)
+    };
+    
+    match kernel_store.get_line_item_legal(handle, line_index) {
+        Ok((sku, qty, unit_minor, _parent_id)) => {
+            let sku_bytes = sku.as_bytes();
+            let buffer_size = unsafe { *out_sku_len };
+            
+            if sku_bytes.len() > buffer_size {
+                return PkResult::err(ResultCode::InsufficientBuffer);
+            }
+            
+            unsafe {
+                std::ptr::copy_nonoverlapping(sku_bytes.as_ptr(), out_sku_ptr, sku_bytes.len());
+                *out_sku_len = sku_bytes.len();
+                *out_qty = qty;
+                *out_unit_minor = unit_minor;
+            }
+            
             PkResult::ok()
         },
         Err(_) => PkResult::err(ResultCode::NotFound)

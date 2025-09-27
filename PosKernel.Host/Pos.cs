@@ -106,10 +106,11 @@ public static class Pos
     /// </summary>
     /// <param name="store">Store identifier</param>
     /// <param name="currency">3-letter currency code (e.g., "USD", "EUR", "BTC", "PTS")</param>
+    /// <param name="decimalPlaces">Number of decimal places for currency (optional, defaults to currency standard)</param>
     /// <returns>A transaction handle for use in subsequent operations</returns>
     /// <exception cref="PosException">Thrown when the operation fails</exception>
     /// <exception cref="ArgumentException">Thrown when currency code is invalid</exception>
-    public static ulong BeginTransaction(string store, string currency)
+    public static ulong BeginTransaction(string store, string currency, byte? decimalPlaces = null)
     {
         // Pre-validate currency to give better error messages
         if (!IsValidCurrency(currency))
@@ -120,9 +121,24 @@ public static class Pos
         var storeBytes = Encoding.UTF8.GetBytes(store);
         var currencyBytes = Encoding.UTF8.GetBytes(currency.ToUpperInvariant());
         
+        // ARCHITECTURAL PRINCIPLE: Client must provide decimal places - no hardcoded defaults
+        // Use currency-specific decimal places if not explicitly provided
+        byte actualDecimalPlaces;
+        if (decimalPlaces.HasValue)
+        {
+            actualDecimalPlaces = decimalPlaces.Value;
+        }
+        else
+        {
+            // Use standard currency decimal places
+            var currencyInfo = GetCurrencyInfo(currency);
+            actualDecimalPlaces = currencyInfo?.DecimalPlaces ?? 2; // Fallback for custom currencies
+        }
+        
         var result = RustNative.pk_begin_transaction(
             storeBytes, (UIntPtr)storeBytes.Length,
             currencyBytes, (UIntPtr)currencyBytes.Length,
+            actualDecimalPlaces,
             out var handle);
         
         EnsureSuccess(result, nameof(BeginTransaction));
@@ -145,10 +161,11 @@ public static class Pos
     /// </summary>
     /// <param name="store">Store identifier</param>
     /// <param name="currency">3-letter currency code (e.g., "USD", "EUR", "BTC", "PTS")</param>
+    /// <param name="decimalPlaces">Number of decimal places for currency (optional, defaults to currency standard)</param>
     /// <returns>A Transaction object</returns>
-    public static Transaction CreateTransaction(string store, string currency)
+    public static Transaction CreateTransaction(string store, string currency, byte? decimalPlaces = null)
     {
-        var handle = BeginTransaction(store, currency);
+        var handle = BeginTransaction(store, currency, decimalPlaces);
         return new Transaction(handle, store, currency);
     }
 

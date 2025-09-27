@@ -211,6 +211,17 @@ namespace PosKernel.Client
             }
         }
 
+        public void Disconnect()
+        {
+            _activeClient?.Disconnect();
+        }
+
+        public Task<object> GetStoreConfigAsync(CancellationToken cancellationToken = default)
+            => EnsureConnected().GetStoreConfigAsync(cancellationToken);
+
+        public Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default)
+            => EnsureConnected().AddChildLineItemAsync(sessionId, transactionId, productId, quantity, unitPrice, parentLineNumber, cancellationToken);
+
         private IPosKernelClient EnsureConnected()
         {
             if (_disposed)
@@ -238,9 +249,6 @@ namespace PosKernel.Client
 
         public Task<TransactionClientResult> AddModificationAsync(string sessionId, string transactionId, int parentLineNumber, string modificationId, int quantity, decimal unitPrice, LineItemType itemType = LineItemType.Modification, CancellationToken cancellationToken = default)
             => EnsureConnected().AddModificationAsync(sessionId, transactionId, parentLineNumber, modificationId, quantity, unitPrice, itemType, cancellationToken);
-
-        public Task<TransactionClientResult> UpdateLineItemPreparationNotesAsync(string sessionId, string transactionId, int lineNumber, string preparationNotes, CancellationToken cancellationToken = default)
-            => EnsureConnected().UpdateLineItemPreparationNotesAsync(sessionId, transactionId, lineNumber, preparationNotes, cancellationToken);
 
         public Task<TransactionClientResult> VoidLineItemAsync(string sessionId, string transactionId, int lineNumber, CancellationToken cancellationToken = default)
             => EnsureConnected().VoidLineItemAsync(sessionId, transactionId, lineNumber, cancellationToken);
