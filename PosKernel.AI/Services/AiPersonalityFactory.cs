@@ -16,6 +16,7 @@
 
 using PosKernel.Configuration;
 using PosKernel.AI.Core;
+using System.Text.RegularExpressions;
 
 namespace PosKernel.AI.Services
 {
@@ -28,6 +29,8 @@ namespace PosKernel.AI.Services
         private static readonly string PromptsBasePath = GetPromptsPath();
         private static readonly Dictionary<string, string> _promptCache = new();
         private static readonly Dictionary<string, DateTime> _promptFileTimestamps = new();
+        // Track all dependent files (primary + includes) per cache key to detect changes
+        private static readonly Dictionary<string, List<(string Path, DateTime Timestamp)>> _promptDependencies = new();
 
         /// <summary>
         /// Gets the correct path to the AI configuration directory with hierarchical provider/model support.
@@ -146,6 +149,7 @@ Be friendly and responsive to customer needs.");
         {
             _promptCache.Clear();
             _promptFileTimestamps.Clear();
+            _promptDependencies.Clear();
         }
 
         /// <summary>
@@ -164,120 +168,84 @@ Be friendly and responsive to customer needs.");
             var model = GetCurrentModel();
             var cacheKey = $"{provider}_{model}_{personalityFolder}_{promptType}";
 
-            // ARCHITECTURAL PRINCIPLE: Hierarchical prompt resolution
             var providerModelPath = Path.Combine(PromptsBasePath, provider, model, personalityFolder, $"{promptType}.md");
             var basePath = Path.Combine(PromptsBasePath, "Base", personalityFolder, $"{promptType}.md");
             
-            // PROMPT LOADING DEBUG: Use Console.WriteLine so it appears in Terminal.GUI debug logs
             Console.WriteLine($"PROMPT_LOADING: Checking paths for {personalityFolder}/{promptType}:");
             Console.WriteLine($"  Provider-specific: {providerModelPath} (exists: {File.Exists(providerModelPath)})");
             Console.WriteLine($"  Base fallback: {basePath} (exists: {File.Exists(basePath)})");
             Console.WriteLine($"  Provider: {provider}, Model: {model}");
             Console.WriteLine($"  PromptsBasePath: {PromptsBasePath}");
             
-            // ARCHITECTURAL FIX: Always check file timestamps, even for cached prompts
-            var shouldReload = !_promptCache.ContainsKey(cacheKey);
-            DateTime? latestTimestamp = null;
-            DateTime? cachedTimestamp = null;
-            
-            // Get cached timestamp if it exists
-            if (_promptFileTimestamps.TryGetValue(cacheKey, out var existingTimestamp))
-            {
-                cachedTimestamp = existingTimestamp;
-            }
-
-            // Check timestamps for both possible files
+            // Determine selected primary path
+            string? selectedPrimaryPath = null;
             if (File.Exists(providerModelPath))
             {
-                var providerTimestamp = File.GetLastWriteTime(providerModelPath);
-                latestTimestamp = providerTimestamp;
-                
-                // ARCHITECTURAL FIX: Force reload if file is newer than cached version
-                if (cachedTimestamp.HasValue && providerTimestamp > cachedTimestamp.Value)
-                {
-                    shouldReload = true;
-                    Console.WriteLine($"🔍 PROMPT_LOADING: Provider-specific file newer than cache - forcing reload");
-                }
+                selectedPrimaryPath = providerModelPath;
             }
-
-            if (File.Exists(basePath))
+            else if (File.Exists(basePath))
             {
-                var baseTimestamp = File.GetLastWriteTime(basePath);
-                if (latestTimestamp == null || baseTimestamp > latestTimestamp)
+                selectedPrimaryPath = basePath;
+            }
+
+            // Check cache and dependency timestamps to decide reload
+            var shouldReload = !_promptCache.ContainsKey(cacheKey);
+            if (!shouldReload && _promptDependencies.TryGetValue(cacheKey, out var deps))
+            {
+                foreach (var dep in deps)
                 {
-                    latestTimestamp = baseTimestamp;
-                }
-                
-                // ARCHITECTURAL FIX: Force reload if base file is newer than cached version
-                if (cachedTimestamp.HasValue && baseTimestamp > cachedTimestamp.Value)
-                {
-                    shouldReload = true;
-                    Console.WriteLine($"🔍 PROMPT_LOADING: Base file newer than cache - forcing reload");
+                    try
+                    {
+                        var currentTs = File.GetLastWriteTime(dep.Path);
+                        if (currentTs > dep.Timestamp)
+                        {
+                            shouldReload = true;
+                            Console.WriteLine($"🔍 PROMPT_LOADING: Dependency changed ({dep.Path}) - forcing reload");
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                        // If a dependency is missing now, force reload to surface proper error
+                        shouldReload = true;
+                        Console.WriteLine($"🔍 PROMPT_LOADING: Dependency missing ({dep.Path}) - forcing reload");
+                        break;
+                    }
                 }
             }
 
-            // Return cached version if no reload needed
             if (!shouldReload && _promptCache.TryGetValue(cacheKey, out var cachedPrompt))
             {
+                var cachedTimestamp = _promptFileTimestamps.TryGetValue(cacheKey, out var ts) ? ts : (DateTime?)null;
                 Console.WriteLine($"PROMPT_LOADING: Using cached prompt for {cacheKey} (cached: {cachedTimestamp})");
                 return cachedPrompt;
             }
 
-            // Try provider/model-specific first
-            if (File.Exists(providerModelPath))
+            // Load and expand includes from selected path
+            if (!string.IsNullOrEmpty(selectedPrimaryPath) && File.Exists(selectedPrimaryPath))
             {
                 try
                 {
-                    var content = File.ReadAllText(providerModelPath);
-                    _promptCache[cacheKey] = content;
-                    if (latestTimestamp.HasValue)
-                    {
-                        _promptFileTimestamps[cacheKey] = latestTimestamp.Value;
-                    }
-                    
-                    // PROMPT LOADING DEBUG: Log successful provider-specific prompt load
-                    Console.WriteLine($"PROMPT_LOADING: SUCCESS Loaded provider-specific prompt from {providerModelPath}");
-                    Console.WriteLine($"PROMPT_LOADING: Content length: {content.Length} characters");
-                    Console.WriteLine($"PROMPT_LOADING: File timestamp: {File.GetLastWriteTime(providerModelPath)}");
-                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {content.SafeTruncateString(200)}");
-                    
-                    return content;
-                }
-                catch (Exception ex)
-                {
-                    // Log warning but continue to fallback
-                    Console.WriteLine($"PROMPT_LOADING: WARNING Failed to read provider-specific prompt {providerModelPath}: {ex.Message}");
-                }
-            }
+                    var (expanded, dependencies, latestTs) = ExpandIncludesFromPrimary(selectedPrimaryPath, provider, model, personalityFolder);
 
-            // Try base prompt as fallback
-            if (File.Exists(basePath))
-            {
-                try
-                {
-                    var content = File.ReadAllText(basePath);
-                    _promptCache[cacheKey] = content;
-                    if (latestTimestamp.HasValue)
-                    {
-                        _promptFileTimestamps[cacheKey] = latestTimestamp.Value;
-                    }
-                    
-                    // PROMPT LOADING DEBUG: Log fallback prompt load
-                    Console.WriteLine($"PROMPT_LOADING: SUCCESS Loaded base fallback prompt from {basePath}");
-                    Console.WriteLine($"PROMPT_LOADING: Content length: {content.Length} characters");
-                    Console.WriteLine($"PROMPT_LOADING: File timestamp: {File.GetLastWriteTime(basePath)}");
-                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {content.SafeTruncateString(200)}");
-                    Console.WriteLine($"PROMPT_LOADING: Using base fallback for {provider}/{model}/{personalityFolder}/{promptType}");
-                    
-                    return content;
+                    _promptCache[cacheKey] = expanded;
+                    _promptDependencies[cacheKey] = dependencies;
+                    _promptFileTimestamps[cacheKey] = latestTs;
+
+                    Console.WriteLine($"PROMPT_LOADING: SUCCESS Loaded prompt with includes from {selectedPrimaryPath}");
+                    Console.WriteLine($"PROMPT_LOADING: Content length: {expanded.Length} characters");
+                    Console.WriteLine($"PROMPT_LOADING: Latest dependency timestamp: {latestTs}");
+                    Console.WriteLine($"PROMPT_LOADING: First 200 chars: {expanded.SafeTruncateString(200)}");
+
+                    return expanded;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"PROMPT_LOADING: ERROR Error reading base prompt {basePath}: {ex.Message}");
+                    Console.WriteLine($"PROMPT_LOADING: ERROR Failed to read/expand prompt {selectedPrimaryPath}: {ex.Message}");
+                    // Fall through to fail-fast below
                 }
             }
             
-            // ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks to other personalities or inline prompts
             var errorMessage = 
                 $"DESIGN DEFICIENCY: No prompt found for {personalityFolder}/{promptType}.\n" +
                 $"Checked provider-specific: {providerModelPath} (exists: {File.Exists(providerModelPath)})\n" +
@@ -287,11 +255,79 @@ Be friendly and responsive to customer needs.");
                 $"  - For {provider}/{model} only: {providerModelPath}\n\n" +
                 $"Provider: {provider}, Model: {model}\n" +
                 $"Available files: {GetAvailableFiles(personalityFolder)}";
-            
-            // PROMPT LOADING DEBUG: Log the error before throwing
             Console.WriteLine($"PROMPT_LOADING: ERROR {errorMessage}");
-            
             throw new FileNotFoundException(errorMessage);
+        }
+
+        // Expands [[include:filename.md]] directives, resolving files provider-specific first then base
+        private static (string Content, List<(string Path, DateTime Timestamp)> Dependencies, DateTime LatestTimestamp)
+            ExpandIncludesFromPrimary(string primaryPath, string provider, string model, string personalityFolder)
+        {
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var dependencies = new List<(string Path, DateTime Timestamp)>();
+            DateTime latestTs = DateTime.MinValue;
+
+            string Expand(string path, int depth)
+            {
+                if (depth > 5)
+                {
+                    throw new InvalidOperationException($"DESIGN DEFICIENCY: Include depth exceeded while processing {path}. Check for circular includes.");
+                }
+
+                var normalized = Path.GetFullPath(path);
+                if (visited.Contains(normalized))
+                {
+                    // Prevent circular includes
+                    return string.Empty;
+                }
+                visited.Add(normalized);
+
+                if (!File.Exists(path))
+                {
+                    throw new FileNotFoundException($"DESIGN DEFICIENCY: Prompt include not found: {path}");
+                }
+
+                var ts = File.GetLastWriteTime(path);
+                dependencies.Add((path, ts));
+                if (ts > latestTs) {
+                    latestTs = ts;
+                }
+
+                var content = File.ReadAllText(path);
+                var pattern = new Regex(@"\[\[include:(?<file>[^\]]+)\]\]", RegexOptions.IgnoreCase);
+
+                var result = pattern.Replace(content, m =>
+                {
+                    var includeName = m.Groups["file"].Value.Trim();
+                    var includePath = ResolveIncludePath(includeName, provider, model, personalityFolder);
+                    return Expand(includePath, depth + 1);
+                });
+
+                return result;
+            }
+
+            var full = Expand(primaryPath, 0);
+            return (full, dependencies, latestTs);
+        }
+
+        // Resolves include file by checking provider-specific first, then base
+        private static string ResolveIncludePath(string includeFileName, string provider, string model, string personalityFolder)
+        {
+            var providerPath = Path.Combine(PromptsBasePath, provider, model, personalityFolder, includeFileName);
+            var basePath = Path.Combine(PromptsBasePath, "Base", personalityFolder, includeFileName);
+
+            if (File.Exists(providerPath))
+            {
+                return providerPath;
+            }
+            if (File.Exists(basePath))
+            {
+                return basePath;
+            }
+
+            throw new FileNotFoundException(
+                $"DESIGN DEFICIENCY: Include file '{includeFileName}' not found for personality {personalityFolder}. " +
+                $"Checked:\n  - {providerPath}\n  - {basePath}\nCreate the include in provider-specific or base directory.");
         }
 
         /// <summary>

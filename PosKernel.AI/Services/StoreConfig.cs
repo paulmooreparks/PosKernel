@@ -265,6 +265,7 @@ namespace PosKernel.AI.Services
                        .ToList();
         }
 
+        // TODO: All of these hard-coded store configurations should be moved to external config files
         private static StoreConfig CreateCoffeeShop(bool useRealKernel)
         {
             return new StoreConfig
@@ -336,7 +337,7 @@ namespace PosKernel.AI.Services
                 StoreType = StoreType.Kopitiam,
                 PersonalityType = PersonalityType.SingaporeanKopitiamUncle,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.Mock,
-                StoreName = "Uncle's Traditional Kopitiam",
+                StoreName = "Toast Boleh",
                 Currency = "SGD",
                 CultureCode = "en-SG",
                 

@@ -71,9 +71,12 @@ namespace PosKernel.AI.Services
                     }
                 }
 
+                // SIDE CHANNEL: Remove tool-call lines from content before returning to orchestrator
+                var sanitizedContent = SanitizeAssistantContent(textResponse);
+
                 return new McpResponse
                 {
-                    Content = textResponse,
+                    Content = sanitizedContent,
                     ToolCalls = toolCalls
                 };
             }
@@ -106,7 +109,7 @@ namespace PosKernel.AI.Services
 {toolDescriptions}
 
 CRITICAL TOOL CALLING INSTRUCTIONS:
-When you need to use a tool, include a line in your response that starts with ""TOOL_CALL:"" followed by the tool name and JSON arguments.
+When you need to use a tool, include a line that starts with ""TOOL_CALL:"" followed by the tool name and JSON arguments.
 Format: TOOL_CALL: tool_name {{""parameter"": ""value""}}
 
 For example:
@@ -119,9 +122,36 @@ CRITICAL: Use exact parameter names from tool definitions:
 - search_products requires ""search_term""
 - process_payment requires ""payment_method""
 
-You MUST provide a conversational response alongside any tool calls. Always respond naturally to show you understand and completed the action.
+IMPORTANT:
+- Keep tool-call lines separate from any conversational text.
+- Do NOT echo tool-call lines to the customer; they will be executed out-of-band.
+- If unsure, prefer calling a discovery tool and then asking a concise clarifying question.
 
 User request: {prompt}";
+        }
+
+        /// <summary>
+        /// Remove internal tool/diagnostic markers from assistant text content.
+        /// </summary>
+        private static string SanitizeAssistantContent(string response)
+        {
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder();
+            using var reader = new StringReader(response);
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                var trim = line.TrimStart();
+                if (trim.StartsWith("TOOL_CALL:", StringComparison.OrdinalIgnoreCase)) { continue; }
+                if (trim.StartsWith("TOOL_RESULT:", StringComparison.OrdinalIgnoreCase)) { continue; }
+                if (trim.StartsWith("THOUGHT", StringComparison.OrdinalIgnoreCase)) { continue; }
+                sb.AppendLine(line);
+            }
+            return sb.ToString().Trim();
         }
 
         /// <summary>

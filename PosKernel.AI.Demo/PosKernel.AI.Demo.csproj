@@ -5,6 +5,11 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- WARNING POLICY: Suppress NU1608 here with justification.
+         Terminal.Gui 2.0.0 upper-bounds System.Text.Json (<9.0.0) but the solution uses 9.0.9.
+         Upgrading/downgrading across the solution is not feasible here; UI works with STJ 9.
+         This suppression is limited to the demo UI project only. -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

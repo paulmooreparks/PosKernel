@@ -529,15 +529,18 @@ namespace PosKernel.AI.Tools
 
             if (itemCount == 0)
             {
-                return "Transaction is empty. Total: $0.00";
+                return $"Transaction is empty. Total: {FormatCurrency(transaction.Total.ToDecimal())}";
             }
 
-            var itemsList = transaction.Lines.Select(line => 
-                $"{line.ProductId} x{line.Quantity} = ${line.Extended.ToDecimal():F2}").ToList();
+            var itemsList = transaction.Lines.Select(line =>
+            {
+                var extended = line.Extended.ToDecimal();
+                return $"{line.ProductId} x{line.Quantity} = {FormatCurrency(extended)}";
+            }).ToList();
 
             return $"Transaction contains {itemCount} line items:\n" +
                    string.Join("\n", itemsList) +
-                   $"\n\nTotal: ${total:F2}";
+                   $"\n\nTotal: {FormatCurrency(total)}";
         }
 
         private string ExecuteVerifyOrder(Transaction transaction)
@@ -555,10 +558,10 @@ namespace PosKernel.AI.Tools
 
             foreach (var line in transaction.Lines)
             {
-                verification.AppendLine($"  • {line.ProductId} x{line.Quantity} = ${line.Extended.ToDecimal():F2}");
+                verification.AppendLine($"  • {line.ProductId} x{line.Quantity} = {FormatCurrency(line.Extended.ToDecimal())}");
             }
 
-            verification.AppendLine($"TOTAL: ${transaction.Total.ToDecimal():F2}");
+            verification.AppendLine($"TOTAL: {FormatCurrency(transaction.Total.ToDecimal())}");
             verification.AppendLine($"Status: Ready for payment confirmation");
             
             return verification.ToString().Trim();
@@ -593,9 +596,9 @@ namespace PosKernel.AI.Tools
                 transaction.AddCashTender(amount);
                 var change = transaction.ChangeDue.ToDecimal();
                 
-                return $"Payment processed: ${amount.ToDecimal():F2} cash received\n" +
-                      $"Total: ${transaction.Total.ToDecimal():F2}\n" +
-                      $"Change due: ${change:F2}\n" +
+                return $"Payment processed: {FormatCurrency(amount.ToDecimal())} cash received\n" +
+                      $"Total: {FormatCurrency(transaction.Total.ToDecimal())}\n" +
+                      $"Change due: {FormatCurrency(change)}\n" +
                       $"Transaction completed successfully.";
             }
             else if (method == "card" || method == "credit" || method == "debit")
@@ -603,9 +606,9 @@ namespace PosKernel.AI.Tools
                 // For card payments, assume exact amount (no change)
                 transaction.AddCashTender(transaction.Total); // Mock as cash tender internally
                 
-                return $"Payment processed: ${transaction.Total.ToDecimal():F2} card payment\n" +
-                      $"Total: ${transaction.Total.ToDecimal():F2}\n" +
-                      $"Change due: $0.00\n" +
+                return $"Payment processed: {FormatCurrency(transaction.Total.ToDecimal())} card payment\n" +
+                      $"Total: {FormatCurrency(transaction.Total.ToDecimal())}\n" +
+                      $"Change due: {FormatCurrency(0m)}\n" +
                       $"Transaction completed successfully.";
             }
             else
@@ -621,45 +624,99 @@ namespace PosKernel.AI.Tools
 
             try
             {
-                // Load the complete menu for Uncle's context
-                var allProducts = await _productCatalog!.SearchProductsAsync("", maxResults: 100);
-                var categories = includeCategories ? await _productCatalog!.GetCategoriesAsync() : new List<string>();
-
-                var menuContext = new StringBuilder();
-                menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
-                menuContext.AppendLine("=============================================================");
-                
-                if (categories.Any())
+                if (_productCatalog != null)
                 {
-                    menuContext.AppendLine("\nCATEGORIES:");
-                    foreach (var category in categories)
-                    {
-                        menuContext.AppendLine($"  • {category}");
-                    }
-                }
+                    // Load the complete menu using product catalog
+                    var allProducts = await _productCatalog.SearchProductsAsync(string.Empty, maxResults: 100);
+                    var categories = includeCategories ? await _productCatalog.GetCategoriesAsync() : new List<string>();
 
-                menuContext.AppendLine($"\nFULL MENU ({allProducts.Count} items):");
-                
-                // Group by category for better organization
-                var productsByCategory = allProducts.GroupBy(p => p.Category).OrderBy(g => g.Key);
-                
-                foreach (var categoryGroup in productsByCategory)
-                {
-                    menuContext.AppendLine($"\n{categoryGroup.Key.ToUpper()}:");
-                    foreach (var product in categoryGroup.OrderBy(p => p.Name))
+                    var menuContext = new StringBuilder();
+                    menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
+                    menuContext.AppendLine("=============================================================");
+                    
+                    if (categories.Any())
                     {
-                        var price = GetProductPrice(product);
-                        menuContext.AppendLine($"  • {product.Name} - ${price:F2} (SKU: {product.Sku})");
-                        if (!string.IsNullOrEmpty(product.Description))
+                        menuContext.AppendLine("\nCATEGORIES:");
+                        foreach (var category in categories)
                         {
-                            menuContext.AppendLine($"    {product.Description}");
+                            menuContext.AppendLine($"  • {category}");
                         }
                     }
-                }
 
-                menuContext.AppendLine("\nUncle now has complete menu knowledge for intelligent order processing!");
-                
-                return menuContext.ToString();
+                    menuContext.AppendLine($"\nFULL MENU ({allProducts.Count} items):");
+                    
+                    // Group by category for better organization
+                    var productsByCategory = allProducts.GroupBy(p => p.Category).OrderBy(g => g.Key);
+                    
+                    foreach (var categoryGroup in productsByCategory)
+                    {
+                        menuContext.AppendLine($"\n{categoryGroup.Key.ToUpper()}:");
+                        foreach (var product in categoryGroup.OrderBy(p => p.Name))
+                        {
+                            var price = GetProductPrice(product);
+                            menuContext.AppendLine($"  • {product.Name} - {FormatCurrency(price)} (SKU: {product.Sku})");
+                            if (!string.IsNullOrEmpty(product.Description))
+                            {
+                                menuContext.AppendLine($"    {product.Description}");
+                            }
+                        }
+                    }
+
+                    menuContext.AppendLine("\nUncle now has complete menu knowledge for intelligent order processing!");
+                    
+                    return menuContext.ToString();
+                }
+                else if (_restaurantClient != null)
+                {
+                    // Load the complete menu using restaurant extension client
+                    var categories = includeCategories ? await _restaurantClient.GetCategoriesAsync() : new List<string>();
+                    var allProducts = new List<PosKernel.Extensions.Restaurant.ProductInfo>();
+
+                    foreach (var category in categories)
+                    {
+                        var categoryProducts = await _restaurantClient.GetCategoryProductsAsync(category);
+                        allProducts.AddRange(categoryProducts);
+                    }
+
+                    var menuContext = new StringBuilder();
+                    menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
+                    menuContext.AppendLine("=============================================================");
+                    
+                    if (categories.Any())
+                    {
+                        menuContext.AppendLine("\nCATEGORIES:");
+                        foreach (var category in categories)
+                        {
+                            menuContext.AppendLine($"  • {category}");
+                        }
+                    }
+
+                    menuContext.AppendLine($"\nFULL MENU ({allProducts.Count} items):");
+
+                    var productsByCategory = allProducts.GroupBy(p => p.CategoryName).OrderBy(g => g.Key);
+                    foreach (var categoryGroup in productsByCategory)
+                    {
+                        menuContext.AppendLine($"\n{categoryGroup.Key.ToUpper()}:");
+                        foreach (var product in categoryGroup.OrderBy(p => p.Name))
+                        {
+                            var price = product.BasePriceCents / 100.0m;
+                            menuContext.AppendLine($"  • {product.Name} - {FormatCurrency(price)} (SKU: {product.Sku})");
+                            if (!string.IsNullOrEmpty(product.Description))
+                            {
+                                menuContext.AppendLine($"    {product.Description}");
+                            }
+                        }
+                    }
+
+                    menuContext.AppendLine("\nUncle now has complete menu knowledge for intelligent order processing!");
+                    return menuContext.ToString();
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "DESIGN DEFICIENCY: No product service available to load menu context. " +
+                        "Provide IProductCatalogService or RestaurantExtensionClient.");
+                }
             }
             catch (Exception ex)
             {
@@ -668,7 +725,7 @@ namespace PosKernel.AI.Tools
             }
         }
 
-        private async Task<string> ExecuteLoadPaymentMethodsContextAsync(McpToolCall toolCall)
+        private Task<string> ExecuteLoadPaymentMethodsContextAsync(McpToolCall toolCall)
         {
             var includeLimits = toolCall.Arguments.TryGetValue("include_limits", out var limitsElement) 
                 ? limitsElement.GetBoolean() : true;
@@ -678,7 +735,12 @@ namespace PosKernel.AI.Tools
                 // ARCHITECTURAL PRINCIPLE: Payment methods are loaded from store configuration, just like menu items
                 if (_storeConfig == null)
                 {
-                    return "ERROR: Store configuration not available. Cannot load payment methods without store context.";
+                    return Task.FromResult("ERROR: Store configuration not available. Cannot load payment methods without store context.");
+                }
+
+                if (_storeConfig.PaymentMethods == null)
+                {
+                    return Task.FromResult("ERROR: No payment methods configured for this store. Store configuration missing PaymentMethods section.");
                 }
 
                 var paymentMethodsContext = new StringBuilder();
@@ -690,11 +752,12 @@ namespace PosKernel.AI.Tools
                 paymentMethodsContext.AppendLine($"Currency: {_storeConfig.Currency}");
                 paymentMethodsContext.AppendLine();
 
-                if (_storeConfig.PaymentMethods.AcceptedMethods.Any())
+                var methods = _storeConfig.PaymentMethods.AcceptedMethods;
+                if (methods != null && methods.Any())
                 {
                     paymentMethodsContext.AppendLine("ACCEPTED PAYMENT METHODS:");
                     
-                    foreach (var method in _storeConfig.PaymentMethods.AcceptedMethods.Where(m => m.IsEnabled))
+                    foreach (var method in methods.Where(m => m.IsEnabled))
                     {
                         paymentMethodsContext.AppendLine($"  • {method.DisplayName} ({method.MethodId})");
                         paymentMethodsContext.AppendLine($"    Type: {method.Type}");
@@ -716,9 +779,7 @@ namespace PosKernel.AI.Tools
                 else
                 {
                     // ARCHITECTURAL PRINCIPLE: Fail fast if no payment methods configured
-                    return "ERROR: No payment methods configured for this store. " +
-                           "Store configuration must include accepted payment methods. " +
-                           "Contact system administrator to configure payment methods.";
+                    return Task.FromResult("ERROR: No payment methods configured for this store. Store configuration must include accepted payment methods.");
                 }
 
                 if (!string.IsNullOrEmpty(_storeConfig.PaymentMethods.PaymentInstructions))
@@ -737,13 +798,12 @@ namespace PosKernel.AI.Tools
                 paymentMethodsContext.AppendLine("ARCHITECTURAL PRINCIPLE: Only process payments using methods listed above.");
                 paymentMethodsContext.AppendLine("If customer requests unlisted payment method, inform them it's not accepted.");
                 
-                return paymentMethodsContext.ToString();
+                return Task.FromResult(paymentMethodsContext.ToString());
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error loading payment methods context: {Error}", ex.Message);
-                return $"ERROR: Unable to load payment methods context: {ex.Message}. " +
-                       "Please check store configuration and ensure payment methods are properly configured.";
+                return Task.FromResult($"ERROR: Unable to load payment methods context: {ex.Message}. Please check store configuration and ensure payment methods are properly configured.");
             }
         }
 
@@ -799,12 +859,12 @@ namespace PosKernel.AI.Tools
         private bool IsSpecificProductMatch(string searchTerm, IProductInfo product)
         {
             var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
-            var normalizedProductName = product.Name.ToLowerInvariant().Trim();
+            var normalizedProductName = (product.Name ?? string.Empty).ToLowerInvariant().Trim();
             
             // CRITICAL FIX: When customer clarifies with specific terms, auto-match them
             
             // Exact matches - always specific
-            if (normalizedSearch == normalizedProductName || normalizedSearch == product.Sku.ToLowerInvariant())
+            if (normalizedSearch == normalizedProductName || normalizedSearch == (product.Sku ?? string.Empty).ToLowerInvariant())
             {
                 return true;
             }
@@ -860,20 +920,21 @@ namespace PosKernel.AI.Tools
         private BusinessContext AnalyzeBusinessContext(IProductInfo product, Transaction transaction)
         {
             // "Crusty Sales Manager" logic - configurable business rules
+            var name = product.Name ?? string.Empty;
             var hasHotDrink = transaction.Lines.Any(l => l.ProductId.ToString().Contains("COFFEE") || l.ProductId.ToString().Contains("KOPI") || l.ProductId.ToString().Contains("TEH"));
             var hasFood = transaction.Lines.Any(l => l.ProductId.ToString().Contains("CROISSANT") || l.ProductId.ToString().Contains("MUFFIN") || l.ProductId.ToString().Contains("TOAST") || l.ProductId.ToString().Contains("KUEH"));
             
             var context = new BusinessContext();
             
             // Business Rule 1: Suggest food with drinks
-            if ((product.Name.ToLower().Contains("coffee") || product.Name.ToLower().Contains("kopi") || product.Name.ToLower().Contains("teh")) && !hasFood)
+            if ((name.ToLower().Contains("coffee") || name.ToLower().Contains("kopi") || name.ToLower().Contains("teh")) && !hasFood)
             {
                 context.SuggestUpsell = true;
-                context.UpsellCategory = product.Name.ToLower().Contains("kopi") || product.Name.ToLower().Contains("teh") ? "kueh" : "pastry";
+                context.UpsellCategory = name.ToLower().Contains("kopi") || name.ToLower().Contains("teh") ? "kueh" : "pastry";
             }
             
             // Business Rule 2: Suggest drinks with food  
-            if ((product.Name.ToLower().Contains("croissant") || product.Name.ToLower().Contains("muffin") || product.Name.ToLower().Contains("toast") || product.Name.ToLower().Contains("kueh")) && !hasHotDrink)
+            if ((name.ToLower().Contains("croissant") || name.ToLower().Contains("muffin") || name.ToLower().Contains("toast") || name.ToLower().Contains("kueh")) && !hasHotDrink)
             {
                 context.SuggestUpsell = true;
                 context.UpsellCategory = "drink";
@@ -881,7 +942,7 @@ namespace PosKernel.AI.Tools
             
             // Business Rule 3: Time-based recommendations (could be configurable)
             var currentHour = DateTime.Now.Hour;
-            if (currentHour < 10 && (product.Name.ToLower().Contains("coffee") || product.Name.ToLower().Contains("kopi")))
+            if (currentHour < 10 && (name.ToLower().Contains("coffee") || name.ToLower().Contains("kopi")))
             {
                 context.PriorityBoost = true; // Morning coffee rush priority
             }
@@ -960,15 +1021,24 @@ namespace PosKernel.AI.Tools
         private string AddProductToTransaction(IProductInfo product, int quantity, Transaction transaction)
         {
             var price = GetProductPrice(product);
-            var unitPrice = new Money((long)(price * 100), "SGD"); // Convert to minor units
+            var currency = _storeConfig?.Currency;
+            if (string.IsNullOrWhiteSpace(currency))
+            {
+                throw new InvalidOperationException(
+                    "DESIGN DEFICIENCY: PosToolsProvider requires StoreConfig.Currency to add items. " +
+                    "Client cannot decide currency defaults. Configure store currency in StoreConfig.");
+            }
+            var unitPrice = new Money((long)(price * 100), currency); // Convert to minor units
             
             for (int i = 0; i < quantity; i++)
             {
-                transaction.AddLine(new ProductId(product.Name), 1, unitPrice);
+                var productIdName = product.Name ?? product.Sku ?? "UNKNOWN";
+                transaction.AddLine(new ProductId(productIdName), 1, unitPrice);
             }
             
             var totalPrice = price * quantity;
-            return $"ADDED: {product.Name} x{quantity} @ {FormatCurrency(price)} each = {FormatCurrency(totalPrice)}";
+            var displayName = product.Name ?? product.Sku ?? "Item";
+            return $"ADDED: {displayName} x{quantity} @ {FormatCurrency(price)} each = {FormatCurrency(totalPrice)}";
         }
 
         private decimal GetProductPrice(IProductInfo product)
@@ -997,10 +1067,10 @@ namespace PosKernel.AI.Tools
         private bool IsExactMatch(string searchTerm, IProductInfo product)
         {
             var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
-            var normalizedProductName = product.Name.ToLowerInvariant().Trim();
+            var normalizedProductName = (product.Name ?? string.Empty).ToLowerInvariant().Trim();
             
             // Direct exact matches (SKU or full name match)
-            if (normalizedSearch == normalizedProductName || normalizedSearch == product.Sku.ToLowerInvariant())
+            if (normalizedSearch == normalizedProductName || normalizedSearch == (product.Sku ?? string.Empty).ToLowerInvariant())
             {
                 return true;
             }

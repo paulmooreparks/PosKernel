@@ -5,8 +5,9 @@
     public class ReceiptLineItem
     {
         /// <summary>
-        /// ARCHITECTURAL COMPONENT: Line item ID FROM KERNEL - not client-generated.
+        /// ARCHITECTURAL PRINCIPLE: Line item ID FROM KERNEL - not client-generated.
         /// Stable identifier assigned by kernel for precise modification tracking.
+        /// This replaces unstable line numbers for reliable line item references.
         /// </summary>
         public string LineItemId { get; set; } = "";
         

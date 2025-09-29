@@ -227,6 +227,7 @@ namespace PosKernel.Extensions.Restaurant
                     "get_popular_items" => await GetPopularItemsAsync(request),
                     "get_category_products" => await GetCategoryProductsAsync(request),
                     "get_categories" => await GetCategoriesAsync(request),
+                    "resolve_display_name" => await ResolveDisplayNameAsync(request),
                     "disconnect" => HandleDisconnect(request),
                     _ => new ExtensionResponse
                     {
@@ -518,6 +519,75 @@ namespace PosKernel.Extensions.Restaurant
                 Data = new Dictionary<string, object>
                 {
                     ["categories"] = categories
+                }
+            };
+        }
+
+        private async Task<ExtensionResponse> ResolveDisplayNameAsync(ExtensionRequest request)
+        {
+            var sku = GetStringParameter(request, "sku");
+            if (string.IsNullOrWhiteSpace(sku))
+            {
+                return new ExtensionResponse { Id = request.Id, Success = false, Error = "Parameter 'sku' is required" };
+            }
+
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync();
+
+            // Try products table first
+            using (var productCmd = connection.CreateCommand())
+            {
+                productCmd.CommandText = @"SELECT name FROM products WHERE sku = @sku LIMIT 1";
+                productCmd.Parameters.AddWithValue("@sku", sku);
+                var prodName = await productCmd.ExecuteScalarAsync() as string;
+                if (!string.IsNullOrWhiteSpace(prodName))
+                {
+                    return new ExtensionResponse
+                    {
+                        Id = request.Id,
+                        Success = true,
+                        Data = new Dictionary<string, object>
+                        {
+                            ["display_name"] = prodName
+                        }
+                    };
+                }
+            }
+
+            // Check if product_modifications table exists
+            using (var existsCmd = connection.CreateCommand())
+            {
+                existsCmd.CommandText = @"SELECT 1 FROM sqlite_master WHERE type='table' AND name='product_modifications'";
+                var exists = await existsCmd.ExecuteScalarAsync();
+                if (exists != null)
+                {
+                    using var modCmd = connection.CreateCommand();
+                    modCmd.CommandText = @"SELECT name FROM product_modifications WHERE modification_id = @sku LIMIT 1";
+                    modCmd.Parameters.AddWithValue("@sku", sku);
+                    var modName = await modCmd.ExecuteScalarAsync() as string;
+                    if (!string.IsNullOrWhiteSpace(modName))
+                    {
+                        return new ExtensionResponse
+                        {
+                            Id = request.Id,
+                            Success = true,
+                            Data = new Dictionary<string, object>
+                            {
+                                ["display_name"] = modName
+                            }
+                        };
+                    }
+                }
+            }
+
+            // Not found
+            return new ExtensionResponse
+            {
+                Id = request.Id,
+                Success = true,
+                Data = new Dictionary<string, object>
+                {
+                    ["display_name"] = sku // let client decide fallback formatting
                 }
             };
         }

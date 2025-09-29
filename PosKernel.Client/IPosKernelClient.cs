@@ -146,6 +146,24 @@ namespace PosKernel.Client
         /// ARCHITECTURAL PRINCIPLE: This replaces preparation notes with proper parent-child line item relationships.
         /// </summary>
         Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Adds a modification to a specific line item using stable line item ID for precise targeting.
+        /// ARCHITECTURAL PRINCIPLE: Eliminates ambiguity when multiple items have the same SKU.
+        /// </summary>
+        Task<TransactionClientResult> AddModificationByLineItemIdAsync(string sessionId, string transactionId, string lineItemId, string modificationSku, int quantity, decimal unitPrice, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Voids a line item using stable line item ID for precise targeting.
+        /// ARCHITECTURAL PRINCIPLE: Stable ID targeting eliminates ambiguity in multi-item scenarios.
+        /// </summary>
+        Task<TransactionClientResult> VoidLineItemByIdAsync(string sessionId, string transactionId, string lineItemId, string reason = "customer requested", CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Modifies a line item property using stable line item ID for precise targeting.
+        /// ARCHITECTURAL PRINCIPLE: Use stable IDs for unambiguous line item targeting.
+        /// </summary>
+        Task<TransactionClientResult> ModifyLineItemByIdAsync(string sessionId, string transactionId, string lineItemId, string modificationType, string newValue, CancellationToken cancellationToken = default);
     }
 
     /// <summary>
@@ -201,7 +219,15 @@ namespace PosKernel.Client
     public class TransactionLineItem
     {
         /// <summary>
+        /// Gets or sets the stable line item identifier assigned by the kernel.
+        /// ARCHITECTURAL PRINCIPLE: Stable ID remains constant even when line numbers change due to voids.
+        /// Use this for precise targeting of modifications, not the line number.
+        /// </summary>
+        public string LineItemId { get; set; } = "";
+
+        /// <summary>
         /// Gets or sets the line number (1-based for POS display/void operations).
+        /// NOTE: Line numbers may change due to voids/insertions. Use LineItemId for stable references.
         /// </summary>
         public int LineNumber { get; set; }
 

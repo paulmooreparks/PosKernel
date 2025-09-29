@@ -265,6 +265,15 @@ namespace PosKernel.Client
         public Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
             => EnsureConnected().CloseSessionAsync(sessionId, cancellationToken);
 
+        public Task<TransactionClientResult> AddModificationByLineItemIdAsync(string sessionId, string transactionId, string lineItemId, string modificationSku, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
+            => EnsureConnected().AddModificationByLineItemIdAsync(sessionId, transactionId, lineItemId, modificationSku, quantity, unitPrice, cancellationToken);
+
+        public Task<TransactionClientResult> VoidLineItemByIdAsync(string sessionId, string transactionId, string lineItemId, string reason = "customer requested", CancellationToken cancellationToken = default)
+            => EnsureConnected().VoidLineItemByIdAsync(sessionId, transactionId, lineItemId, reason, cancellationToken);
+
+        public Task<TransactionClientResult> ModifyLineItemByIdAsync(string sessionId, string transactionId, string lineItemId, string modificationType, string newValue, CancellationToken cancellationToken = default)
+            => EnsureConnected().ModifyLineItemByIdAsync(sessionId, transactionId, lineItemId, modificationType, newValue, cancellationToken);
+
         public void Dispose()
         {
             if (!_disposed)

@@ -47,6 +47,11 @@ namespace PosKernel.AI.Services
         /// </summary>
         public string? UserInput { get; set; }
 
+        /// <summary>
+        /// Summary of tools executed and their key results for acknowledgment prompts.
+        /// </summary>
+        public string? ToolsExecuted { get; set; }
+
         // ARCHITECTURAL PRINCIPLE: Removed TimeOfDay and CurrentTime properties
         // AI personalities handle time and cultural context naturally without orchestrator assumptions
         // This eliminates hardcoded cultural time mappings and formatting

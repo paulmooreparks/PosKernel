@@ -72,29 +72,15 @@ namespace PosKernel.AI.Examples
                 "DESIGN DEFICIENCY: ProductShowcaseDemo requires ICurrencyFormattingService to display prices. " +
                 "Cannot hardcode currency symbols or decimal formatting. " +
                 "Inject ICurrencyFormattingService and StoreConfig to provide proper currency formatting.");
-
-            foreach (var category in categories)
-            {
-                Console.WriteLine($"📂 {category.Key.ToUpper()} ({category.Count()} items)");
-                
-                foreach (var product in category.OrderBy(p => p.Price))
-                {
-                    var preparationIcon = product.RequiresPreparation ? "👨‍🍳" : "📦";
-                    Console.WriteLine($"   {preparationIcon} {product.Name}");
-                    Console.WriteLine($"      SKU: {product.Sku} | Price: [Currency service required]");
-                    Console.WriteLine($"      {product.Description}");
-                    Console.WriteLine();
-                }
-            }
         }
 
-        private async Task DemonstrateAiSalesScenariosAsync()
+        private Task DemonstrateAiSalesScenariosAsync()
         {
             // ARCHITECTURAL FIX: Remove all hardcoded currency formatting
-            throw new InvalidOperationException(
+            return Task.FromException(new InvalidOperationException(
                 "DESIGN DEFICIENCY: AI sales scenarios demo requires ICurrencyFormattingService. " +
                 "Cannot hardcode $ symbols or :F2 formatting assumptions. " +
-                "Inject proper currency formatting services to display prices correctly.");
+                "Inject proper currency formatting services to display prices correctly."));
         }
 
         private void ShowBusinessAnalytics()

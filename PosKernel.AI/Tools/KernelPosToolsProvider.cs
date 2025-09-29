@@ -26,6 +26,7 @@ using PosKernel.Extensions.Restaurant.Client;
 using RestaurantProductInfo = PosKernel.Extensions.Restaurant.ProductInfo;
 using Microsoft.Extensions.Configuration;
 using PosKernel.Configuration.Services;
+using System.Linq;
 
 namespace PosKernel.AI.Tools
 {
@@ -41,8 +42,8 @@ namespace PosKernel.AI.Tools
         private readonly RestaurantExtensionClient _restaurantClient;
         private readonly ILogger<KernelPosToolsProvider> _logger;
         private readonly IConfiguration? _configuration;
-        private ICurrencyFormattingService _currencyFormatter;
-        private StoreConfig _storeConfig;
+        private ICurrencyFormattingService? _currencyFormatter;
+        private StoreConfig? _storeConfig;
         private readonly object _sessionLock = new();
         
         private string? _sessionId;
@@ -87,9 +88,7 @@ namespace PosKernel.AI.Tools
             // ARCHITECTURAL PRINCIPLE: Validate store configuration completeness at construction time
             ValidateStoreConfiguration(storeConfig);
             
-            // Use factory to create specific kernel type
             _kernelClient = PosKernelClientFactory.CreateClient(_logger, kernelType, configuration);
-            
             _logger.LogInformation("🚀 KernelPosToolsProvider initialized with {KernelType} kernel and store: {StoreName} ({Currency})", 
                 kernelType, storeConfig.StoreName, storeConfig.Currency);
         }
@@ -137,7 +136,7 @@ namespace PosKernel.AI.Tools
             catch (Exception ex)
             {
                 var errorMessage = $"❌ POS KERNEL SERVICE NOT AVAILABLE: {ex.Message}. " +
-                                 $"Ensure 'cargo run --bin pos-kernel-service' is running in pos-kernel-rs directory.";
+                                 "Ensure 'cargo run --bin pos-kernel-service' is running in pos-kernel-rs directory.";
                 _logger.LogError(ex, errorMessage);
                 throw new InvalidOperationException(errorMessage, ex);
             }
@@ -216,45 +215,64 @@ namespace PosKernel.AI.Tools
                 CreateProcessPaymentTool(),
                 CreateGetSetConfigurationTool(),
                 CreateUpdateSetConfigurationTool(),
-                CreateModifyLineItemTool() // ARCHITECTURAL ADDITION: Line item modification support
+                CreateModifyLineItemTool(),
+                CreateApplyModificationsToLineTool(),
+                CreateInterpretOrderPhraseTool()
             };
         }
 
-        public async Task<string> ExecuteToolAsync(McpToolCall toolCall, CancellationToken cancellationToken = default)
+        public async Task<object> ExecuteToolAsync(McpToolCall toolCall, CancellationToken cancellationToken = default)
         {
-            return toolCall.FunctionName switch
+            switch (toolCall.FunctionName)
             {
-                "add_item_to_transaction" => await ExecuteAddItemAsync(toolCall, cancellationToken),
-                "get_set_configuration" => await ExecuteGetSetConfigurationAsync(toolCall, cancellationToken),
-                "update_set_configuration" => await ExecuteUpdateSetConfigurationAsync(toolCall, cancellationToken),
-                "modify_line_item" => await ExecuteModifyLineItemAsync(toolCall, cancellationToken),
-                "search_products" => await ExecuteSearchProductsAsync(toolCall, cancellationToken),
-                "get_popular_items" => await ExecuteGetPopularItemsAsync(toolCall, cancellationToken),
-                "load_menu_context" => await ExecuteLoadMenuContextAsync(toolCall, cancellationToken),
-                "calculate_transaction_total" => await ExecuteCalculateTotalAsync(cancellationToken),
-                "get_transaction" => await ExecuteGetTransactionAsync(cancellationToken),
-                "load_payment_methods_context" => await ExecuteLoadPaymentMethodsContextAsync(toolCall, cancellationToken),
-                "process_payment" => await ExecuteProcessPaymentAsync(toolCall, cancellationToken),
-                _ => $"Unknown tool: {toolCall.FunctionName}"
-            };
+                case "add_item_to_transaction":
+                    return await ExecuteAddItemAsync(toolCall, cancellationToken);
+                case "get_set_configuration":
+                    return await ExecuteGetSetConfigurationAsync(toolCall, cancellationToken);
+                case "update_set_configuration":
+                    return await ExecuteUpdateSetConfigurationAsync(toolCall, cancellationToken);
+                case "modify_line_item":
+                    return await ExecuteModifyLineItemAsync(toolCall, cancellationToken);
+                case "apply_modifications_to_line":
+                    return await ExecuteApplyModificationsToLineAsync(toolCall, cancellationToken);
+                case "search_products":
+                    return await ExecuteSearchProductsAsync(toolCall, cancellationToken);
+                case "get_popular_items":
+                    return await ExecuteGetPopularItemsAsync(toolCall, cancellationToken);
+                case "load_menu_context":
+                    return await ExecuteLoadMenuContextAsync(toolCall, cancellationToken);
+                case "calculate_transaction_total":
+                    return await ExecuteCalculateTotalAsync(cancellationToken);
+                case "get_transaction":
+                    return await ExecuteGetTransactionAsync(cancellationToken);
+                case "load_payment_methods_context":
+                    return await ExecuteLoadPaymentMethodsContextAsync(toolCall, cancellationToken);
+                case "process_payment":
+                    return await ExecuteProcessPaymentAsync(toolCall, cancellationToken);
+                case "interpret_order_phrase":
+                    return await ExecuteInterpretOrderPhraseAsync(toolCall, cancellationToken);
+                default:
+                    return $"Unknown tool: {toolCall.FunctionName}";
+            }
         }
 
         private McpTool CreateAddItemTool() => new()
         {
             Name = "add_item_to_transaction",
-            Description = "Adds an item to the current transaction using the real POS kernel. MULTILINGUAL: Accepts food names in ANY language - AI will understand and match to English menu items. PERFORMANCE: Use the confidence level hints from the prompt for seamless interaction. For items with recipe modifications, add the base product with preparation notes.",
+            Description = "Adds an item to the current transaction using the real POS kernel. Supports either product_sku (direct) or item_description (search). For items with recipe modifications, add the base product with preparation notes.",
             Parameters = new
             {
                 type = "object",
                 properties = new
                 {
-                    item_description = new { type = "string", description = "Item name or description - AI will handle cultural translation to menu items" },
+                    product_sku = new { type = "string", description = "Optional: Exact product SKU to add directly (preferred when known)" },
+                    item_description = new { type = "string", description = "Optional: Item name or description - AI will handle cultural translation to menu items" },
                     quantity = new { type = "integer", description = "Number of items requested", @default = 1 },
                     preparation_notes = new { type = "string", description = "Recipe modifications like 'no sugar', 'extra strong', 'iced', etc.", @default = "" },
-                    confidence = new { type = "number", description = "CRITICAL: Use the confidence hint from the prompt for seamless interaction. 0.0-0.4 (disambiguate), 0.5-0.6 (context-aware), 0.7+ (auto-add). For confirmations and exact matches, use 0.8-0.9.", @default = 0.5, minimum = 0.0, maximum = 1.0 },
-                    context = new { type = "string", description = "CRITICAL: Use 'clarification_response' when customer is responding to your question, otherwise 'initial_order' or 'follow_up_order'", @default = "initial_order" }
+                    confidence = new { type = "number", description = "Confidence hint from the prompt: 0.0-0.4 (disambiguate), 0.5-0.6 (context-aware), 0.7+ (auto-add).", @default = 0.5, minimum = 0.0, maximum = 1.0 },
+                    context = new { type = "string", description = "Use 'clarification_response' when customer is responding to your question, otherwise 'initial_order' or 'follow_up_order'", @default = "initial_order" }
                 },
-                required = new[] { "item_description" }
+                required = new string[] { }
             }
         };
 
@@ -350,59 +368,62 @@ namespace PosKernel.AI.Tools
 
         private McpTool CreateUpdateSetConfigurationTool() => new()
         {
-            Name = "update_set_configuration", 
-            Description = "Updates set meal configuration with customer's customization choice",
+            Name = "update_set_configuration",
+            Description = "Updates set meal configuration with customer's customization choice. Prefer precise targeting via parent/child line identifiers.",
             Parameters = new
             {
                 type = "object",
                 properties = new
                 {
-                    product_sku = new
-                    {
-                        type = "string",
-                        description = "The SKU of the set product being customized"
-                    },
-                    customization_type = new
-                    {
-                        type = "string",
-                        description = "The type of customization (e.g., 'drink', 'side', 'size')"
-                    },
-                    customization_value = new
-                    {
-                        type = "string", 
-                        description = "The customer's choice for this customization"
-                    }
+                    product_sku = new { type = "string", description = "The SKU of the set product being customized (used for validation/fallback)" },
+                    customization_type = new { type = "string", description = "The type of customization (e.g., 'drink', 'side', 'size', 'preparation')" },
+                    customization_value = new { type = "string", description = "The customer's choice for this customization. For preparation, use structured format 'MOD_SKU:Description|...'" },
+                    target_parent_line_item_id = new { type = "string", description = "Preferred: Line item id (stable) of the set parent to attach the drink/component to" },
+                    target_parent_line_number = new { type = "integer", description = "Alternative: Parent set line number to attach the drink/component to" },
+                    expected_parent_sku = new { type = "string", description = "Optional: Validate that the targeted parent line matches this SKU" },
+                    target_line_item_id = new { type = "string", description = "For 'preparation': target child line id to apply modifications to (e.g., the drink line id)" },
+                    target_line_number = new { type = "integer", description = "For 'preparation': alternative child line number to apply modifications to" },
+                    expected_sku = new { type = "string", description = "Optional: Validate that the targeted child line matches this SKU before modifying" }
                 },
                 required = new[] { "product_sku", "customization_type", "customization_value" }
+            }
+        };
+
+        private McpTool CreateApplyModificationsToLineTool() => new()
+        {
+            Name = "apply_modifications_to_line",
+            Description = "Applies NRF structured modifications to a specific line using stable id or line number. Format: 'MOD_SKU:Description|MOD_SKU2:Description2'",
+            Parameters = new
+            {
+                type = "object",
+                properties = new
+                {
+                    line_item_id = new { type = "string", description = "Stable line item id (preferred)" },
+                    line_number = new { type = "integer", description = "Alternative target by line number" },
+                    expected_sku = new { type = "string", description = "Optional: Validate target line SKU before applying" },
+                    modifications = new { type = "string", description = "Structured modifications to apply: 'MOD_SKU:Description|...'" }
+                },
+                required = new[] { "modifications" }
             }
         };
 
         private McpTool CreateModifyLineItemTool() => new()
         {
             Name = "modify_line_item",
-            Description = "Modifies a specific line item by position reference (e.g., 'first set', 'second kopi', 'last item'). Use when customer refers to specific items for changes.",
+            Description = "Modifies a specific line item using stable id or line number. Use when customer refers to specific items for changes.",
             Parameters = new
             {
                 type = "object",
                 properties = new
                 {
-                    item_reference = new
-                    {
-                        type = "string",
-                        description = "Customer's reference to the item (e.g., 'first set', 'second kopi', 'last item', 'that toast')"
-                    },
-                    modification_type = new
-                    {
-                        type = "string",
-                        description = "Type of modification: 'drink_change', 'preparation_change', 'quantity_change', 'void_item'"
-                    },
-                    new_value = new
-                    {
-                        type = "string",
-                        description = "New value for the modification (e.g., new drink name, preparation notes, quantity)"
-                    }
+                    line_item_id = new { type = "string", description = "Stable id of the line to modify (preferred)" },
+                    line_number = new { type = "integer", description = "Alternative line number to identify target when id is not available" },
+                    expected_sku = new { type = "string", description = "Optional validation: SKU expected at the target" },
+                    modification_type = new { type = "string", description = "Type of modification: 'drink_change', 'preparation_change', 'quantity_change', 'void_item'" },
+                    new_value = new { type = "string", description = "New value for the modification (e.g., new drink name, preparation notes, quantity)" },
+                    item_reference = new { type = "string", description = "Loose, conversational reference (not used for targeting)" }
                 },
-                required = new[] { "item_reference", "modification_type" }
+                required = new[] { "modification_type", "new_value" }
             }
         };
 
@@ -410,23 +431,94 @@ namespace PosKernel.AI.Tools
         {
             Name = "get_transaction",
             Description = "Gets the complete current transaction state including all line items with preparation notes and unique identifiers",
+            Parameters = new { type = "object", properties = new { }, required = new string[] { } }
+        };
+
+        private McpTool CreateInterpretOrderPhraseTool() => new()
+        {
+            Name = "interpret_order_phrase",
+            Description = "Interprets a natural-language order phrase into a base SKU, quantity, and structured NRF modifications using store-configured cultural rules.",
             Parameters = new
             {
                 type = "object",
-                properties = new { },
-                required = new string[] { }
+                properties = new
+                {
+                    phrase = new { type = "string", description = "User's verbatim phrase, e.g., 'kopi c kosong'" },
+                    default_quantity = new { type = "integer", description = "Default quantity when unspecified", @default = 1 }
+                },
+                required = new[] { "phrase" }
             }
         };
 
+        // RESTORED: Execute get_set_configuration (simple informational placeholder)
+        private Task<string> ExecuteGetSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        {
+            if (toolCall.Arguments.TryGetValue("product_sku", out var skuEl))
+            {
+                var sku = skuEl.GetString() ?? string.Empty;
+                return Task.FromResult($"PRODUCT_INFO: {sku} configuration requires restaurant extension schema. Use update_set_configuration with drink/side selections.");
+            }
+            return Task.FromResult("ERROR: product_sku parameter required for get_set_configuration");
+        }
+
+        private async Task<string> ExecuteInterpretOrderPhraseAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        {
+            if (!toolCall.Arguments.TryGetValue("phrase", out var phraseEl))
+            {
+                return "ERROR: phrase parameter is required";
+            }
+
+            var phrase = phraseEl.GetString() ?? string.Empty;
+            var qty = toolCall.Arguments.TryGetValue("default_quantity", out var qtyEl) ? Math.Max(1, qtyEl.GetInt32()) : 1;
+
+            if (string.IsNullOrWhiteSpace(phrase))
+            {
+                return "ERROR: phrase parameter is empty";
+            }
+
+            var inferredMods = InferStructuredModsFromCulturalTerms(phrase);
+            var basePart = StripCulturalModTerms(phrase);
+            basePart = NormalizeKopitiamDrinkName(basePart);
+            if (string.IsNullOrWhiteSpace(basePart))
+            {
+                basePart = phrase.Trim();
+            }
+
+            // Look up product using restaurant extension
+            var products = await _restaurantClient.SearchProductsAsync(basePart, 3, cancellationToken);
+            if (products.Count == 0)
+            {
+                return $"INTERPRETATION_FAILED: No base match for '{phrase}' (normalized='{basePart}')";
+            }
+
+            // Choose best match by name starts-with, else first
+            var product = products.OrderBy(p => p.Name.StartsWith(basePart, StringComparison.OrdinalIgnoreCase) ? 0 : 1).First();
+
+            var sb = new StringBuilder();
+            sb.Append("INTERPRETED: ");
+            sb.Append($"sku={product.Sku}; name={product.Name}; quantity={qty}");
+            if (!string.IsNullOrWhiteSpace(inferredMods))
+            {
+                sb.Append($"; mods={inferredMods}");
+            }
+
+            return sb.ToString();
+        }
+
         private async Task<string> ExecuteAddItemAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
-            // Extract parameters
+            // Support either product_sku or item_description
+            var productSku = "";
             var itemDescription = "";
             var quantity = 1;
             var preparationNotes = "";
             var confidence = 0.5;
             var context = "initial_order";
 
+            if (toolCall.Arguments.TryGetValue("product_sku", out var skuElement))
+            {
+                productSku = skuElement.GetString() ?? "";
+            }
             if (toolCall.Arguments.TryGetValue("item_description", out var itemElement))
             {
                 itemDescription = itemElement.GetString() ?? "";
@@ -448,213 +540,582 @@ namespace PosKernel.AI.Tools
                 context = contextElement.GetString() ?? "initial_order";
             }
 
-            if (string.IsNullOrEmpty(itemDescription))
+            if (string.IsNullOrWhiteSpace(productSku) && string.IsNullOrWhiteSpace(itemDescription))
             {
-                return "ERROR: item_description parameter required for add_item_to_transaction";
+                return "ERROR: Provide product_sku or item_description for add_item_to_transaction";
             }
 
             try
             {
-                // ARCHITECTURAL PRINCIPLE: Search for product first using restaurant service
-                var products = await _restaurantClient.SearchProductsAsync(itemDescription, 3, cancellationToken);
+                string? compositeTail = null;
+                string searchQuery;
 
+                if (!string.IsNullOrWhiteSpace(productSku))
+                {
+                    searchQuery = productSku.Trim();
+                }
+                else
+                {
+                    searchQuery = itemDescription;
+
+                    // Detect composite phrasing like "<set> with <drink mods>" and split for better matching
+                    var lowered = itemDescription.ToLowerInvariant();
+                    var withIdx = lowered.IndexOf(" with ", StringComparison.Ordinal);
+                    var wslashIdx = lowered.IndexOf(" w/", StringComparison.Ordinal);
+                    var connectorIdx = withIdx >= 0 ? withIdx : wslashIdx;
+                    if (connectorIdx >= 0)
+                    {
+                        var basePart = itemDescription.Substring(0, connectorIdx).Trim();
+                        var tailPart = itemDescription.Substring(connectorIdx).Trim();
+                        tailPart = Regex.Replace(tailPart, "^\\s*(with|w/)\\s+", string.Empty, RegexOptions.IgnoreCase);
+                        if (!string.IsNullOrWhiteSpace(basePart) && !string.IsNullOrWhiteSpace(tailPart))
+                        {
+                            searchQuery = basePart;
+                            compositeTail = tailPart;
+                        }
+                    }
+                }
+
+                // Search for the product (by SKU or description)
+                var products = await _restaurantClient.SearchProductsAsync(searchQuery, 3, cancellationToken);
                 if (products.Count == 0)
                 {
-                    return $"PRODUCT_NOT_FOUND: No products found matching '{itemDescription}'. Try different search terms.";
+                    return $"PRODUCT_NOT_FOUND: No products found matching '{searchQuery}'. Try different search terms.";
                 }
 
-                if (products.Count > 1 && confidence < 0.7)
-                {
-                    // DISAMBIGUATION_NEEDED - let AI present options
-                    var options = string.Join(", ", products.Select(p => p.Sku));
-                    return $"DISAMBIGUATION_NEEDED: Found {products.Count} options for '{itemDescription}': {options}";
-                }
-
-                // Use the best match product
+                // Pick the best match
                 var product = products[0];
-                
+
                 // Ensure transaction exists
                 var transactionId = await EnsureTransactionAsync(cancellationToken);
 
-                // CRITICAL FIX: Get actual product price from the restaurant catalog
-                var productPriceCents = product.BasePriceCents;
-                var productPrice = productPriceCents / 100.0m; // Convert cents to decimal
+                // Add with correct price
+                var productPrice = product.BasePriceCents / 100.0m;
+                _logger.LogInformation("Adding item {ProductSku} with price: {PriceCents} cents ({Decimal})", product.Sku, product.BasePriceCents, productPrice);
 
-                _logger.LogInformation("Adding item {ProductSku} with price: {Price} cents ({Decimal})", 
-                    product.Sku, productPriceCents, productPrice);
-
-                // ARCHITECTURAL PRINCIPLE: Use real kernel to add item with correct price
                 var result = await _kernelClient.AddLineItemAsync(
-                    _sessionId!,
-                    transactionId,
-                    product.Sku,
-                    quantity,
-                    productPrice, // Use actual product price from catalog
-                    cancellationToken);
+                    _sessionId!, transactionId, product.Sku, quantity, productPrice, cancellationToken);
 
                 if (!result.Success)
                 {
                     throw new InvalidOperationException($"Failed to add item to transaction: {result.Error}");
                 }
 
-                // ARCHITECTURAL FIX: Get the actual line number of the item just added
-                // We need to get the current transaction to find the line number of the item we just added
-                var currentTransaction = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
-                if (!currentTransaction.Success)
+                var newlyAddedLineItem = result.LineItems?.Where(item => item.ProductId == product.Sku)
+                                                          .OrderByDescending(item => item.LineNumber)
+                                                          .FirstOrDefault();
+
+                if (newlyAddedLineItem == null)
                 {
-                    throw new InvalidOperationException($"Failed to get transaction after adding item: {currentTransaction.Error}");
+                    _logger.LogError("❌ CRITICAL: Could not find newly added line item for {ProductSku} in transaction result", product.Sku);
+                    return $"ITEM_ADDED: sku={product.Sku}; qty={quantity}; line_id=<unknown>; line_number=0";
                 }
 
-                // Find the line number of the item we just added (it should be the last/highest line number)
-                var actualLineNumber = currentTransaction.LineItems?.Count ?? 1;
+                var newlyAddedLineItemId = newlyAddedLineItem.LineItemId;
+                var parentLineNumber = newlyAddedLineItem.LineNumber; // cache to avoid nullability warnings across awaits
 
-                // ARCHITECTURAL FIX: Remove preparation notes entirely - use hierarchical line items instead
-                // If preparation notes were provided, they should be separate modification line items
                 if (!string.IsNullOrEmpty(preparationNotes))
                 {
-                    _logger.LogInformation("Preparation notes require hierarchical implementation: {Notes} should be separate modification line items for {ProductSku}", 
-                        preparationNotes, product.Sku);
-                    
-                    // TODO: Parse preparation notes and create modification line items with parent_line_item_id
-                    // For now, just log that this needs hierarchical implementation
+                    if (string.IsNullOrEmpty(newlyAddedLineItemId))
+                    {
+                        _logger.LogWarning("⚠️  MISSING_LINE_ID: Newly added line for {ProductSku} has no LineItemId; cannot apply preparation notes.", product.Sku);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Processing preparation notes for {ProductSku} (line item {LineItemId}): '{Notes}'", product.Sku, newlyAddedLineItemId, preparationNotes);
+                        await ProcessPreparationNotesAsModificationsAsync(transactionId, newlyAddedLineItemId, preparationNotes, cancellationToken);
+                    }
                 }
 
-                // Check if this is a set item
-                if (product.Sku.Contains("Set", StringComparison.OrdinalIgnoreCase))
+                bool isSetProduct = product.Sku.StartsWith("TSET", StringComparison.OrdinalIgnoreCase)
+                                    || product.Sku.Contains("SET", StringComparison.OrdinalIgnoreCase)
+                                    || product.Name?.IndexOf("set", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (isSetProduct)
                 {
+                    if (!string.IsNullOrWhiteSpace(compositeTail))
+                    {
+                        try
+                        {
+                            var inferredMods = InferStructuredModsFromCulturalTerms(compositeTail);
+                            var cleanedDrink = StripCulturalModTerms(compositeTail);
+                            cleanedDrink = NormalizeKopitiamDrinkName(cleanedDrink);
+                            if (string.IsNullOrWhiteSpace(cleanedDrink))
+                            {
+                                cleanedDrink = compositeTail.Trim();
+                            }
+
+                            var drinkProducts = await _restaurantClient.SearchProductsAsync(cleanedDrink, 1, cancellationToken);
+                            if (drinkProducts.Count == 0)
+                            {
+                                _logger.LogWarning("Could not find drink product for composite order tail: {Tail}", compositeTail);
+                                return $"SET_ADDED: {product.Sku} added to transaction. Use get_set_configuration to determine customization options.";
+                            }
+
+                            var drinkProduct = drinkProducts[0];
+                            var addDrink = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, drinkProduct.Sku, 1, 0.0m, parentLineNumber, cancellationToken);
+                            if (!addDrink.Success)
+                            {
+                                _logger.LogError("❌ Failed to add drink to set: {Error}", addDrink.Error);
+                                return $"SET_ADDED: {product.Sku} added to transaction. Use get_set_configuration to determine customization options.";
+                            }
+
+                            var txnAfterDrink = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                            if (!txnAfterDrink.Success)
+                            {
+                                return $"SET_ADDED: {product.Sku} added but failed to retrieve transaction for drink confirmation: {txnAfterDrink.Error}";
+                            }
+
+                            var drinkChild = txnAfterDrink.LineItems?
+                                .Where(li => li.ParentLineNumber == parentLineNumber && li.ProductId.Equals(drinkProduct.Sku, StringComparison.OrdinalIgnoreCase))
+                                .OrderByDescending(li => li.LineNumber)
+                                .FirstOrDefault();
+
+                            string? drinkChildId = drinkChild?.LineItemId;
+                            int drinkChildNumber = drinkChild?.LineNumber ?? 0;
+
+                            if (!string.IsNullOrWhiteSpace(inferredMods) && !string.IsNullOrEmpty(drinkChildId))
+                            {
+                                var structuredMods = ParseStructuredModifications(inferredMods);
+                                foreach (var (modSku, desc) in structuredMods)
+                                {
+                                    var duplicate = txnAfterDrink.LineItems?.Any(li => li.ParentLineNumber == drinkChildNumber && li.ProductId.Equals(modSku, StringComparison.OrdinalIgnoreCase)) == true;
+                                    if (duplicate)
+                                    {
+                                        _logger.LogInformation("⏭️  SKIP_DUPLICATE_MODIFICATION: {ModSku} already exists under drink line {DrinkLine}", modSku, drinkChildNumber);
+                                        continue;
+                                    }
+
+                                    var modAdd = await _kernelClient.AddModificationByLineItemIdAsync(_sessionId!, transactionId, drinkChildId!, modSku, 1, 0.0m, cancellationToken);
+                                    if (!modAdd.Success)
+                                    {
+                                        _logger.LogError("❌ Failed to add drink modification {ModSku}: {Error}", modSku, modAdd.Error);
+                                    }
+                                    else
+                                    {
+                                        txnAfterDrink = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                                    }
+                                }
+                            }
+
+                            return $"SET_UPDATED: {product.Sku} drink updated to {drinkProduct.Name}{(string.IsNullOrEmpty(drinkChildId) ? string.Empty : $". DRINK_LINE_ID={drinkChildId}, DRINK_LINE_NUMBER={drinkChildNumber}")}";
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to process composite set-with-drink order for {Item}", itemDescription);
+                            return $"SET_ADDED: {product.Sku} added to transaction. Use get_set_configuration to determine customization options.";
+                        }
+                    }
+
                     return $"SET_ADDED: {product.Sku} added to transaction. Use get_set_configuration to determine customization options.";
                 }
 
-                return $"ADDED: {quantity}x {product.Sku} added to transaction";
+                return $"ITEM_ADDED: sku={product.Sku}; qty={quantity}; line_id={newlyAddedLineItemId}; line_number={newlyAddedLineItem.LineNumber}";
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to add item: {ItemDescription}", itemDescription);
+                _logger.LogError(ex, "Failed to add item: {ItemOrSku}", string.IsNullOrWhiteSpace(productSku) ? itemDescription : productSku);
                 throw new InvalidOperationException(
-                    $"DESIGN DEFICIENCY: Cannot add item without functional restaurant and kernel services. " +
-                    $"Error: {ex.Message}");
+                    $"DESIGN DEFICIENCY: Cannot add item without functional restaurant and kernel services. Error: {ex.Message}");
             }
         }
 
-        private Task<string> ExecuteGetSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        private async Task ProcessPreparationNotesAsModificationsAsync(string transactionId, string parentLineItemId, string preparationNotes, CancellationToken cancellationToken)
         {
-            // ARCHITECTURAL PRINCIPLE: Sets are not implemented in kernel yet - return not a set message
-            if (toolCall.Arguments.TryGetValue("product_sku", out var skuElement))
+            var notes = preparationNotes.Trim();
+            if (string.IsNullOrEmpty(notes))
             {
-                var sku = skuElement.GetString() ?? "";
-                return Task.FromResult($"PRODUCT_INFO: {sku} is not a set item - treat as regular product");
+                return;
             }
             
-            return Task.FromResult("ERROR: product_sku parameter required for get_set_configuration");
+            // Kernel tools require structured modification requests
+            // Expected format: "MOD_SKU:Description|MOD_SKU2:Description2" 
+            var modificationRequests = ParseStructuredModifications(notes);
+            if (!modificationRequests.Any())
+            {
+                _logger.LogWarning("⚠️  UNSTRUCTURED_PREPARATION: AI cashier sent unstructured preparation notes: '{Notes}'. " +
+                                 "Expected format: 'MOD_SKU:Description|MOD_SKU2:Description2'", preparationNotes);
+                return;
+            }
+
+            // Load current transaction once to resolve parent line number and existing children
+            var txn = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+            if (!txn.Success)
+            {
+                _logger.LogError("❌ Failed to load transaction before applying modifications: {Error}", txn.Error);
+                return;
+            }
+
+            var parent = txn.LineItems?.LastOrDefault(li => li.LineItemId == parentLineItemId);
+            if (parent == null)
+            {
+                _logger.LogError("❌ Parent line not found for applying modifications: {ParentLineItemId}", parentLineItemId);
+                return;
+            }
+
+            foreach ((string modSku, string description) in modificationRequests)
+            {
+                try
+                {
+                    // Prevent duplicate addition of the same modification under the same parent
+                    var alreadyExists = txn.LineItems?.Any(li => li.ParentLineNumber == parent.LineNumber && li.ProductId.Equals(modSku, StringComparison.OrdinalIgnoreCase)) == true;
+                    if (alreadyExists)
+                    {
+                        _logger.LogInformation("⏭️  SKIP_DUPLICATE_MODIFICATION: {ModSku} already present under parent line {ParentLine}", modSku, parent.LineNumber);
+                        continue;
+                    }
+
+                    var modResult = await _kernelClient.AddModificationByLineItemIdAsync(
+                        _sessionId!,
+                        transactionId,
+                        parentLineItemId,
+                        modSku,
+                        1,
+                        0.0m,
+                        cancellationToken);
+                    
+                    if (modResult.Success)
+                    {
+                        _logger.LogInformation("✅ NRF_MODIFICATION: Added {ModSku} ({Description}) as child of line item {ParentLineItemId}", 
+                            modSku, description, parentLineItemId);
+
+                        // Refresh transaction snapshot for subsequent dedup checks
+                        txn = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                        parent = txn.LineItems?.LastOrDefault(li => li.LineItemId == parentLineItemId);
+                    }
+                    else
+                    {
+                        _logger.LogError("❌ Failed to add modification {ModSku}: {Error}", modSku, modResult.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "❌ Exception adding modification {ModSku} to line item {ParentLineItemId}", modSku, parentLineItemId);
+                }
+            }
+            
+            if (modificationRequests.Any())
+            {
+                _logger.LogInformation("🎯 NRF_COMPLIANCE: Processed {Count} structured modifications: '{Notes}'", 
+                    modificationRequests.Count, preparationNotes);
+            }
         }
 
-        private async Task<string> ExecuteUpdateSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        private List<(string ModSku, string Description)> ParseStructuredModifications(string modificationString)
+        {
+            var modifications = new List<(string ModSku, string Description)>();
+            
+            if (string.IsNullOrEmpty(modificationString))
+            {
+                return modifications;
+            }
+            
+            var modificationPairs = modificationString.Split('|', StringSplitOptions.RemoveEmptyEntries);
+            
+            foreach (var pair in modificationPairs)
+            {
+                var parts = pair.Split(':', 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 2)
+                {
+                    var modSku = parts[0].Trim();
+                    var description = parts[1].Trim();
+                    
+                    if (!string.IsNullOrEmpty(modSku) && !string.IsNullOrEmpty(description))
+                    {
+                        modifications.Add((modSku, description));
+                        _logger.LogInformation("🔍 STRUCTURED_MOD_PARSED: {ModSku} → {Description}", modSku, description);
+                    }
+                }
+                else
+                {
+                    _logger.LogWarning("⚠️  MALFORMED_MODIFICATION: Could not parse '{Pair}' - expected format 'MOD_SKU:Description'", pair);
+                }
+            }
+            
+            return modifications;
+        }
+
+        private async Task<string> ExecuteModifyLineItemAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        {
+            // Prefer stable IDs; support line_number fallback
+            if (!toolCall.Arguments.TryGetValue("modification_type", out var typeEl) ||
+                !toolCall.Arguments.TryGetValue("new_value", out var valueEl))
+            {
+                return "ERROR: modification_type and new_value are required";
+            }
+
+            var lineItemId = toolCall.Arguments.TryGetValue("line_item_id", out var idEl) ? idEl.GetString() : null;
+            var hasLineNumber = toolCall.Arguments.TryGetValue("line_number", out var lnEl);
+            var lineNumber = hasLineNumber ? lnEl.GetInt32() : 0;
+            var expectedSku = toolCall.Arguments.TryGetValue("expected_sku", out var skuEl) ? skuEl.GetString() : null;
+            var modificationType = typeEl.GetString() ?? string.Empty;
+            var newValue = valueEl.GetString() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(modificationType))
+            {
+                return "ERROR: Invalid parameters";
+            }
+
+            var transactionId = await EnsureTransactionAsync(cancellationToken);
+            var txn = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+            if (!txn.Success)
+            {
+                return $"ERROR: Failed to get transaction: {txn.Error}";
+            }
+
+            var target = !string.IsNullOrWhiteSpace(lineItemId)
+                ? txn.LineItems?.LastOrDefault(li => li.LineItemId == lineItemId)
+                : txn.LineItems?.LastOrDefault(li => li.LineNumber == lineNumber);
+
+            if (target == null || string.IsNullOrEmpty(target.LineItemId))
+            {
+                return "ERROR: Target line not found";
+            }
+
+            if (!string.IsNullOrEmpty(expectedSku) && !target.ProductId.Equals(expectedSku, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"ERROR: Expected SKU '{expectedSku}' at target, found '{target.ProductId}'";
+            }
+
+            var result = await _kernelClient.ModifyLineItemByIdAsync(
+                _sessionId!, transactionId, target.LineItemId!, modificationType, newValue, cancellationToken);
+
+            if (!result.Success)
+            {
+                return $"ERROR: {result.Error}";
+            }
+
+            return "LINE_ITEM_MODIFIED";
+        }
+
+        private async Task<object> ExecuteUpdateSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
             if (toolCall.Arguments.TryGetValue("product_sku", out var skuElement) &&
                 toolCall.Arguments.TryGetValue("customization_type", out var typeElement) &&
                 toolCall.Arguments.TryGetValue("customization_value", out var valueElement))
             {
-                var sku = skuElement.GetString() ?? "";
-                var customizationType = typeElement.GetString() ?? "";
-                var customizationValue = valueElement.GetString() ?? "";
+                var sku = skuElement.GetString() ?? string.Empty;
+                var customizationType = typeElement.GetString() ?? string.Empty;
+                var customizationValue = valueElement.GetString() ?? string.Empty;
+
+                // Optional targeting parameters
+                var parentLineItemId = toolCall.Arguments.TryGetValue("target_parent_line_item_id", out var pidEl) ? pidEl.GetString() : null;
+                var hasParentLineNumber = toolCall.Arguments.TryGetValue("target_parent_line_number", out var plnEl);
+                var parentLineNumber = hasParentLineNumber ? plnEl.GetInt32() : 0;
+                var expectedParentSku = toolCall.Arguments.TryGetValue("expected_parent_sku", out var epsEl) ? epsEl.GetString() : null;
+
+                var targetLineItemId = toolCall.Arguments.TryGetValue("target_line_item_id", out var lidEl) ? lidEl.GetString() : null;
+                var hasTargetLineNumber = toolCall.Arguments.TryGetValue("target_line_number", out var tlnEl);
+                var targetLineNumber = hasTargetLineNumber ? tlnEl.GetInt32() : 0;
+                var expectedSku = toolCall.Arguments.TryGetValue("expected_sku", out var esEl) ? esEl.GetString() : null;
                 
                 try
                 {
-                    // ARCHITECTURAL FIX: Remove preparation notes functionality entirely
-                    // Implement proper NRF-compliant hierarchical modification support
-                    
+                    var transactionId = await EnsureTransactionAsync(cancellationToken);
+
                     if (customizationType.Equals("drink", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Step 1: Map drink name to actual product SKU
-                        var drinkSku = MapDrinkNameToSku(customizationValue);
-                        if (drinkSku == null)
+                        // Support embedded structured modifications in customization_value
+                        string baseDrink;
+                        string? embeddedMods = null;
+                        var value = customizationValue ?? string.Empty;
+
+                        // NEW: Infer structured mods from cultural terms if MOD_ not provided
+                        var inferredMods = InferStructuredModsFromCulturalTerms(value);
+                        var cleanedValue = StripCulturalModTerms(value);
+                        cleanedValue = NormalizeKopitiamDrinkName(cleanedValue);
+
+                        var modStart = value.IndexOf("MOD_", StringComparison.OrdinalIgnoreCase);
+                        if (modStart > 0)
                         {
-                            _logger.LogWarning("Could not map drink name to SKU: {DrinkName}", customizationValue);
-                            return $"SET_UPDATED: {sku} drink updated to {customizationValue}";
+                            baseDrink = value.Substring(0, modStart).Trim();
+                            embeddedMods = value.Substring(modStart).Trim();
                         }
-                        
-                        // Step 2: Add drink as child line item with $0.00 price using NRF hierarchy
-                        var transactionId = await EnsureTransactionAsync(cancellationToken);
-                        
-                        // Get current transaction to find the parent line number
+                        else
+                        {
+                            baseDrink = string.IsNullOrWhiteSpace(cleanedValue) ? value.Trim() : cleanedValue.Trim();
+                            if (!string.IsNullOrWhiteSpace(inferredMods))
+                            {
+                                embeddedMods = inferredMods;
+                                _logger.LogWarning("⚠️  UNSTRUCTURED_SET_DRINK_MODS: AI provided cultural terms in set drink selection ('{OriginalValue}'). Auto-converted to structured mods: '{Mods}'.", value, embeddedMods);
+                            }
+                        }
+
+                        var drinkProducts = await _restaurantClient.SearchProductsAsync(baseDrink, 1, cancellationToken);
+                        if (drinkProducts.Count == 0)
+                        {
+                            _logger.LogWarning("Could not find drink product for: {DrinkName}", baseDrink);
+                            return $"ERROR: Drink '{baseDrink}' not found";
+                        }
+                        var drinkProduct = drinkProducts[0];
+
+                        // Resolve parent set target
                         var currentTransaction = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
                         if (!currentTransaction.Success)
                         {
-                            _logger.LogError("Failed to get current transaction to find parent line for {SetSku}: {Error}", sku, currentTransaction.Error);
                             return $"ERROR: Failed to get current transaction: {currentTransaction.Error}";
                         }
-                        
-                        // Find the parent line number (the set item)
-                        var parentLineNumber = currentTransaction.LineItems?
-                            .Where(item => item.ProductId.Equals(sku, StringComparison.OrdinalIgnoreCase))
-                            .Select(item => item.LineNumber)
-                            .FirstOrDefault() ?? 0;
-                        
-                        if (parentLineNumber == 0)
+
+                        var parent = !string.IsNullOrWhiteSpace(parentLineItemId)
+                            ? currentTransaction.LineItems?.LastOrDefault(li => li.LineItemId == parentLineItemId)
+                            : (parentLineNumber > 0
+                                ? currentTransaction.LineItems?.LastOrDefault(li => li.LineNumber == parentLineNumber)
+                                : currentTransaction.LineItems?.LastOrDefault(item => item.ProductId.Equals(sku, StringComparison.OrdinalIgnoreCase)));
+
+                        // If an explicit parent id was provided but not found (e.g., placeholder like "<SET_LINE_ID>"),
+                        // fall back to resolving by SKU before deciding the parent is missing.
+                        if (parent == null && !string.IsNullOrWhiteSpace(parentLineItemId))
                         {
-                            _logger.LogError("Could not find parent line number for set {SetSku}", sku);
-                            return $"ERROR: Could not find parent line item for {sku}";
+                            parent = currentTransaction.LineItems?.LastOrDefault(item => item.ProductId.Equals(sku, StringComparison.OrdinalIgnoreCase));
                         }
-                        
-                        var drinkResult = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, drinkSku, 1, 0.0m, parentLineNumber, cancellationToken);
-                        
-                        if (!drinkResult.Success)
+
+                        // ARCHITECTURAL FIX: If no parent set exists yet, add the set deterministically using SKU and catalog price,
+                        // then proceed to apply the drink customization.
+                        if (parent == null)
                         {
-                            _logger.LogError("Failed to add drink component {DrinkSku} to set {SetSku}: {Error}", drinkSku, sku, drinkResult.Error);
-                            return $"ERROR: Failed to add drink component: {drinkResult.Error}";
+                            _logger.LogInformation("ℹ️  SET_PARENT_MISSING: No parent set line found for SKU {Sku}. Auto-adding set before applying drink customization.", sku);
+
+                            var setCandidates = await _restaurantClient.SearchProductsAsync(sku, 1, cancellationToken);
+                            var setProduct = setCandidates.FirstOrDefault();
+                            if (setProduct == null)
+                            {
+                                return $"ERROR: Could not find set target for SKU {sku}";
+                            }
+
+                            var setPrice = setProduct.BasePriceCents / 100.0m;
+                            var addSet = await _kernelClient.AddLineItemAsync(
+                                _sessionId!, transactionId, setProduct.Sku, 1, setPrice, cancellationToken);
+                            if (!addSet.Success)
+                            {
+                                return $"ERROR: Failed to add set '{setProduct.Sku}' to transaction: {addSet.Error}";
+                            }
+
+                            currentTransaction = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                            if (!currentTransaction.Success)
+                            {
+                                return $"ERROR: Failed to get current transaction after adding set: {currentTransaction.Error}";
+                            }
+
+                            parent = currentTransaction.LineItems?.LastOrDefault(item => item.ProductId.Equals(sku, StringComparison.OrdinalIgnoreCase));
                         }
-                        
-                        _logger.LogInformation("Added drink component {DrinkSku} as child of set {SetSku} (line {})", drinkSku, sku, parentLineNumber);
-                        
-                        return $"SET_UPDATED: {sku} drink updated to {customizationValue}";
+
+                        if (parent == null)
+                        {
+                            return $"ERROR: Could not find set target for SKU {sku}";
+                        }
+
+                        if (!string.IsNullOrEmpty(expectedParentSku) && !parent.ProductId.Equals(expectedParentSku, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return $"ERROR: Expected parent SKU '{expectedParentSku}', found '{parent.ProductId}'";
+                        }
+
+                        var addDrink = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, drinkProduct.Sku, 1, 0.0m, parent.LineNumber, cancellationToken);
+                        if (!addDrink.Success)
+                        {
+                            return $"ERROR: Failed to add drink to set: {addDrink.Error}";
+                        }
+
+                        // Resolve the newly added drink child
+                        var txnAfterDrink = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                        if (!txnAfterDrink.Success)
+                        {
+                            return $"ERROR: Failed to retrieve transaction after adding drink: {txnAfterDrink.Error}";
+                        }
+
+                        var drinkChild = txnAfterDrink.LineItems?
+                            .Where(li => li.ParentLineNumber == parentLineNumber && li.ProductId.Equals(drinkProduct.Sku, StringComparison.OrdinalIgnoreCase))
+                            .OrderByDescending(li => li.LineNumber)
+                            .FirstOrDefault();
+
+                        string? drinkChildId = drinkChild?.LineItemId;
+                        int drinkChildNumber = drinkChild?.LineNumber ?? 0;
+
+                        // Attach embedded or inferred modifications to the drink child
+                        if (!string.IsNullOrWhiteSpace(embeddedMods) && !string.IsNullOrEmpty(drinkChildId))
+                        {
+                            var structuredMods = ParseStructuredModifications(embeddedMods);
+                            foreach (var (modSku, desc) in structuredMods)
+                            {
+                                // Deduplicate: skip if the same modification already exists under this drink child
+                                var duplicate = txnAfterDrink.LineItems?.Any(li => li.ParentLineNumber == drinkChildNumber && li.ProductId.Equals(modSku, StringComparison.OrdinalIgnoreCase)) == true;
+                                if (duplicate)
+                                {
+                                    _logger.LogInformation("⏭️  SKIP_DUPLICATE_MODIFICATION: {ModSku} already exists under drink line {DrinkLine}", modSku, drinkChildNumber);
+                                    continue;
+                                }
+
+                                var modAdd = await _kernelClient.AddModificationByLineItemIdAsync(_sessionId!, transactionId, drinkChildId!, modSku, 1, 0.0m, cancellationToken);
+                                if (!modAdd.Success)
+                                {
+                                    _logger.LogError("❌ Failed to add drink modification {ModSku}: {Error}", modSku, modAdd.Error);
+                                }
+                                else
+                                {
+                                    // Refresh txn snapshot for subsequent checks within the same loop
+                                    txnAfterDrink = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                                }
+                            }
+                        }
+
+                        return $"SET_UPDATED: {sku} drink updated to {drinkProduct.Name}{(string.IsNullOrEmpty(drinkChildId) ? string.Empty : $". DRINK_LINE_ID={drinkChildId}, DRINK_LINE_NUMBER={drinkChildNumber}")}";
                     }
-                    
-                    if (customizationType.Equals("preparation", StringComparison.OrdinalIgnoreCase))
+                    else if (customizationType.Equals("preparation", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Step 1: Map preparation to modification product SKU  
-                        var modificationSku = MapPreparationToSku(customizationValue);
-                        if (modificationSku == null)
-                        {
-                            _logger.LogWarning("Could not map preparation to SKU: {Preparation}", customizationValue);
-                            return $"SET_UPDATED: {sku} preparation updated to {customizationValue}";
-                        }
-                        
-                        // Step 2: Add modification as child line item with $0.00 price using NRF hierarchy
-                        var transactionId = await EnsureTransactionAsync(cancellationToken);
-                        
-                        // Get current transaction to find the parent line number (the drink we just added)
                         var currentTransaction = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
                         if (!currentTransaction.Success)
                         {
-                            _logger.LogError("Failed to get current transaction to find drink parent for modification: {Error}", currentTransaction.Error);
                             return $"ERROR: Failed to get current transaction: {currentTransaction.Error}";
                         }
-                        
-                        // Find the drink line number (last added line item)
-                        var drinkLineNumber = currentTransaction.LineItems?.LastOrDefault()?.LineNumber ?? 0;
-                        
-                        if (drinkLineNumber == 0)
+
+                        // Resolve target child line by id, number, or fallback by SKU (last occurrence)
+                        var target = !string.IsNullOrWhiteSpace(targetLineItemId)
+                            ? currentTransaction.LineItems?.LastOrDefault(li => li.LineItemId == targetLineItemId)
+                            : (targetLineNumber > 0
+                                ? currentTransaction.LineItems?.LastOrDefault(li => li.LineNumber == targetLineNumber)
+                                : currentTransaction.LineItems?.LastOrDefault(li => li.ProductId.Equals(sku, StringComparison.OrdinalIgnoreCase)));
+
+                        if (target == null || string.IsNullOrEmpty(target.LineItemId))
                         {
-                            _logger.LogError("Could not find drink line number for modification");
-                            return $"ERROR: Could not find drink line item for modification";
+                            return "ERROR: Target line for preparation not found";
                         }
-                        
-                        var modResult = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, modificationSku, 1, 0.0m, drinkLineNumber, cancellationToken);
-                        
-                        if (!modResult.Success)
+
+                        if (!string.IsNullOrEmpty(expectedSku) && !target.ProductId.Equals(expectedSku, StringComparison.OrdinalIgnoreCase))
                         {
-                            _logger.LogError("Failed to add modification component {ModSku} to drink {ProductSku}: {Error}", modificationSku, sku, modResult.Error);
-                            return $"ERROR: Failed to add modification component: {modResult.Error}";
+                            return $"ERROR: Expected SKU '{expectedSku}' at target, found '{target.ProductId}'";
                         }
-                        
-                        _logger.LogInformation("Added modification component {ModSku} as child of drink (line {})", modificationSku, drinkLineNumber);
-                        
-                        return $"SET_UPDATED: {sku} preparation updated to {customizationValue}";
+
+                        var structured = ParseStructuredModifications(customizationValue);
+                        if (!structured.Any())
+                        {
+                            return $"ERROR: Unstructured preparation: '{customizationValue}'";
+                        }
+
+                        var applied = 0;
+                        foreach (var (modSku, desc) in structured)
+                        {
+                            // Prevent duplicate modification lines under the same parent
+                            var exists = currentTransaction.LineItems?.Any(li => li.ParentLineNumber == target.LineNumber && li.ProductId.Equals(modSku, StringComparison.OrdinalIgnoreCase)) == true;
+                            if (exists)
+                            {
+                                _logger.LogInformation("⏭️  SKIP_DUPLICATE_MODIFICATION: {ModSku} already exists under line {Line}", modSku, target.LineNumber);
+                                continue;
+                            }
+
+                            var modResult = await _kernelClient.AddModificationByLineItemIdAsync(
+                                _sessionId!, transactionId, target.LineItemId!, modSku, 1, 0.0m, cancellationToken);
+                            if (modResult.Success)
+                            {
+                                applied++;
+                                // Refresh snapshot for subsequent checks
+                                currentTransaction = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                            }
+                        }
+
+                        return $"LINE_UPDATED: {target.LineItemId} {applied} preparation modifications applied";
                     }
-                    
-                    // Fallback for other customization types
-                    await ProcessSetCustomizationAsync(sku, customizationType, customizationValue, cancellationToken);
-                    return $"SET_UPDATED: {sku} {customizationType} updated to {customizationValue}";
+
+                    _logger.LogInformation("Processing other customization type: {Type} = {Value} for {Sku}", customizationType, customizationValue, sku);
+                    return await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -662,7 +1123,7 @@ namespace PosKernel.AI.Tools
                     return $"ERROR: Failed to process set customization: {ex.Message}";
                 }
             }
-            
+
             return "ERROR: product_sku, customization_type, and customization_value parameters required";
         }
 
@@ -670,54 +1131,55 @@ namespace PosKernel.AI.Tools
         {
             var searchTerm = "";
             var maxResults = 10;
-            
-            if (toolCall.Arguments.TryGetValue("search_term", out var searchElement))
+
+            if (toolCall.Arguments.TryGetValue("search_term", out var searchTermElement))
             {
-                searchTerm = searchElement.GetString() ?? "";
+                searchTerm = searchTermElement.GetString() ?? "";
             }
-                
-            if (toolCall.Arguments.TryGetValue("max_results", out var maxElement))
+            if (toolCall.Arguments.TryGetValue("max_results", out var maxResultsElement))
             {
-                maxResults = maxElement.GetInt32();
+                maxResults = maxResultsElement.GetInt32();
             }
-            
+
             if (string.IsNullOrEmpty(searchTerm))
             {
-                return "ERROR: search_term parameter required for search_products";
+                return "ERROR: search_term parameter is required for search_products";
             }
 
-            try 
+            try
             {
                 var products = await _restaurantClient.SearchProductsAsync(searchTerm, maxResults, cancellationToken);
-                
+
                 if (products.Count == 0)
                 {
-                    return $"SEARCH_RESULTS: No products found for '{searchTerm}'";
+                    return $"PRODUCT_NOT_FOUND: No products found matching '{searchTerm}'. Try different search terms.";
                 }
 
-                var results = new StringBuilder();
-                results.AppendLine($"SEARCH_RESULTS: Found {products.Count} products for '{searchTerm}':");
-                results.AppendLine();
-                
+                var resultBuilder = new StringBuilder();
+                resultBuilder.AppendLine($"FOUND_PRODUCTS: {products.Count} products found for '{searchTerm}':");
+
                 foreach (var product in products)
                 {
-                    results.AppendLine($"- {product.Sku}");
-                    // Additional product details would come from ProductInfo properties when available
+                    resultBuilder.AppendLine($"- {product.Sku}: {product.Name} ({FormatCurrency(product.BasePriceCents / 100.0m)})");
                 }
-                
-                return results.ToString();
+
+                return resultBuilder.ToString();
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to search products for term: {SearchTerm}", searchTerm);
-                throw new InvalidOperationException(
-                    $"DESIGN DEFICIENCY: Restaurant service not available for product search. " +
-                    $"Error: {ex.Message}");
+                _logger.LogError(ex, "Error searching products");
+                return "ERROR: Failed to search products";
             }
         }
 
         private async Task<string> ExecuteGetPopularItemsAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
+            var count = 5;
+            if (toolCall.Arguments.TryGetValue("count", out var countElement))
+            {
+                count = countElement.GetInt32();
+            }
+
             try
             {
                 var products = await _restaurantClient.GetPopularItemsAsync(cancellationToken);
@@ -726,7 +1188,7 @@ namespace PosKernel.AI.Tools
                 results.AppendLine($"POPULAR_ITEMS: {products.Count} popular items:");
                 results.AppendLine();
                 
-                foreach (var product in products)
+                foreach (var product in products.Take(count))
                 {
                     results.AppendLine($"- {product.Sku}");
                     // Additional product details would come from ProductInfo properties when available
@@ -745,6 +1207,12 @@ namespace PosKernel.AI.Tools
 
         private async Task<string> ExecuteLoadMenuContextAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
+            var includeCategories = true;
+            if (toolCall.Arguments.TryGetValue("include_categories", out var catElement))
+            {
+                includeCategories = catElement.GetBoolean();
+            }
+
             try
             {
                 var categories = await _restaurantClient.GetCategoriesAsync(cancellationToken);
@@ -768,8 +1236,8 @@ namespace PosKernel.AI.Tools
                     foreach (var product in categoryProducts)
                     {
                         results.AppendLine($"- {product.Sku}");
+                        // Additional product details would come from ProductInfo properties when available
                     }
-                    results.AppendLine();
                 }
                 
                 return results.ToString();
@@ -788,13 +1256,11 @@ namespace PosKernel.AI.Tools
             try
             {
                 var transactionId = await EnsureTransactionAsync(cancellationToken);
-                
-                // ARCHITECTURAL PRINCIPLE: Get real transaction from kernel
                 var result = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
                 
                 if (!result.Success)
                 {
-                    throw new InvalidOperationException($"Failed to get transaction: {result.Error}");
+                    throw new InvalidOperationException($"Failed to get transaction total: {result.Error}");
                 }
 
                 // CRITICAL FIX: Use the actual Total property from TransactionClientResult
@@ -811,57 +1277,48 @@ namespace PosKernel.AI.Tools
             }
         }
 
-        private async Task<string> ExecuteLoadPaymentMethodsContextAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        private Task<string> ExecuteLoadPaymentMethodsContextAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
-            // ARCHITECTURAL PRINCIPLE: Payment methods come from store configuration
             if (_storeConfig?.PaymentMethods == null)
             {
                 throw new InvalidOperationException(
-                    "DESIGN DEFICIENCY: Cannot load payment methods without store configuration. " +
-                    "Store service must provide payment method configuration.");
+                    "DESIGN DEFICIENCY: Store configuration does not include payment methods. " +
+                    "Client cannot decide payment methods. " +
+                    "Ensure store.config has a [PaymentMethods] section.");
             }
 
             var results = new StringBuilder();
-            results.AppendLine("PAYMENT_METHODS: Store accepts the following payment methods:");
-            results.AppendLine();
-            
-            foreach (var method in _storeConfig.PaymentMethods.AcceptedMethods)
+            results.AppendLine("PAYMENT_METHODS_CONTEXT: Available payment methods:");
+
+            var methods = _storeConfig.PaymentMethods.AcceptedMethods;
+            if (methods != null)
             {
-                results.AppendLine($"- {method.DisplayName} ({method.Type})");
-                if (method.MinimumAmount.HasValue)
+                foreach (var method in methods.Where(m => m.IsEnabled))
                 {
-                    results.AppendLine($"  Minimum: {FormatCurrency(method.MinimumAmount.Value)}");
+                    results.AppendLine($"- {method.DisplayName} ({method.MethodId})");
                 }
             }
-            
+
             if (!string.IsNullOrEmpty(_storeConfig.PaymentMethods.PaymentInstructions))
             {
-                results.AppendLine();
                 results.AppendLine($"Instructions: {_storeConfig.PaymentMethods.PaymentInstructions}");
             }
-            
-            await Task.CompletedTask;
-            return results.ToString();
+
+            return Task.FromResult(results.ToString());
         }
 
         private async Task<string> ExecuteProcessPaymentAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
             var paymentMethod = "";
-            decimal amount = 0m;
-            
+            var amount = 0.0m;
+
             if (toolCall.Arguments.TryGetValue("payment_method", out var methodElement))
             {
                 paymentMethod = methodElement.GetString() ?? "";
             }
-                
             if (toolCall.Arguments.TryGetValue("amount", out var amountElement))
             {
                 amount = (decimal)amountElement.GetDouble();
-            }
-
-            if (string.IsNullOrEmpty(paymentMethod))
-            {
-                return "ERROR: payment_method parameter required for process_payment";
             }
 
             try
@@ -871,8 +1328,11 @@ namespace PosKernel.AI.Tools
                 // If amount not specified, use transaction total
                 if (amount <= 0)
                 {
-                    // Would need to get actual total from transaction
-                    amount = 0m; // TODO: Get from transaction
+                    var txn = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                    if (txn.Success)
+                    {
+                        amount = txn.Total;
+                    }
                 }
                 
                 // ARCHITECTURAL PRINCIPLE: Use real kernel to process payment
@@ -885,84 +1345,45 @@ namespace PosKernel.AI.Tools
 
                 if (!result.Success)
                 {
-                    throw new InvalidOperationException($"Payment processing failed: {result.Error}");
+                    return $"PAYMENT_FAILED: {result.Error}";
                 }
 
-                return $"PAYMENT_PROCESSED: {FormatCurrency(amount)} via {paymentMethod}. Transaction completed.";
+                return $"PAYMENT_PROCESSED: {FormatCurrency(amount)} via {paymentMethod}";
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process payment: {PaymentMethod}, {Amount}", paymentMethod, amount);
+                _logger.LogError(ex, "Failed to process payment");
                 throw new InvalidOperationException(
                     $"DESIGN DEFICIENCY: Cannot process payment without functional kernel service. " +
                     $"Error: {ex.Message}");
             }
         }
 
-        private async Task<string> ExecuteGetTransactionAsync(CancellationToken cancellationToken)
+        private async Task<object> ExecuteGetTransactionAsync(CancellationToken cancellationToken)
         {
             try
             {
-                var transactionId = await EnsureTransactionAsync(cancellationToken);
-                
-                // ARCHITECTURAL PRINCIPLE: Use the kernel client instead of direct HTTP calls for proper session management
-                var result = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
-                
+                // Ensure at least a session is connected; do not silently start a transaction here
+                await EnsureSessionAsync(cancellationToken);
+
+                if (string.IsNullOrEmpty(_currentTransactionId))
+                {
+                    return "NO_TRANSACTION: No active transaction";
+                }
+
+                var result = await _kernelClient.GetTransactionAsync(_sessionId!, _currentTransactionId!, cancellationToken);
+
                 if (!result.Success)
                 {
-                    throw new InvalidOperationException($"Failed to get transaction details: {result.Error}");
+                    return $"Error getting transaction: {result.Error}";
                 }
 
-                // CRITICAL DEBUG: Log what the kernel client actually returns
-                _logger.LogInformation("KERNEL_DEBUG: Transaction result - Success: {Success}, TransactionId: {TransactionId}, LineItems count: {LineItemsCount}", 
-                    result.Success, result.TransactionId, result.LineItems?.Count ?? 0);
-                
-                if (result.LineItems != null && result.LineItems.Any())
-                {
-                    foreach (var item in result.LineItems)
-                    {
-                        _logger.LogInformation("KERNEL_DEBUG: LineItem - Line: {LineNumber}, ProductId: {ProductId}, Qty: {Quantity}, UnitPrice: {UnitPrice}, ExtendedPrice: {ExtendedPrice}", 
-                            item.LineNumber, item.ProductId, item.Quantity, item.UnitPrice, item.ExtendedPrice);
-                    }
-                }
-                else
-                {
-                    _logger.LogWarning("KERNEL_DEBUG: No line items found in kernel result despite transaction having total: {Total}", result.Total);
-                }
-
-                var resultBuilder = new StringBuilder();
-                resultBuilder.AppendLine($"TRANSACTION: {result.TransactionId}");
-                resultBuilder.AppendLine($"STATE: {result.State}");
-                
-                var total = result.Total;
-                resultBuilder.AppendLine($"TOTAL: {FormatCurrency(total)}");
-                
-                // ARCHITECTURAL PRINCIPLE: Use the parsed line items from the TransactionClientResult
-                if (result.LineItems != null && result.LineItems.Any())
-                {
-                    resultBuilder.AppendLine("LINE_ITEMS:");
-                    foreach (var item in result.LineItems)
-                    {
-                        resultBuilder.AppendLine($"  Line {item.LineNumber}: {item.ProductId} x{item.Quantity} @ {FormatCurrency(item.UnitPrice)} each, Total {FormatCurrency(item.ExtendedPrice)}");
-                    }
-                }
-                else
-                {
-                    resultBuilder.AppendLine("LINE_ITEMS: None");
-                }
-
-                // Explicitly set the transaction ID and state in case there are no line items
-                resultBuilder.AppendLine($"TRANSACTION_ID: {result.TransactionId}");
-                resultBuilder.AppendLine($"STATE: {result.State}");
-
-                return resultBuilder.ToString();
+                return result;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to get transaction details");
-                throw new InvalidOperationException(
-                    $"DESIGN DEFICIENCY: Cannot get transaction details without functional kernel service. " +
-                    $"Error: {ex.Message}");
+                _logger.LogError(ex, "Failed to get transaction");
+                return $"DESIGN DEFICIENCY: Cannot get transaction without functional kernel service. Error: {ex.Message}";
             }
         }
 
@@ -981,82 +1402,31 @@ namespace PosKernel.AI.Tools
                 throw new InvalidOperationException($"StoreConfig for store '{storeConfig.StoreName}' is missing required Currency");
             }
 
-            // Add more validation as needed
+            if (_currencyFormatter == null)
+            {
+                throw new InvalidOperationException("DESIGN DEFICIENCY: ICurrencyFormattingService not provided to KernelPosToolsProvider.");
+            }
         }
 
         /// <summary>
         /// ARCHITECTURAL PRINCIPLE: Hydrate store configuration from kernel at runtime
         /// </summary>
-        public async Task<bool> InitializeStoreConfigAsync(CancellationToken cancellationToken = default)
+        private async Task HydrateStoreConfigAsync(CancellationToken cancellationToken)
         {
-            if (_storeConfig != null)
-            {
-                return true; // Already initialized
-            }
-
             try
             {
-                // ARCHITECTURAL FIX: Use store config from constructor - kernel client config is for validation only
-                // The _storeConfig passed in constructor is validated and properly configured
-                // We don't need to override it with kernel client data for the core functionality
-                
-                return true;
+                var storeConfigObj = await _kernelClient.GetStoreConfigAsync(cancellationToken);
+                if (storeConfigObj is StoreConfig sc)
+                {
+                    _storeConfig = sc;
+                    _logger.LogInformation("🔄 Updated store configuration from kernel: {StoreName} ({Currency})", 
+                        _storeConfig.StoreName, _storeConfig.Currency);
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to initialize store config");
-                return false;
+                _logger.LogError(ex, "Failed to hydrate store config from kernel");
             }
-        }
-
-        /// <summary>
-        /// ARCHITECTURAL PRINCIPLE: Use external service to map drink names to SKUs
-        /// </summary>
-        private string? MapDrinkNameToSku(string drinkName)
-        {
-            // TODO: Implement real mapping logic, e.g., call a mapping service or database
-            // For now, just return null to indicate unmapped
-            return null;
-        }
-
-        /// <summary>
-        /// ARCHITECTURAL PRINCIPLE: Use external service to map preparation notes to modification SKUs
-        /// </summary>
-        private string? MapPreparationToSku(string preparationNotes)
-        {
-            // TODO: Implement real mapping logic, e.g., call a mapping service or database
-            // For now, just return null to indicate unmapped
-            return null;
-        }
-
-        /// <summary>
-        /// ARCHITECTURAL PRINCIPLE: Process set meal customization using kernel services
-        /// </summary>
-        private async Task ProcessSetCustomizationAsync(string sku, string customizationType, string customizationValue, CancellationToken cancellationToken)
-        {
-            // TODO: Implement real customization processing, e.g., modify existing line items, add new ones
-            // For now, just log the customization request
-            _logger.LogInformation("Processing customization for set {Sku}: {Type}={Value}", sku, customizationType, customizationValue);
-            await Task.CompletedTask;
-        }
-
-        private async Task<string> ExecuteModifyLineItemAsync(McpToolCall toolCall, CancellationToken cancellationToken)
-        {
-            // TODO: Implement line item modification logic using hierarchical relationships
-            // For now, return a placeholder
-            if (toolCall.Arguments.TryGetValue("item_reference", out var itemRefElement) &&
-                toolCall.Arguments.TryGetValue("modification_type", out var modTypeElement))
-            {
-                var itemReference = itemRefElement.GetString() ?? "";
-                var modificationType = modTypeElement.GetString() ?? "";
-                
-                _logger.LogInformation("Line item modification requested: {ItemReference} -> {ModificationType}", 
-                    itemReference, modificationType);
-                
-                return $"MODIFICATION_PENDING: {itemReference} modification ({modificationType}) - hierarchical implementation required";
-            }
-            
-            return "ERROR: item_reference and modification_type parameters required for modify_line_item";
         }
 
         public void Dispose()
@@ -1088,11 +1458,217 @@ namespace PosKernel.AI.Tools
                         _logger.LogError(ex, "Error while disconnecting from POS Kernel");
                     }
                 }
+                _restaurantClient?.Dispose();
             }
 
             // Dispose unmanaged resources here if any
 
             _disposed = true;
+        }
+
+        // --- Helpers for cultural-to-structured mod inference in AI layer (not kernel) ---
+        private static string NormalizeKopitiamDrinkName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+
+            var s = name.Trim();
+
+            // Normalize common variants
+            s = Regex.Replace(s, @"\bsi\b", "C", RegexOptions.IgnoreCase); // 'si' -> 'C'
+
+            // Standardize capitalization of first letters
+            var parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < parts.Length; i++)
+            {
+                var p = parts[i];
+                if (p.Length > 0)
+                {
+                    parts[i] = char.ToUpperInvariant(p[0]) + (p.Length > 1 ? p.Substring(1).ToLowerInvariant() : string.Empty);
+                }
+            }
+            return string.Join(" ", parts);
+        }
+
+        /// <summary>
+        /// Resolves a human-friendly display name for a SKU using the restaurant extension as the source of truth.
+        /// Falls back to standardized formatting for MOD_* SKUs when the catalog does not expose a record.
+        /// ARCHITECTURAL PRINCIPLE: Prefer user-space store data; never hardcode business content.
+        /// </summary>
+        public async Task<string?> ResolveDisplayNameAsync(string sku, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(sku))
+                {
+                    return null;
+                }
+
+                if (_restaurantClient != null)
+                {
+                    // Query by SKU directly
+                    var results = await _restaurantClient.SearchProductsAsync(sku, 1, cancellationToken);
+                    var product = results.FirstOrDefault(p => p.Sku.Equals(sku, StringComparison.OrdinalIgnoreCase));
+                    if (product != null && !string.IsNullOrWhiteSpace(product.Name))
+                    {
+                        return product.Name;
+                    }
+                }
+
+                // Fallback: Standardized formatting for MOD_* identifiers
+                var formatted = FormatDisplayNameFromSku(sku);
+                return formatted;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to resolve display name for SKU {Sku}", sku);
+                return null;
+            }
+        }
+
+        private static string? FormatDisplayNameFromSku(string sku)
+        {
+            if (string.IsNullOrWhiteSpace(sku))
+            {
+                return null;
+            }
+
+            if (sku.StartsWith("MOD_", StringComparison.OrdinalIgnoreCase))
+            {
+                // Convert standardized modification code to friendly text (e.g., MOD_NO_SUGAR -> No Sugar)
+                var core = sku.Substring(4);
+                core = core.Replace('_', ' ').ToLowerInvariant();
+                // Title-case words
+                var parts = core.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    var p = parts[i];
+                    parts[i] = p.Length == 0 ? p : char.ToUpperInvariant(p[0]) + (p.Length > 1 ? p.Substring(1) : string.Empty);
+                }
+                return string.Join(' ', parts);
+            }
+
+            return null;
+        }
+
+        private static string? InferStructuredModsFromCulturalTerms(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var mods = new List<string>();
+            var v = value.ToLowerInvariant();
+
+            if (v.Contains("kosong"))
+            {
+                mods.Add("MOD_NO_SUGAR:No Sugar");
+            }
+            if (v.Contains("siew dai") || v.Contains("siewdai"))
+            {
+                mods.Add("MOD_LESS_SUGAR:Less Sugar");
+            }
+            if (v.Contains("gah dai") || v.Contains("gahdai") || v.Contains("ga dai") || v.Contains("gaj dai"))
+            {
+                mods.Add("MOD_EXTRA_SUGAR:Extra Sugar");
+            }
+            if (v.Contains("peng"))
+            {
+                mods.Add("MOD_ICED:Iced");
+            }
+            if (v.Contains("hot"))
+            {
+                mods.Add("MOD_HOT:Hot");
+            }
+
+            return mods.Count == 0 ? null : string.Join('|', mods);
+        }
+
+        private static string StripCulturalModTerms(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            // Remove known cultural modifier keywords to improve drink search matching
+            var s = value;
+            s = Regex.Replace(s, @"\bkosong\b", "", RegexOptions.IgnoreCase);
+            s = Regex.Replace(s, @"\bsiew\s*dai\b", "", RegexOptions.IgnoreCase);
+            s = Regex.Replace(s, @"\bgah\s*dai\b", "", RegexOptions.IgnoreCase);
+            s = Regex.Replace(s, @"\bpeng\b", "", RegexOptions.IgnoreCase);
+            s = Regex.Replace(s, @"\bhot\b", "", RegexOptions.IgnoreCase);
+            return Regex.Replace(s, @"\s+", " ").Trim();
+        }
+
+        private async Task<string> ExecuteApplyModificationsToLineAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        {
+            var modifications = toolCall.Arguments.TryGetValue("modifications", out var modsEl) ? modsEl.GetString() : null;
+            var lineItemId = toolCall.Arguments.TryGetValue("line_item_id", out var idEl) ? idEl.GetString() : null;
+            var hasLineNumber = toolCall.Arguments.TryGetValue("line_number", out var numEl);
+            var lineNumber = hasLineNumber ? numEl.GetInt32() : 0;
+            var expectedSku = toolCall.Arguments.TryGetValue("expected_sku", out var skuEl) ? skuEl.GetString() : null;
+
+            if (string.IsNullOrWhiteSpace(modifications))
+            {
+                return "ERROR: modifications parameter is required";
+            }
+
+            var transactionId = await EnsureTransactionAsync(cancellationToken);
+            var txn = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+            if (!txn.Success)
+            {
+                return $"ERROR: Failed to get transaction: {txn.Error}";
+            }
+
+            var target = !string.IsNullOrWhiteSpace(lineItemId)
+                ? txn.LineItems?.LastOrDefault(li => li.LineItemId == lineItemId)
+                : txn.LineItems?.LastOrDefault(li => li.LineNumber == lineNumber);
+
+            if (target == null || string.IsNullOrEmpty(target.LineItemId))
+            {
+                return "ERROR: Target line not found";
+            }
+
+            if (!string.IsNullOrEmpty(expectedSku) && !target.ProductId.Equals(expectedSku, StringComparison.OrdinalIgnoreCase))
+            {
+                return $"ERROR: Expected SKU '{expectedSku}' at target, found '{target.ProductId}'";
+            }
+
+            var parsed = ParseStructuredModifications(modifications);
+            if (!parsed.Any())
+            {
+                return $"ERROR: Unstructured modifications: '{modifications}'";
+            }
+
+            var applied = 0;
+            foreach (var (modSku, desc) in parsed)
+            {
+                var exists = txn.LineItems?.Any(li => li.ParentLineNumber == target.LineNumber && li.ProductId.Equals(modSku, StringComparison.OrdinalIgnoreCase)) == true;
+                if (exists)
+                {
+                    _logger.LogInformation("⏭️  SKIP_DUPLICATE_MODIFICATION: {ModSku} already exists under line {Line}", modSku, target.LineNumber);
+                    continue;
+                }
+
+                var modResult = await _kernelClient.AddModificationByLineItemIdAsync(
+                    _sessionId!, transactionId, target.LineItemId!, modSku, 1, 0.0m, cancellationToken);
+                if (modResult.Success)
+                {
+                    applied++;
+                    // Refresh snapshot for subsequent checks
+                    txn = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogError("❌ Failed to add modification {ModSku} to line {LineId}: {Error}", modSku, target.LineItemId, modResult.Error);
+                }
+            }
+
+            return $"LINE_UPDATED: {target.LineItemId} {applied} modifications applied";
         }
     }
 }

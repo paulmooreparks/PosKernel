@@ -441,6 +441,42 @@ namespace PosKernel.Client
             return response ?? new TransactionClientResult { Success = false, Error = "Invalid response" };
         }
 
+        /// <summary>
+        /// Adds a modification to a specific line item using stable line item ID for precise targeting.
+        /// ARCHITECTURAL PRINCIPLE: Eliminates ambiguity when multiple items have the same SKU.
+        /// </summary>
+        public Task<TransactionClientResult> AddModificationByLineItemIdAsync(string sessionId, string transactionId, string lineItemId, string modificationSku, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: FAIL FAST - Named pipe client doesn't support stable line item IDs yet
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Named pipe client does not support stable line item ID operations. " +
+                "Use RustKernelClient for stable line item ID support, or implement line item ID support in named pipe protocol.");
+        }
+
+        /// <summary>
+        /// Voids a line item using stable line item ID for precise targeting.
+        /// ARCHITECTURAL PRINCIPLE: Stable ID targeting eliminates ambiguity in multi-item scenarios.
+        /// </summary>
+        public Task<TransactionClientResult> VoidLineItemByIdAsync(string sessionId, string transactionId, string lineItemId, string reason = "customer requested", CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: FAIL FAST - Named pipe client doesn't support stable line item IDs yet
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Named pipe client does not support stable line item ID operations. " +
+                "Use RustKernelClient for stable line item ID support, or implement line item ID support in named pipe protocol.");
+        }
+
+        /// <summary>
+        /// Modifies a line item property using stable line item ID for precise targeting.
+        /// ARCHITECTURAL PRINCIPLE: Use stable IDs for unambiguous line item targeting.
+        /// </summary>
+        public Task<TransactionClientResult> ModifyLineItemByIdAsync(string sessionId, string transactionId, string lineItemId, string modificationType, string newValue, CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: FAIL FAST - Named pipe client doesn't support stable line item IDs yet
+            throw new InvalidOperationException(
+                "DESIGN DEFICIENCY: Named pipe client does not support stable line item ID operations. " +
+                "Use RustKernelClient for stable line item ID support, or implement line item ID support in named pipe protocol.");
+        }
+
         private async Task<T?> SendRequestAsync<T>(object request, CancellationToken cancellationToken = default)
         {
             for (int attempt = 0; attempt <= _options.MaxRetryAttempts; attempt++)

@@ -620,6 +620,7 @@ namespace PosKernel.Client.Rust
                     State = transactionResponse.State,
                     LineItems = transactionResponse.LineItems?.Select(item => new TransactionLineItem
                     {
+                        LineItemId = item.LineItemId, // ARCHITECTURAL FIX: Map stable line item ID from kernel
                         LineNumber = item.LineNumber,
                         ParentLineNumber = (int)(item.ParentLineNumber ?? 0), // NRF COMPLIANCE: Read parent ID from JSON
                         ProductId = item.ProductId,
@@ -742,6 +743,7 @@ namespace PosKernel.Client.Rust
 
         /// <summary>
         /// Parses a JSON response into a TransactionClientResult.
+        /// /// Adds null-coalescing operators to ensure LineItems is never null
         /// </summary>
         /// <param name="responseData">The JSON element from the service.</param>
         /// <param name="sessionId">The session ID.</param>
@@ -766,6 +768,7 @@ namespace PosKernel.Client.Rust
                 result.LineItems = lineItemsArray.EnumerateArray()
                     .Select(item => new TransactionLineItem
                     {
+                        LineItemId = item.TryGetProperty("line_item_id", out var lineItemIdProp) ? lineItemIdProp.GetString() ?? "" : "", // ARCHITECTURAL FIX: Map stable ID
                         LineNumber = item.TryGetProperty("line_number", out var lineNumProp) ? lineNumProp.GetInt32() : 0,
                         ParentLineNumber = item.TryGetProperty("parent_line_number", out var parentProp) && parentProp.ValueKind != JsonValueKind.Null 
                             ? parentProp.GetInt32() 
@@ -822,6 +825,9 @@ namespace PosKernel.Client.Rust
         private class LineItemDto
         {
             // CRITICAL FIX: Add JsonPropertyName attributes to match Rust JSON format
+            [System.Text.Json.Serialization.JsonPropertyName("line_item_id")]
+            public string LineItemId { get; set; } = "";
+            
             [System.Text.Json.Serialization.JsonPropertyName("line_number")]
             public int LineNumber { get; set; }
             
@@ -908,6 +914,223 @@ namespace PosKernel.Client.Rust
                 "Rust kernel client cannot decide store configuration defaults. " +
                 "Implement proper store configuration service that provides StoreId, Currency, and DecimalPlaces. " +
                 "Current implementation hardcoded StoreId='RUST_STORE_01' and Currency='SGD' - this violates fail-fast principles.");
+        }
+
+        /// <summary>
+        /// Adds a modification to a specific line item by its ID (for NRF-compliant hierarchical modifications)
+        /// </summary>
+        public async Task<TransactionClientResult> AddModificationByLineItemIdAsync(
+            string sessionId, 
+            string transactionId, 
+            string lineItemId, 
+            string modificationSku, 
+            int quantity, 
+            decimal unitPrice, 
+            CancellationToken cancellationToken = default)
+        {
+            try 
+            {
+                var requestBody = new
+                {
+                    session_id = sessionId,
+                    modification_sku = modificationSku,
+                    quantity = quantity,
+                    unit_price = unitPrice
+                };
+
+                var json = JsonSerializer.Serialize(requestBody);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync(
+                    $"/api/sessions/{sessionId}/transactions/{transactionId}/line-items/{lineItemId}/modifications",
+                    content,
+                    cancellationToken);
+
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogInformation("RUST_SERVICE_JSON: Raw response length: {Length} characters", responseContent.Length);
+                _logger.LogInformation("RUST_SERVICE_JSON: Content: {Content}", responseContent);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Failed to add modification to line item {LineItemId}: {StatusCode} - {Content}", 
+                        lineItemId, response.StatusCode, responseContent);
+                    
+                    return new TransactionClientResult
+                    {
+                        Success = false,
+                        Error = $"HTTP {response.StatusCode}: {responseContent}"
+                    };
+                }
+
+                // Parse the response using existing method
+                var result = ParseTransactionResponse(responseContent);
+
+                return new TransactionClientResult
+                {
+                    Success = result.Success,
+                    TransactionId = result.TransactionId,
+                    Total = (decimal)result.Total,
+                    State = result.State,
+                    LineItems = result.LineItems?.Select(item => new TransactionLineItem
+                    {
+                        LineItemId = item.LineItemId,
+                        LineNumber = item.LineNumber,
+                        ProductId = item.ProductId,
+                        Quantity = item.Quantity,
+                        UnitPrice = (decimal)item.UnitPrice,
+                        ExtendedPrice = (decimal)item.ExtendedPrice,
+                        ParentLineNumber = (int)(item.ParentLineNumber ?? 0),
+                        ItemType = DetermineLineItemType(item.ParentLineNumber),
+                        DisplayIndentLevel = DetermineIndentLevel(item.ParentLineNumber),
+                        IsVoided = false,
+                        VoidReason = null,
+                        Metadata = new Dictionary<string, string>()
+                    }).ToList() ?? new List<TransactionLineItem>(),
+                    Error = result.Error
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding modification to line item by ID");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Modifies a line item by its ID (for NRF-compliant hierarchical modifications)
+        /// </summary>
+        public async Task<TransactionClientResult> ModifyLineItemByIdAsync(
+            string sessionId, 
+            string transactionId, 
+            string lineItemId, 
+            string modificationType, 
+            string newValue, 
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var requestBody = new
+                {
+                    session_id = sessionId,
+                    transaction_id = transactionId,
+                    line_item_id = lineItemId,
+                    modification_type = modificationType,
+                    new_value = newValue
+                };
+
+                var json = JsonSerializer.Serialize(requestBody);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PutAsync(
+                    $"/api/sessions/{sessionId}/transactions/{transactionId}/line-items/{lineItemId}/modify",
+                    content,
+                    cancellationToken);
+
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return new TransactionClientResult
+                    {
+                        Success = false,
+                        Error = $"HTTP {response.StatusCode}: {responseContent}"
+                    };
+                }
+
+                // Parse the response using existing method
+                var result = ParseTransactionResponse(responseContent);
+
+                return new TransactionClientResult
+                {
+                    Success = result.Success,
+                    TransactionId = result.TransactionId,
+                    Total = (decimal)result.Total,
+                    State = result.State,
+                    LineItems = result.LineItems?.Select(item => new TransactionLineItem
+                    {
+                        LineItemId = item.LineItemId,
+                        LineNumber = item.LineNumber,
+                        ProductId = item.ProductId,
+                        Quantity = item.Quantity,
+                        UnitPrice = (decimal)item.UnitPrice,
+                        ExtendedPrice = (decimal)item.ExtendedPrice,
+                        ParentLineNumber = (int)(item.ParentLineNumber ?? 0),
+                        ItemType = DetermineLineItemType(item.ParentLineNumber),
+                        DisplayIndentLevel = DetermineIndentLevel(item.ParentLineNumber),
+                        IsVoided = false,
+                        VoidReason = null,
+                        Metadata = new Dictionary<string, string>()
+                    }).ToList() ?? new List<TransactionLineItem>(),
+                    Error = result.Error
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error modifying line item by ID");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Voids a line item by its ID (for NRF-compliant hierarchical modifications)
+        /// </summary>
+        public async Task<TransactionClientResult> VoidLineItemByIdAsync(
+            string sessionId, 
+            string transactionId, 
+            string lineItemId, 
+            string reason, 
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsync(
+                    $"/api/sessions/{sessionId}/transactions/{transactionId}/line-items/{lineItemId}/void",
+                    null,
+                    cancellationToken);
+
+                var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return new TransactionClientResult
+                    {
+                        Success = false,
+                        Error = $"HTTP {response.StatusCode}: {responseContent}"
+                    };
+                }
+
+                // Parse the response using existing method
+                var result = ParseTransactionResponse(responseContent);
+
+                return new TransactionClientResult
+                {
+                    Success = result.Success,
+                    TransactionId = result.TransactionId,
+                    Total = (decimal)result.Total,
+                    State = result.State,
+                    LineItems = result.LineItems?.Select(item => new TransactionLineItem
+                    {
+                        LineItemId = item.LineItemId,
+                        LineNumber = item.LineNumber,
+                        ProductId = item.ProductId,
+                        Quantity = item.Quantity,
+                        UnitPrice = (decimal)item.UnitPrice,
+                        ExtendedPrice = (decimal)item.ExtendedPrice,
+                        ParentLineNumber = (int)(item.ParentLineNumber ?? 0),
+                        ItemType = DetermineLineItemType(item.ParentLineNumber),
+                        DisplayIndentLevel = DetermineIndentLevel(item.ParentLineNumber),
+                        IsVoided = false,
+                        VoidReason = null,
+                        Metadata = new Dictionary<string, string>()
+                    }).ToList() ?? new List<TransactionLineItem>(),
+                    Error = result.Error
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error voiding line item by ID");
+                throw;
+            }
         }
     }
 

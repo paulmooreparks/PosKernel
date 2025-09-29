@@ -24,6 +24,7 @@ using PosKernel.AI.Services;
 using PosKernel.Configuration.Services;
 using System.Text;
 using TGAttribute = Terminal.Gui.Attribute;
+using PosKernel.Configuration;
 
 namespace PosKernel.AI.Demo.UI.Terminal;
 
@@ -37,14 +38,16 @@ public class TerminalChatDisplay : IChatDisplay
     private readonly TextField _inputField;
     private readonly ScrollBar? _chatScrollBar;
     private readonly StringBuilder _chatContent;
+    private readonly LogFileManager? _logFiles;
     private TaskCompletionSource<string?>? _inputWaiter;
 
-    public TerminalChatDisplay(TextView chatView, TextField inputField, ScrollBar? chatScrollBar = null)
+    public TerminalChatDisplay(TextView chatView, TextField inputField, ScrollBar? chatScrollBar = null, LogFileManager? logFiles = null)
     {
         _chatView = chatView ?? throw new ArgumentNullException(nameof(chatView));
         _inputField = inputField ?? throw new ArgumentNullException(nameof(inputField));
         _chatScrollBar = chatScrollBar;
         _chatContent = new StringBuilder();
+        _logFiles = logFiles;
 
         // Add scrollbar to chatView if provided
         if (_chatScrollBar != null)
@@ -89,6 +92,9 @@ public class TerminalChatDisplay : IChatDisplay
         };
 
         var line = $"[{timestamp}] {prefix}: {message.Content}";
+
+        // Write to chat log file (non-blocking best-effort)
+        _logFiles?.WriteChat(line);
 
         _chatContent.AppendLine(line);
         _chatContent.AppendLine();
@@ -304,8 +310,9 @@ public class TerminalReceiptDisplay : IReceiptDisplay
     private readonly Label _statusBar;
     private readonly ICurrencyFormattingService? _currencyFormatter;
     private readonly PosKernel.AI.Services.StoreConfig? _storeConfig;
+    private readonly LogFileManager? _logFiles;
 
-    public TerminalReceiptDisplay(TextView receiptView, ScrollBar receiptScrollBar, Label statusBar, TerminalLogDisplay logDisplay, ICurrencyFormattingService? currencyFormatter = null, PosKernel.AI.Services.StoreConfig? storeConfig = null)
+    public TerminalReceiptDisplay(TextView receiptView, ScrollBar receiptScrollBar, Label statusBar, TerminalLogDisplay logDisplay, ICurrencyFormattingService? currencyFormatter = null, PosKernel.AI.Services.StoreConfig? storeConfig = null, LogFileManager? logFiles = null)
     {
         _receiptView = receiptView ?? throw new ArgumentNullException(nameof(receiptView));
         _receiptScrollBar = receiptScrollBar ?? throw new ArgumentNullException(nameof(receiptScrollBar));
@@ -313,6 +320,7 @@ public class TerminalReceiptDisplay : IReceiptDisplay
         _statusBar = statusBar ?? throw new ArgumentNullException(nameof(statusBar));
         _currencyFormatter = currencyFormatter;
         _storeConfig = storeConfig;
+        _logFiles = logFiles;
 
         // Add scrollbar to receiptView using working pattern
         _receiptView.Add(_receiptScrollBar);
@@ -358,7 +366,8 @@ public class TerminalReceiptDisplay : IReceiptDisplay
     {
         _logDisplay.AddLog($"DEBUG: Receipt has {receipt.Items.Count} items");
         _logDisplay.AddLog($"DEBUG: Receipt status: {receipt.Status}");
-        _logDisplay.AddLog($"DEBUG: Receipt total: S${receipt.Total:F2}"); // Temporary fallback until currency service available
+        // ARCHITECTURAL FIX: Use currency service for totals; fail fast if unavailable
+        _logDisplay.AddLog($"DEBUG: Receipt total: {FormatCurrency(receipt.Total)}");
 
         // ARCHITECTURAL FIX: Use structured receipt formatter instead of manual string building
         var formatter = new StructuredReceiptFormatter(_currencyFormatter, _storeConfig, 40);
@@ -366,6 +375,9 @@ public class TerminalReceiptDisplay : IReceiptDisplay
         try
         {
             var content = formatter.FormatReceipt(receipt);
+            
+            // Log a timestamped snapshot to file
+            _logFiles?.WriteReceiptSnapshot(content);
             
             Application.Invoke(() =>
             {
@@ -407,25 +419,9 @@ public class TerminalReceiptDisplay : IReceiptDisplay
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("DESIGN DEFICIENCY"))
         {
-            // Currency service not available - use fallback display but log the issue
+            // Currency service not available - log and rethrow to reveal design problem
             _logDisplay.AddLog($"WARNING: {ex.Message}");
-            
-            var fallbackContent = FormatReceiptFallback(receipt);
-            
-            Application.Invoke(() =>
-            {
-                _receiptView.Text = fallbackContent;
-                
-                var itemCount = receipt.Items.Count;
-                string status = receipt.Status switch
-                {
-                    PaymentStatus.Building => $"Building Order ({itemCount} items)",
-                    PaymentStatus.ReadyForPayment => $"Ready for Payment - S${receipt.Total:F2}", // Fallback formatting
-                    PaymentStatus.Completed => "✅ PAID",
-                    _ => receipt.Status.ToString()
-                };
-                _statusBar.Text = $"Status: {status}";
-            });
+            throw;
         }
     }
 
@@ -445,21 +441,18 @@ public class TerminalReceiptDisplay : IReceiptDisplay
         {
             foreach (var item in receipt.Items)
             {
-                var lineTotal = item.ExtendedPrice; // Use ExtendedPrice instead of CalculatedTotal
+                var lineTotal = item.ExtendedPrice;
                 var itemLine = item.Quantity > 1 
                     ? $"{item.Quantity}x {item.ProductName}"
                     : item.ProductName;
                 
-                // NRF COMPLIANCE: Display hierarchical line items instead of preparation notes
                 if (item.ParentLineItemId.HasValue)
                 {
-                    // This is a child item (modification/extra)
-                    var indentPrefix = "  → "; // Visual indentation for child items
+                    var indentPrefix = "  → ";
                     content.AppendLine($"{indentPrefix}{item.ProductName}");
                 }
                 else
                 {
-                    // This is a parent/top-level item
                     var formattedUnitPrice = FormatCurrency(item.UnitPrice);
                     var formattedExtendedPrice = FormatCurrency(item.ExtendedPrice);
                     content.AppendLine($"{item.Quantity}x {item.ProductName} @ {formattedUnitPrice} = {formattedExtendedPrice}");
@@ -468,7 +461,8 @@ public class TerminalReceiptDisplay : IReceiptDisplay
 
             content.AppendLine();
             content.AppendLine(new string('-', 40));
-            content.AppendLine($"{"TOTAL".PadRight(32)}S${receipt.Total:F2}".PadLeft(8));
+            // ARCHITECTURAL FIX: Use currency service for totals; fail fast if unavailable
+            content.AppendLine($"{"TOTAL".PadRight(32)}{FormatCurrency(receipt.Total)}");
         }
         else
         {
@@ -512,12 +506,14 @@ public class TerminalLogDisplay : ILogDisplay
     private readonly ScrollBar _logScrollBar;
     private readonly StringBuilder _logContent;
     private readonly List<string> _logEntries = new List<string>();
+    private readonly LogFileManager? _logFiles;
 
-    public TerminalLogDisplay(TextView logView, ScrollBar logScrollBar)
+    public TerminalLogDisplay(TextView logView, ScrollBar logScrollBar, LogFileManager? logFiles = null)
     {
         _logView = logView ?? throw new ArgumentNullException(nameof(logView));
         _logScrollBar = logScrollBar ?? throw new ArgumentNullException(nameof(logScrollBar));
         _logContent = new StringBuilder();
+        _logFiles = logFiles;
 
         // Add scrollbar to textView (not to container) for proper mouse event handling
         _logView.Add(_logScrollBar);
@@ -543,6 +539,12 @@ public class TerminalLogDisplay : ILogDisplay
         // ARCHITECTURAL PRINCIPLE: Use invariant culture for internal debug timestamps  
         var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
         var logEntry = $"[{timestamp}] {message}";
+
+        // Write to debug log file
+        _logFiles?.WriteDebug(logEntry);
+
+        // Optional: Copy kernel/extension lines to their own logs if easily detectable
+        _logFiles?.TryDuplicateToKernelOrExtension(logEntry);
 
         _logEntries.Add(logEntry);
 
@@ -619,6 +621,7 @@ public class TerminalUserInterface : IUserInterface
     private TerminalPromptDisplay? _promptDisplay;
     private ChatOrchestrator? _orchestrator;
     private ConsoleOutputRedirector? _consoleRedirector;
+    private LogFileManager? _logFiles;
 
     public TerminalUserInterface()
     {
@@ -716,7 +719,7 @@ public class TerminalUserInterface : IUserInterface
 
             if (receiptView != null && receiptScrollBar != null)
             {
-                Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay, currencyFormatter, storeConfig);
+                Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay, currencyFormatter, storeConfig, _logFiles);
                 _logDisplay?.AddLog("SUCCESS: Receipt display updated with currency formatting services");
             }
         }
@@ -752,6 +755,10 @@ public class TerminalUserInterface : IUserInterface
         }
 
         Application.Init();
+
+        // Initialize log file manager and ensure logs directory exists under ~/.poskernel/logs
+        _logFiles = new LogFileManager();
+        _logFiles.EnsureLogsDirectory();
 
         _top = new Toplevel();
 
@@ -1128,14 +1135,14 @@ public class TerminalUserInterface : IUserInterface
         _top.Add(inputField, inputPrompt, menuBar, chatLabel, chatView, receiptLabel, receiptView,
                 promptLabel, promptContainer, logLabel, logContainer, statusBar);
 
-        // Initialize display components
-        _terminalChat = new TerminalChatDisplay(chatView, inputField, chatScrollBar);
+        // Initialize display components with log file manager
+        _terminalChat = new TerminalChatDisplay(chatView, inputField, chatScrollBar, _logFiles);
         Chat = _terminalChat;
-        _logDisplay = new TerminalLogDisplay(logView, logScrollBar);
-        _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer, chatView, receiptView, logContainer);
+        _logDisplay = new TerminalLogDisplay(logView, logScrollBar, _logFiles);
+        _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer, chatView, receiptView, logContainer, _logFiles);
 
         // Receipt display needs currency service - this will be updated later when store config is available  
-        Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay!);
+        Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay, logFiles: _logFiles);
         Log = _logDisplay; // Expose log display through ILogDisplay interface
 
         // Redirect console output to debug pane
@@ -1173,6 +1180,7 @@ public class TerminalUserInterface : IUserInterface
     {
         // Restore console output before shutting down
         _consoleRedirector?.Dispose();
+        _logFiles?.Dispose();
 
         Application.Shutdown();
         await Task.CompletedTask;
@@ -1396,8 +1404,9 @@ public class TerminalPromptDisplay
     private readonly View _logContainer;
     private bool _isCollapsed = false;
     private readonly View _containerView;
+    private readonly LogFileManager? _logFiles;
 
-    public TerminalPromptDisplay(TextView promptView, ScrollBar promptScrollBar, Label promptLabel, View containerView, TextView chatView, TextView receiptView, View logContainer)
+    public TerminalPromptDisplay(TextView promptView, ScrollBar promptScrollBar, Label promptLabel, View containerView, TextView chatView, TextView receiptView, View logContainer, LogFileManager? logFiles = null)
     {
         _promptView = promptView ?? throw new ArgumentNullException(nameof(promptView));
         _promptScrollBar = promptScrollBar ?? throw new ArgumentNullException(nameof(promptScrollBar));
@@ -1407,20 +1416,16 @@ public class TerminalPromptDisplay
         _chatView = chatView ?? throw new ArgumentNullException(nameof(chatView));
         _receiptView = receiptView ?? throw new ArgumentNullException(nameof(receiptView));
         _logContainer = logContainer ?? throw new ArgumentNullException(nameof(logContainer));
+        _logFiles = logFiles;
 
-        // Add scrollbar to textView (not to container) for proper mouse event handling
-        // Do this AFTER the promptView has been added to its container
         Application.Invoke(() => {
             _promptView.Add(_promptScrollBar);
         });
 
-        // ScrollBar position changes should update TextView scroll position
         _promptScrollBar.PositionChanged += (sender, args) =>
         {
             _promptView.TopRow = args.CurrentValue;
         };
-
-        // Handle when TextView scrolls (keyboard/mouse) - sync ScrollBar position
         _promptView.KeyDown += (sender, e) => {
             Application.Invoke(() => {
                 if (_promptScrollBar.Visible) {
@@ -1455,6 +1460,9 @@ public class TerminalPromptDisplay
 
     public void ShowPrompt(string prompt)
     {
+        // Log raw prompt to file with timestamp
+        _logFiles?.WritePrompt(prompt);
+
         _promptContent.Clear();
         _promptContent.AppendLine("=== PROMPT SENT TO AI ===");
         _promptContent.AppendLine();
@@ -1462,7 +1470,6 @@ public class TerminalPromptDisplay
         _promptContent.AppendLine();
         _promptContent.AppendLine("=== END PROMPT ===");
 
-        // Add some debug logging
         var parentUI = FindParentTerminalUI();
         parentUI?.LogDisplay?.AddLog($"DEBUG: TerminalPromptDisplay.ShowPrompt called with prompt length: {prompt.Length}");
         parentUI?.LogDisplay?.AddLog($"DEBUG: Prompt content length after formatting: {_promptContent.Length}");
@@ -1471,7 +1478,6 @@ public class TerminalPromptDisplay
         {
             _promptView.Text = _promptContent.ToString();
 
-            // Update ScrollBar based on content size - no VisibleContentSize
             var lines = _promptContent.ToString().Split('\n').Length;
             var viewHeight = _promptView.Frame.Height;
 
@@ -1488,7 +1494,6 @@ public class TerminalPromptDisplay
                 _promptScrollBar.Visible = false;
             }
 
-            // Auto-scroll to bottom for new content
             if (_promptView.Visible)
             {
                 _promptView.MoveEnd();

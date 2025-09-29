@@ -25,7 +25,7 @@ The goal of this project is captured in the many .md files under the docs direct
 ```csharp
 // NEVER DO THIS - Silent fallback hides design problems
 if (currencyService == null) {
-    return $"${amount:F2}"; // BAD - hardcoded assumption
+    return "$" + amount.ToString("F2"); // BAD - hardcoded assumption
 }
 ```
 
@@ -49,6 +49,25 @@ if (currencyService == null) {
 - Ignore all historical logs. Only the latest rebuild output is authoritative.
 - Don't run things that will require me to stop them later.
 - Don't use Console.ReadKey() for things that you might legitimately want to run unattended.
+
+### LOGS AND DIAGNOSTICS
+- When asked to "read the logs", read files in `~/.poskernel/logs` (use `PosKernelConfiguration.ConfigDirectory + "/logs"`).
+- Log files purpose and format:
+  - `chat.log`: Every rendered line in the Chat content pane. Format: `[HH:mm:ss] <Speaker>: <Content>`.
+  - `receipt.log`: Timestamped snapshots of the rendered receipt each time the pane is updated. Blocks are delimited by `=== RECEIPT SNAPSHOT [yyyy-MM-dd HH:mm:ss.fff] ===` followed by the full text snapshot.
+  - `prompt.log`: All prompts sent to the AI, with timestamps. Blocks are delimited by `=== PROMPT [yyyy-MM-dd HH:mm:ss.fff] ===` followed by the exact prompt content.
+  - `debug.log`: The Debug Logs pane output, each line prefixed with `[HH:mm:ss.fff]`. Includes tool analyses, execution results, and console redirection entries like `[CONSOLE.OUT]` / `[CONSOLE.ERROR]`.
+  - `kernel.log` (optional): Heuristically duplicated lines that appear to originate from the Rust POS kernel or kernel client. Useful for correlating kernel-side activity.
+  - `<extension-name>.log` (optional): Heuristically duplicated lines from a running domain extension, e.g., `PosKernel.Extensions.Restaurant.log`.
+- Triage workflow when reading logs:
+  1) Start with `debug.log` (look for errors/exceptions, tool calls, timings). Correlate timestamps.
+  2) Inspect `prompt.log` to verify exact prompts sent around the same time.
+  3) Check `chat.log` to see what the user and cashier saw.
+  4) Review `receipt.log` snapshots to confirm state transitions and totals at each update.
+  5) If kernel/extension behavior is suspected, correlate with `kernel.log` and `<extension-name>.log` entries by timestamp.
+- Timestamp conventions:
+  - Inline lines: `[HH:mm:ss.fff]` (debug) or `[HH:mm:ss]` (chat)
+  - Block headers: `[yyyy-MM-dd HH:mm:ss.fff]`
 
 ### NO CURRENCY ASSUMPTIONS
 1. **NO hardcoded `$` symbols** - Different currencies use different symbols
@@ -128,7 +147,7 @@ private string FormatCurrency(decimal amount)
 ## COMMON VIOLATIONS TO AVOID
 
 ### NEVER: Silent Fallbacks
-- `return $"${amount:F2}"` when currency service missing
+- `return "$" + amount.ToString("F2")` when currency service missing
 - Default currency assumptions
 - Hardcoded payment method lists
 - Client-side business logic
