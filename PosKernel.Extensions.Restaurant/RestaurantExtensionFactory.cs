@@ -33,7 +33,7 @@ namespace PosKernel.Extensions.Restaurant
         /// <returns>In-process restaurant extension.</returns>
         public static IRestaurantExtension CreateInProcess(ILogger logger, string? databasePath = null)
         {
-            var typedLogger = logger as ILogger<InProcessRestaurantExtension> ?? 
+            var typedLogger = logger as ILogger<InProcessRestaurantExtension> ??
                 new LoggerWrapper<InProcessRestaurantExtension>(logger);
             return new InProcessRestaurantExtension(typedLogger, databasePath);
         }
@@ -46,7 +46,7 @@ namespace PosKernel.Extensions.Restaurant
         /// <returns>IPC restaurant extension client.</returns>
         public static IRestaurantExtension CreateIpcClient(ILogger logger, string pipeName = "poskernel-restaurant-extension")
         {
-            var typedLogger = logger as ILogger<RestaurantExtensionClient> ?? 
+            var typedLogger = logger as ILogger<RestaurantExtensionClient> ??
                 new LoggerWrapper<RestaurantExtensionClient>(logger);
             return new RestaurantExtensionClient(typedLogger, pipeName);
         }
@@ -79,7 +79,7 @@ namespace PosKernel.Extensions.Restaurant
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => _logger.BeginScope(state);
         public bool IsEnabled(LogLevel logLevel) => _logger.IsEnabled(logLevel);
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) 
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             => _logger.Log(logLevel, eventId, state, exception, formatter);
     }
 
@@ -118,7 +118,7 @@ namespace PosKernel.Extensions.Restaurant
                     _activeExtension = ipcExtension;
                     return _activeExtension;
                 }
-                
+
                 ipcExtension.Dispose();
             }
             catch (Exception ex)
@@ -166,6 +166,24 @@ namespace PosKernel.Extensions.Restaurant
         {
             var extension = await GetActiveExtensionAsync(cancellationToken);
             return await extension.IsAvailableAsync(cancellationToken);
+        }
+
+        public async Task<SetDefinition?> GetSetDefinitionAsync(string productSku, CancellationToken cancellationToken = default)
+        {
+            var extension = await GetActiveExtensionAsync(cancellationToken);
+            return await extension.GetSetDefinitionAsync(productSku, cancellationToken);
+        }
+
+        public async Task<List<SetAvailableDrink>?> GetSetAvailableDrinksAsync(string setSku, CancellationToken cancellationToken = default)
+        {
+            var extension = await GetActiveExtensionAsync(cancellationToken);
+            return await extension.GetSetAvailableDrinksAsync(setSku, cancellationToken);
+        }
+
+        public async Task<List<SetAvailableSide>?> GetSetAvailableSidesAsync(string setSku, CancellationToken cancellationToken = default)
+        {
+            var extension = await GetActiveExtensionAsync(cancellationToken);
+            return await extension.GetSetAvailableSidesAsync(setSku, cancellationToken);
         }
 
         public void Dispose()

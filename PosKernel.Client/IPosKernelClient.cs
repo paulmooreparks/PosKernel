@@ -101,8 +101,9 @@ namespace PosKernel.Client
 
         /// <summary>
         /// Starts a new transaction.
+        /// ARCHITECTURAL PRINCIPLE: Currency must be explicitly provided - no cultural defaults.
         /// </summary>
-        Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency = "USD", CancellationToken cancellationToken = default);
+        Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Adds a line item to the transaction.

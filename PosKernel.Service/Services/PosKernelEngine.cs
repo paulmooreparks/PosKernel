@@ -55,7 +55,7 @@ namespace PosKernel.Service.Services
             _logger.LogInformation("Creating session for terminal {TerminalId}, operator {OperatorId}", terminalId, operatorId);
 
             var sessionInfo = await _sessionManager.CreateSessionAsync(terminalId, operatorId, cancellationToken);
-            
+
             _logger.LogInformation("Session created: {SessionId}", sessionInfo.SessionId);
             return sessionInfo.SessionId;
         }
@@ -64,10 +64,10 @@ namespace PosKernel.Service.Services
         /// Starts a new transaction for the specified session.
         /// </summary>
         /// <param name="sessionId">The session identifier.</param>
-        /// <param name="currency">The transaction currency (default is USD).</param>
+        /// <param name="currency">The transaction currency (must be explicitly provided - no cultural defaults).</param>
         /// <param name="cancellationToken">Token to cancel the operation.</param>
         /// <returns>The transaction result.</returns>
-        public async Task<TransactionResult> StartTransactionAsync(string sessionId, string currency = "USD", CancellationToken cancellationToken = default)
+        public async Task<TransactionResult> StartTransactionAsync(string sessionId, string currency, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -134,7 +134,7 @@ namespace PosKernel.Service.Services
         {
             try
             {
-                _logger.LogDebug("Adding line item to transaction {TransactionId}: {ProductId} x {Quantity} @ {UnitPrice}", 
+                _logger.LogDebug("Adding line item to transaction {TransactionId}: {ProductId} x {Quantity} @ {UnitPrice}",
                     transactionId, productId, quantity, unitPrice);
 
                 // Validate session
@@ -161,13 +161,13 @@ namespace PosKernel.Service.Services
                 // Add line item using kernel contracts
                 var productIdObj = new ProductId(productId);
                 var unitPriceMoney = new Money((long)(unitPrice * 100), transaction.Currency);
-                
+
                 transaction.AddLine(productIdObj, quantity, unitPriceMoney);
 
                 // Update session activity
                 await _sessionManager.UpdateSessionActivityAsync(sessionId, cancellationToken);
 
-                _logger.LogInformation("Line item added to transaction {TransactionId}: {ProductId} x {Quantity}", 
+                _logger.LogInformation("Line item added to transaction {TransactionId}: {ProductId} x {Quantity}",
                     transactionId, productId, quantity);
 
                 return new TransactionResult
@@ -210,7 +210,7 @@ namespace PosKernel.Service.Services
         {
             try
             {
-                _logger.LogDebug("Processing payment for transaction {TransactionId}: {Amount} via {PaymentType}", 
+                _logger.LogDebug("Processing payment for transaction {TransactionId}: {Amount} via {PaymentType}",
                     transactionId, amount, paymentType);
 
                 // Validate session
@@ -236,7 +236,7 @@ namespace PosKernel.Service.Services
 
                 // Process payment using kernel contracts
                 var paymentAmount = new Money((long)(amount * 100), transaction.Currency);
-                
+
                 // For now, we'll use cash tender - in a full implementation,
                 // we'd have different tender types
                 transaction.AddCashTender(paymentAmount);
@@ -244,7 +244,7 @@ namespace PosKernel.Service.Services
                 // Update session activity
                 await _sessionManager.UpdateSessionActivityAsync(sessionId, cancellationToken);
 
-                _logger.LogInformation("Payment processed for transaction {TransactionId}: {Amount} via {PaymentType}, Final state: {State}", 
+                _logger.LogInformation("Payment processed for transaction {TransactionId}: {Amount} via {PaymentType}, Final state: {State}",
                     transactionId, amount, paymentType, transaction.State);
 
                 return new TransactionResult

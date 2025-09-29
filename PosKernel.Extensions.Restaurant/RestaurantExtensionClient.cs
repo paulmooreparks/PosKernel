@@ -76,12 +76,12 @@ namespace PosKernel.Extensions.Restaurant.Client
             try
             {
                 _logger.LogInformation("Attempting to connect to restaurant extension service via pipe: {PipeName}", _pipeName);
-                
+
                 // NO FALLBACKS - fail fast with clear error message
                 await _client.ConnectAsync(15000, cancellationToken);
                 _reader = new StreamReader(_client);
                 _writer = new StreamWriter(_client) { AutoFlush = true };
-                
+
                 _logger.LogInformation("✅ Successfully connected to restaurant extension service");
             }
             catch (TimeoutException ex)
@@ -109,7 +109,7 @@ namespace PosKernel.Extensions.Restaurant.Client
 
         /// <inheritdoc/>
         public async Task<ProductValidationResult> ValidateProductAsync(
-            string productId, 
+            string productId,
             string storeId = "STORE_COFFEE_001",
             string terminalId = "TERMINAL_01",
             string operatorId = "SYSTEM",
@@ -132,7 +132,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             };
 
             var response = await SendRequestAsync(request, cancellationToken);
-            
+
             if (!response.Success)
             {
                 return new ProductValidationResult
@@ -165,7 +165,7 @@ namespace PosKernel.Extensions.Restaurant.Client
 
         /// <inheritdoc/>
         public async Task<List<ProductInfo>> SearchProductsAsync(
-            string searchTerm, 
+            string searchTerm,
             int maxResults = 50,
             CancellationToken cancellationToken = default)
         {
@@ -184,7 +184,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             };
 
             var response = await SendRequestAsync(request, cancellationToken);
-            
+
             if (!response.Success || response.Data?.TryGetValue("products", out var productsObj) != true)
             {
                 _logger.LogWarning("Product search failed: {Error}", response.Error);
@@ -218,7 +218,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             };
 
             var response = await SendRequestAsync(request, cancellationToken);
-            
+
             if (!response.Success || response.Data?.TryGetValue("popular_items", out var itemsObj) != true)
             {
                 _logger.LogWarning("Failed to get popular items: {Error}", response.Error);
@@ -240,7 +240,7 @@ namespace PosKernel.Extensions.Restaurant.Client
 
         /// <inheritdoc/>
         public async Task<List<ProductInfo>> GetCategoryProductsAsync(
-            string category, 
+            string category,
             CancellationToken cancellationToken = default)
         {
             await EnsureConnectedAsync(cancellationToken);
@@ -257,7 +257,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             };
 
             var response = await SendRequestAsync(request, cancellationToken);
-            
+
             if (!response.Success || response.Data?.TryGetValue("products", out var productsObj) != true)
             {
                 _logger.LogWarning("Failed to get category products: {Error}", response.Error);
@@ -291,7 +291,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             };
 
             var response = await SendRequestAsync(request, cancellationToken);
-            
+
             if (!response.Success || response.Data?.TryGetValue("categories", out var categoriesObj) != true)
             {
                 _logger.LogWarning("Failed to get categories: {Error}", response.Error);
@@ -342,7 +342,7 @@ namespace PosKernel.Extensions.Restaurant.Client
                 // ADD TIMEOUT: Don't wait forever for a response
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(TimeSpan.FromSeconds(10)); // 10 second timeout
-                
+
                 var responseJson = await _reader.ReadLineAsync(timeoutCts.Token);
                 if (responseJson == null)
                 {
@@ -352,11 +352,11 @@ namespace PosKernel.Extensions.Restaurant.Client
                 _logger.LogDebug("Received response: {Response}", responseJson);
 
                 var response = JsonSerializer.Deserialize<ExtensionResponse>(responseJson);
-                return response ?? new ExtensionResponse 
-                { 
-                    Id = request.Id, 
-                    Success = false, 
-                    Error = "Invalid response format" 
+                return response ?? new ExtensionResponse
+                {
+                    Id = request.Id,
+                    Success = false,
+                    Error = "Invalid response format"
                 };
             }
             catch (OperationCanceledException ex) when (ex.CancellationToken.IsCancellationRequested)
@@ -413,17 +413,44 @@ namespace PosKernel.Extensions.Restaurant.Client
                 _writer?.Dispose();
                 _reader?.Dispose();
                 _client?.Close();
-                
+
                 _writer = null;
                 _reader = null;
                 _client = null;
-                
+
                 _logger?.LogInformation("Disconnected from restaurant extension service");
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Error during disconnect");
             }
+        }
+
+        /// <inheritdoc />
+        public Task<SetDefinition?> GetSetDefinitionAsync(string productSku, CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
+            throw new NotImplementedException(
+                "DESIGN DEFICIENCY: Set definition queries not implemented in RestaurantExtensionClient. " +
+                "Implement IPC protocol for set_definitions table queries to support set functionality.");
+        }
+
+        /// <inheritdoc />
+        public Task<List<SetAvailableDrink>?> GetSetAvailableDrinksAsync(string setSku, CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
+            throw new NotImplementedException(
+                "DESIGN DEFICIENCY: Set available drinks queries not implemented in RestaurantExtensionClient. " +
+                "Implement IPC protocol for set_available_drinks table queries to support set drink customization.");
+        }
+
+        /// <inheritdoc />
+        public Task<List<SetAvailableSide>?> GetSetAvailableSidesAsync(string setSku, CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
+            throw new NotImplementedException(
+                "DESIGN DEFICIENCY: Set available sides queries not implemented in RestaurantExtensionClient. " +
+                "Implement IPC protocol for set_available_sides table queries to support set side customization.");
         }
 
         /// <summary>
@@ -439,7 +466,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             {
                 _logger?.LogDebug(ex, "Error disposing reader");
             }
-            
+
             try
             {
                 _writer?.Dispose();
@@ -448,7 +475,7 @@ namespace PosKernel.Extensions.Restaurant.Client
             {
                 _logger?.LogDebug(ex, "Error disposing writer");
             }
-            
+
             try
             {
                 _client?.Dispose();
@@ -469,7 +496,7 @@ namespace PosKernel.Extensions.Restaurant.Client
         /// Gets or sets the product information.
         /// </summary>
         public ProductInfo ProductInfo { get; set; } = new();
-        
+
         /// <summary>
         /// Gets or sets the effective price in cents.
         /// </summary>
@@ -485,12 +512,12 @@ namespace PosKernel.Extensions.Restaurant.Client
         /// Gets or sets the request identifier.
         /// </summary>
         public string Id { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the method name.
         /// </summary>
         public string Method { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the request parameters.
         /// </summary>
@@ -506,17 +533,17 @@ namespace PosKernel.Extensions.Restaurant.Client
         /// Gets or sets the response identifier.
         /// </summary>
         public string Id { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets whether the operation was successful.
         /// </summary>
         public bool Success { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the error message if the operation failed.
         /// </summary>
         public string? Error { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the response data.
         /// </summary>

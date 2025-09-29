@@ -86,7 +86,7 @@ namespace PosKernel.Configuration
                     {
                         return ConvertStringValue<T>(stringValue);
                     }
-                    
+
                     // Handle JSON element conversions (from XferLang parsing)
                     if (value is JsonElement jsonElement)
                     {
@@ -160,16 +160,17 @@ namespace PosKernel.Configuration
         {
             // Core PosKernel defaults
             _configuration["PosKernel:LogLevel"] = "Information";
-            _configuration["PosKernel:CultureCode"] = "en-US";
-            _configuration["PosKernel:DefaultCurrency"] = "USD";
-            
+            // ARCHITECTURAL PRINCIPLE: NO cultural defaults - these must be explicitly configured
+            // _configuration["PosKernel:CultureCode"] = "en-US";  // REMOVED - fail fast if not configured
+            // _configuration["PosKernel:DefaultCurrency"] = "USD"; // REMOVED - fail fast if not configured
+
             // ARCHITECTURAL PRINCIPLE: NO AI defaults - require explicit configuration
             // AI configuration must be provided via environment variables to enforce fail-fast
-            
+
             // Security defaults
             _configuration["Security:EnableAuditLogging"] = true;
             _configuration["Security:LogLevel"] = "High";
-            
+
             _configSources.Add("Defaults");
         }
 
@@ -190,12 +191,12 @@ namespace PosKernel.Configuration
                 {
                     var content = File.ReadAllText(filePath);
                     var config = ParseXferLang(content);
-                    
+
                     foreach (var kvp in config)
                     {
                         _configuration[kvp.Key] = kvp.Value;
                     }
-                    
+
                     _configSources.Add($"{sourceName} ({filePath})");
                 }
                 catch (Exception ex)
@@ -232,7 +233,7 @@ namespace PosKernel.Configuration
                             _configuration[key] = value;
                         }
                     }
-                    
+
                     _configSources.Add($"Environment File ({SecretsFilePath})");
                 }
                 catch (Exception ex)
@@ -253,7 +254,7 @@ namespace PosKernel.Configuration
             {
                 "OPENAI_API_KEY",
                 "STORE_AI_PROVIDER",
-                "STORE_AI_MODEL", 
+                "STORE_AI_MODEL",
                 "STORE_AI_BASE_URL",
                 "TRAINING_AI_PROVIDER",
                 "TRAINING_AI_MODEL",
@@ -272,7 +273,7 @@ namespace PosKernel.Configuration
                     _configuration[envVar] = value;
                 }
             }
-            
+
             _configSources.Add("Environment Variables");
         }
 
@@ -280,9 +281,9 @@ namespace PosKernel.Configuration
         {
             // For now, we'll use a simple JSON parser as a placeholder for XferLang
             // TODO: Replace with actual XferLang parser when available
-            
+
             var result = new Dictionary<string, object>();
-            
+
             try
             {
                 // Try to parse as JSON first (for compatibility)
@@ -294,7 +295,7 @@ namespace PosKernel.Configuration
                 // If JSON parsing fails, try simple key-value parsing
                 ParseKeyValueFormat(content, result);
             }
-            
+
             return result;
         }
 
@@ -309,7 +310,7 @@ namespace PosKernel.Configuration
                         FlattenJsonElement(property.Value, result, key);
                     }
                     break;
-                    
+
                 case JsonValueKind.Array:
                     for (int i = 0; i < element.GetArrayLength(); i++)
                     {
@@ -317,7 +318,7 @@ namespace PosKernel.Configuration
                         FlattenJsonElement(element[i], result, key);
                     }
                     break;
-                    
+
                 default:
                     result[prefix] = element;
                     break;
@@ -327,7 +328,7 @@ namespace PosKernel.Configuration
         private void ParseKeyValueFormat(string content, Dictionary<string, object> result)
         {
             var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            
+
             foreach (var line in lines)
             {
                 var trimmed = line.Trim();
@@ -349,7 +350,7 @@ namespace PosKernel.Configuration
         private T? ConvertStringValue<T>(string stringValue)
         {
             var targetType = typeof(T);
-            
+
             if (targetType == typeof(bool) || targetType == typeof(bool?))
             {
                 if (bool.TryParse(stringValue, out var boolValue))
@@ -371,14 +372,14 @@ namespace PosKernel.Configuration
                     return (T)(object)doubleValue;
                 }
             }
-            
+
             return default;
         }
 
         private T? ConvertJsonElement<T>(JsonElement jsonElement)
         {
             var targetType = typeof(T);
-            
+
             if (targetType == typeof(string))
             {
                 return (T)(object)jsonElement.GetString()!;
@@ -395,7 +396,7 @@ namespace PosKernel.Configuration
             {
                 return (T)(object)jsonElement.GetDouble();
             }
-            
+
             return default;
         }
     }
@@ -420,8 +421,8 @@ namespace PosKernel.Configuration
         /// Gets the AI provider name for store operations.
         /// Uses STORE_AI_PROVIDER environment variable.
         /// </summary>
-        public string Provider => 
-            _config.GetValue<string>("STORE_AI_PROVIDER") ?? 
+        public string Provider =>
+            _config.GetValue<string>("STORE_AI_PROVIDER") ??
             throw new InvalidOperationException(
                 "DESIGN DEFICIENCY: Store AI provider not configured. " +
                 "Set STORE_AI_PROVIDER environment variable in ~/.poskernel/.env file. " +
@@ -431,8 +432,8 @@ namespace PosKernel.Configuration
         /// Gets the AI model name for store operations.
         /// Uses STORE_AI_MODEL environment variable.
         /// </summary>
-        public string Model => 
-            _config.GetValue<string>("STORE_AI_MODEL") ?? 
+        public string Model =>
+            _config.GetValue<string>("STORE_AI_MODEL") ??
             throw new InvalidOperationException(
                 "DESIGN DEFICIENCY: Store AI model not configured. " +
                 "Set STORE_AI_MODEL environment variable in ~/.poskernel/.env file. " +
@@ -442,8 +443,8 @@ namespace PosKernel.Configuration
         /// Gets the base URL for the AI service.
         /// Uses STORE_AI_BASE_URL environment variable.
         /// </summary>
-        public string BaseUrl => 
-            _config.GetValue<string>("STORE_AI_BASE_URL") ?? 
+        public string BaseUrl =>
+            _config.GetValue<string>("STORE_AI_BASE_URL") ??
             throw new InvalidOperationException(
                 "DESIGN DEFICIENCY: Store AI base URL not configured. " +
                 "Set STORE_AI_BASE_URL environment variable in ~/.poskernel/.env file. " +
@@ -511,7 +512,7 @@ namespace PosKernel.Configuration
             else
             {
                 mcpConfig.ApiKey = ApiKey;
-                
+
                 if (string.IsNullOrEmpty(mcpConfig.ApiKey))
                 {
                     throw new InvalidOperationException(
@@ -534,27 +535,27 @@ namespace PosKernel.Configuration
         /// Gets or sets the base URL for the MCP server.
         /// </summary>
         public string BaseUrl { get; set; } = "https://api.openai.com/v1";
-        
+
         /// <summary>
         /// Gets or sets the completion endpoint path.
         /// </summary>
         public string CompletionEndpoint { get; set; } = "chat/completions";
-        
+
         /// <summary>
         /// Gets or sets the API key for authentication.
         /// </summary>
         public string? ApiKey { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the request timeout in seconds.
         /// </summary>
         public int TimeoutSeconds { get; set; } = 30;
-        
+
         /// <summary>
         /// Gets or sets the default parameters sent with requests.
         /// </summary>
         public Dictionary<string, object> DefaultParameters { get; set; } = new();
-        
+
         /// <summary>
         /// Gets or sets the JSON serialization options.
         /// </summary>

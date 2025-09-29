@@ -45,7 +45,7 @@ namespace PosKernel.Client.Rust
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _options = options ?? new RustKernelClientOptions();
-            
+
             _httpClient = new HttpClient()
             {
                 BaseAddress = new Uri(_options.Address),
@@ -71,10 +71,10 @@ namespace PosKernel.Client.Rust
                 // Test connection with health check
                 var response = await _httpClient.GetAsync("/health", cancellationToken);
                 response.EnsureSuccessStatusCode();
-                
+
                 var healthJson = await response.Content.ReadAsStringAsync(cancellationToken);
                 var healthData = JsonSerializer.Deserialize<JsonElement>(healthJson);
-                
+
                 if (healthData.TryGetProperty("healthy", out var healthyProp) && healthyProp.GetBoolean())
                 {
                     _connected = true;
@@ -156,7 +156,7 @@ namespace PosKernel.Client.Rust
         }
 
         /// <inheritdoc/>
-        public async Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency = "USD", CancellationToken cancellationToken = default)
+        public async Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency, CancellationToken cancellationToken = default)
         {
             EnsureConnected();
 
@@ -167,7 +167,7 @@ namespace PosKernel.Client.Rust
                 // TEMPORARY FIX: Use hardcoded store name to bypass store configuration requirement
                 // TODO: Implement proper store configuration injection via constructor or factory
                 var storeName = "DEFAULT_STORE";
-                
+
                 var request = new
                 {
                     session_id = sessionId,
@@ -223,7 +223,7 @@ namespace PosKernel.Client.Rust
         {
             EnsureConnected();
 
-            _logger.LogDebug("Adding line item {ProductId} x{Quantity} @ {UnitPrice} to transaction {TransactionId}", 
+            _logger.LogDebug("Adding line item {ProductId} x{Quantity} @ {UnitPrice} to transaction {TransactionId}",
                 productId, quantity, unitPrice, transactionId);
 
             try
@@ -250,7 +250,7 @@ namespace PosKernel.Client.Rust
 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Line item added to transaction {TransactionId}, new total: {Total:C}", 
+                    _logger.LogInformation("Line item added to transaction {TransactionId}, new total: {Total:C}",
                         result.TransactionId, result.Total);
                 }
                 else
@@ -278,7 +278,7 @@ namespace PosKernel.Client.Rust
         {
             EnsureConnected();
 
-            _logger.LogDebug("Adding child line item {ProductId} x{Quantity} @ {UnitPrice} to transaction {TransactionId}, parent line {ParentLineNumber}", 
+            _logger.LogDebug("Adding child line item {ProductId} x{Quantity} @ {UnitPrice} to transaction {TransactionId}, parent line {ParentLineNumber}",
                 productId, quantity, unitPrice, transactionId, parentLineNumber);
 
             try
@@ -306,7 +306,7 @@ namespace PosKernel.Client.Rust
 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Child line item added to transaction {TransactionId}, new total: {Total:C}", 
+                    _logger.LogInformation("Child line item added to transaction {TransactionId}, new total: {Total:C}",
                         result.TransactionId, result.Total);
                 }
                 else
@@ -334,7 +334,7 @@ namespace PosKernel.Client.Rust
         {
             EnsureConnected();
 
-            _logger.LogDebug("Adding modification {ModificationId} x{Quantity} @ {UnitPrice:C} to line {ParentLineNumber} in transaction {TransactionId}", 
+            _logger.LogDebug("Adding modification {ModificationId} x{Quantity} @ {UnitPrice:C} to line {ParentLineNumber} in transaction {TransactionId}",
                 modificationId, quantity, unitPrice, parentLineNumber, transactionId);
 
             try
@@ -364,7 +364,7 @@ namespace PosKernel.Client.Rust
 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Modification {ModificationId} added to line {ParentLineNumber} in transaction {TransactionId}, new total: {Total:C}", 
+                    _logger.LogInformation("Modification {ModificationId} added to line {ParentLineNumber} in transaction {TransactionId}, new total: {Total:C}",
                         modificationId, parentLineNumber, result.TransactionId, result.Total);
                 }
                 else
@@ -431,7 +431,7 @@ namespace PosKernel.Client.Rust
 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Line item {LineNumber} voided from transaction {TransactionId}, new total: {Total:C}", 
+                    _logger.LogInformation("Line item {LineNumber} voided from transaction {TransactionId}, new total: {Total:C}",
                         lineNumber, result.TransactionId, result.Total);
                 }
                 else
@@ -459,7 +459,7 @@ namespace PosKernel.Client.Rust
         {
             EnsureConnected();
 
-            _logger.LogDebug("Updating line item {LineNumber} quantity to {NewQuantity} in transaction {TransactionId}", 
+            _logger.LogDebug("Updating line item {LineNumber} quantity to {NewQuantity} in transaction {TransactionId}",
                 lineNumber, newQuantity, transactionId);
 
             try
@@ -493,7 +493,7 @@ namespace PosKernel.Client.Rust
 
                 if (result.Success)
                 {
-                    _logger.LogInformation("Line item {LineNumber} quantity updated to {NewQuantity} in transaction {TransactionId}, new total: {Total:C}", 
+                    _logger.LogInformation("Line item {LineNumber} quantity updated to {NewQuantity} in transaction {TransactionId}, new total: {Total:C}",
                         lineNumber, newQuantity, result.TransactionId, result.Total);
                 }
                 else
@@ -521,7 +521,7 @@ namespace PosKernel.Client.Rust
         {
             EnsureConnected();
 
-            _logger.LogDebug("Processing {PaymentType} payment of {Amount:C} for transaction {TransactionId}", 
+            _logger.LogDebug("Processing {PaymentType} payment of {Amount:C} for transaction {TransactionId}",
                 paymentType, amount, transactionId);
 
             try
@@ -557,7 +557,7 @@ namespace PosKernel.Client.Rust
                 if (result.Success)
                 {
                     var change = responseData.TryGetProperty("change", out var changeProp) ? (decimal)changeProp.GetDouble() : 0;
-                    _logger.LogInformation("Payment processed for transaction {TransactionId}, change due: {Change:C}", 
+                    _logger.LogInformation("Payment processed for transaction {TransactionId}, change due: {Change:C}",
                         result.TransactionId, change);
                 }
                 else
@@ -584,21 +584,21 @@ namespace PosKernel.Client.Rust
         public async Task<TransactionClientResult> GetTransactionAsync(string sessionId, string transactionId, CancellationToken cancellationToken = default)
         {
             EnsureConnected();
-            
-            try 
+
+            try
             {
                 var response = await _httpClient.GetAsync($"/api/sessions/{sessionId}/transactions/{transactionId}", cancellationToken);
                 response.EnsureSuccessStatusCode();
-                
+
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                
+
                 // CRITICAL DEBUG: Log the actual JSON response from the Rust service
                 _logger.LogInformation("RUST_SERVICE_JSON: Raw response length: {Length} characters", json.Length);
                 _logger.LogInformation("RUST_SERVICE_JSON: Content: {JsonContent}", json);
-                
+
                 // Parse the JSON response to get transaction details
                 var transactionResponse = ParseTransactionResponse(json);
-                
+
                 if (!transactionResponse.Success)
                 {
                     return new TransactionClientResult
@@ -609,7 +609,7 @@ namespace PosKernel.Client.Rust
                         TransactionId = transactionId
                     };
                 }
-                
+
                 // CRITICAL FIX: Properly populate LineItems from the Rust service response with NRF parent-child relationships
                 var result = new TransactionClientResult
                 {
@@ -634,28 +634,28 @@ namespace PosKernel.Client.Rust
                         Metadata = new Dictionary<string, string>()
                     }).ToList() ?? new List<TransactionLineItem>()
                 };
-                
-                _logger.LogInformation("Retrieved transaction {TransactionId} with {LineCount} line items, total: {Total}", 
+
+                _logger.LogInformation("Retrieved transaction {TransactionId} with {LineCount} line items, total: {Total}",
                     result.TransactionId, result.LineItems.Count, result.Total);
-                
+
                 // CRITICAL DEBUG: Log the actual line items being returned
                 foreach (var item in result.LineItems)
                 {
-                    _logger.LogInformation("LineItem: Line {LineNumber}, Product: {ProductId}, Qty: {Quantity}, Unit: {UnitPrice}, Extended: {ExtendedPrice}", 
+                    _logger.LogInformation("LineItem: Line {LineNumber}, Product: {ProductId}, Qty: {Quantity}, Unit: {UnitPrice}, Extended: {ExtendedPrice}",
                         item.LineNumber, item.ProductId, item.Quantity, item.UnitPrice, item.ExtendedPrice);
                 }
-                
+
                 // CRITICAL DEBUG: Log the parsed TransactionResponse to see if line items made it through JSON parsing
                 _logger.LogInformation("TRANSACTION_RESPONSE_DEBUG: LineItems count from JSON: {Count}", transactionResponse.LineItems?.Count ?? 0);
                 if (transactionResponse.LineItems != null)
                 {
                     foreach (var jsonItem in transactionResponse.LineItems)
                     {
-                        _logger.LogInformation("JSON_LINEITEM: Line {LineNumber}, ProductId: {ProductId}, Qty: {Quantity}, UnitPrice: {UnitPrice}", 
+                        _logger.LogInformation("JSON_LINEITEM: Line {LineNumber}, ProductId: {ProductId}, Qty: {Quantity}, UnitPrice: {UnitPrice}",
                             jsonItem.LineNumber, jsonItem.ProductId, jsonItem.Quantity, jsonItem.UnitPrice);
                     }
                 }
-                
+
                 return result;
             }
             catch (HttpRequestException ex) when (ex.Message.Contains("404"))
@@ -685,7 +685,7 @@ namespace PosKernel.Client.Rust
         public async Task CloseSessionAsync(string sessionId, CancellationToken cancellationToken = default)
         {
             EnsureConnected();
-            
+
             _logger.LogDebug("Closing session {SessionId}", sessionId);
 
             try
@@ -693,7 +693,7 @@ namespace PosKernel.Client.Rust
                 // Send close session request - assuming the service has this endpoint
                 var response = await _httpClient.DeleteAsync($"/api/sessions/{sessionId}", cancellationToken);
                 response.EnsureSuccessStatusCode();
-                
+
                 _logger.LogInformation("Session {SessionId} closed successfully", sessionId);
             }
             catch (Exception ex)
@@ -710,28 +710,28 @@ namespace PosKernel.Client.Rust
                 // CRITICAL DEBUG: Log the actual JSON response from the Rust service
                 _logger.LogInformation("RUST_SERVICE_JSON: Raw response length: {Length} characters", json.Length);
                 _logger.LogInformation("RUST_SERVICE_JSON: Content: {JsonContent}", json);
-                
+
                 var options = new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
                 };
-                
-                var result = JsonSerializer.Deserialize<TransactionResponse>(json, options) 
+
+                var result = JsonSerializer.Deserialize<TransactionResponse>(json, options)
                     ?? throw new InvalidOperationException("Failed to deserialize transaction response");
-                
+
                 // CRITICAL DEBUG: Log what was actually deserialized
-                _logger.LogInformation("RUST_SERVICE_PARSED: Success: {Success}, LineItems count: {Count}, Total: {Total}", 
+                _logger.LogInformation("RUST_SERVICE_PARSED: Success: {Success}, LineItems count: {Count}, Total: {Total}",
                     result.Success, result.LineItems?.Count ?? 0, result.Total);
-                
+
                 if (result.LineItems != null)
                 {
                     foreach (var item in result.LineItems)
                     {
-                        _logger.LogInformation("RUST_SERVICE_LINEITEM: Line {LineNumber}, ProductId: {ProductId}, Qty: {Quantity}, UnitPrice: {UnitPrice}", 
+                        _logger.LogInformation("RUST_SERVICE_LINEITEM: Line {LineNumber}, ProductId: {ProductId}, Qty: {Quantity}, UnitPrice: {UnitPrice}",
                             item.LineNumber, item.ProductId, item.Quantity, item.UnitPrice);
                     }
                 }
-                
+
                 return result;
             }
             catch (Exception ex)
@@ -770,18 +770,18 @@ namespace PosKernel.Client.Rust
                     {
                         LineItemId = item.TryGetProperty("line_item_id", out var lineItemIdProp) ? lineItemIdProp.GetString() ?? "" : "", // ARCHITECTURAL FIX: Map stable ID
                         LineNumber = item.TryGetProperty("line_number", out var lineNumProp) ? lineNumProp.GetInt32() : 0,
-                        ParentLineNumber = item.TryGetProperty("parent_line_number", out var parentProp) && parentProp.ValueKind != JsonValueKind.Null 
-                            ? parentProp.GetInt32() 
+                        ParentLineNumber = item.TryGetProperty("parent_line_number", out var parentProp) && parentProp.ValueKind != JsonValueKind.Null
+                            ? parentProp.GetInt32()
                             : 0, // NRF COMPLIANCE: Read parent relationship from JSON
                         ProductId = item.TryGetProperty("product_id", out var prodProp) ? prodProp.GetString() ?? "" : "",
-                        ItemType = DetermineLineItemType(item.TryGetProperty("parent_line_number", out var parentTypeProp) && parentTypeProp.ValueKind != JsonValueKind.Null 
-                            ? (uint)parentTypeProp.GetInt32() 
+                        ItemType = DetermineLineItemType(item.TryGetProperty("parent_line_number", out var parentTypeProp) && parentTypeProp.ValueKind != JsonValueKind.Null
+                            ? (uint)parentTypeProp.GetInt32()
                             : null),
                         Quantity = item.TryGetProperty("quantity", out var qtyProp) ? qtyProp.GetInt32() : 0,
                         UnitPrice = item.TryGetProperty("unit_price", out var unitProp) ? (decimal)unitProp.GetDouble() : 0,
                         ExtendedPrice = item.TryGetProperty("extended_price", out var extProp) ? (decimal)extProp.GetDouble() : 0,
-                        DisplayIndentLevel = DetermineIndentLevel(item.TryGetProperty("parent_line_number", out var parentIndentProp) && parentIndentProp.ValueKind != JsonValueKind.Null 
-                            ? (uint)parentIndentProp.GetInt32() 
+                        DisplayIndentLevel = DetermineIndentLevel(item.TryGetProperty("parent_line_number", out var parentIndentProp) && parentIndentProp.ValueKind != JsonValueKind.Null
+                            ? (uint)parentIndentProp.GetInt32()
                             : null),
                         IsVoided = false, // TODO: Add void status from service when available
                         VoidReason = null,
@@ -816,7 +816,7 @@ namespace PosKernel.Client.Rust
             public double Tendered { get; set; }
             public double Change { get; set; }
             public string State { get; set; } = "";
-            
+
             // CRITICAL FIX: Add JsonPropertyName to match the snake_case JSON from Rust service
             [System.Text.Json.Serialization.JsonPropertyName("line_items")]
             public List<LineItemDto> LineItems { get; set; } = new();
@@ -827,21 +827,21 @@ namespace PosKernel.Client.Rust
             // CRITICAL FIX: Add JsonPropertyName attributes to match Rust JSON format
             [System.Text.Json.Serialization.JsonPropertyName("line_item_id")]
             public string LineItemId { get; set; } = "";
-            
+
             [System.Text.Json.Serialization.JsonPropertyName("line_number")]
             public int LineNumber { get; set; }
-            
+
             [System.Text.Json.Serialization.JsonPropertyName("product_id")]
             public string ProductId { get; set; } = "";
-            
+
             public int Quantity { get; set; }
-            
+
             [System.Text.Json.Serialization.JsonPropertyName("unit_price")]
             public double UnitPrice { get; set; }
-            
+
             [System.Text.Json.Serialization.JsonPropertyName("extended_price")]
             public double ExtendedPrice { get; set; }
-            
+
             [System.Text.Json.Serialization.JsonPropertyName("parent_line_number")]
             public uint? ParentLineNumber { get; set; } // NRF COMPLIANCE: Use parent_line_number field from Rust
         }
@@ -888,7 +888,7 @@ namespace PosKernel.Client.Rust
             if (!_disposed)
             {
                 _logger.LogDebug("Disposing RustKernelClient");
-                
+
                 try
                 {
                     DisconnectAsync().Wait();
@@ -907,7 +907,7 @@ namespace PosKernel.Client.Rust
         public Task<object> GetStoreConfigAsync(CancellationToken cancellationToken = default)
         {
             EnsureConnected();
-            
+
             // ARCHITECTURAL FIX: FAIL FAST - No hardcoded store configuration
             throw new InvalidOperationException(
                 "DESIGN DEFICIENCY: Store configuration must come from proper configuration service. " +
@@ -920,15 +920,15 @@ namespace PosKernel.Client.Rust
         /// Adds a modification to a specific line item by its ID (for NRF-compliant hierarchical modifications)
         /// </summary>
         public async Task<TransactionClientResult> AddModificationByLineItemIdAsync(
-            string sessionId, 
-            string transactionId, 
-            string lineItemId, 
-            string modificationSku, 
-            int quantity, 
-            decimal unitPrice, 
+            string sessionId,
+            string transactionId,
+            string lineItemId,
+            string modificationSku,
+            int quantity,
+            decimal unitPrice,
             CancellationToken cancellationToken = default)
         {
-            try 
+            try
             {
                 var requestBody = new
                 {
@@ -952,9 +952,9 @@ namespace PosKernel.Client.Rust
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogError("Failed to add modification to line item {LineItemId}: {StatusCode} - {Content}", 
+                    _logger.LogError("Failed to add modification to line item {LineItemId}: {StatusCode} - {Content}",
                         lineItemId, response.StatusCode, responseContent);
-                    
+
                     return new TransactionClientResult
                     {
                         Success = false,
@@ -1000,11 +1000,11 @@ namespace PosKernel.Client.Rust
         /// Modifies a line item by its ID (for NRF-compliant hierarchical modifications)
         /// </summary>
         public async Task<TransactionClientResult> ModifyLineItemByIdAsync(
-            string sessionId, 
-            string transactionId, 
-            string lineItemId, 
-            string modificationType, 
-            string newValue, 
+            string sessionId,
+            string transactionId,
+            string lineItemId,
+            string modificationType,
+            string newValue,
             CancellationToken cancellationToken = default)
         {
             try
@@ -1075,10 +1075,10 @@ namespace PosKernel.Client.Rust
         /// Voids a line item by its ID (for NRF-compliant hierarchical modifications)
         /// </summary>
         public async Task<TransactionClientResult> VoidLineItemByIdAsync(
-            string sessionId, 
-            string transactionId, 
-            string lineItemId, 
-            string reason, 
+            string sessionId,
+            string transactionId,
+            string lineItemId,
+            string reason,
             CancellationToken cancellationToken = default)
         {
             try

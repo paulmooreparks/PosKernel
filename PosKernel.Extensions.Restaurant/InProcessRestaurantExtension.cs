@@ -57,7 +57,7 @@ namespace PosKernel.Extensions.Restaurant
 
         /// <inheritdoc/>
         public async Task<ProductValidationResult> ValidateProductAsync(
-            string productId, 
+            string productId,
             string storeId = "STORE_DEFAULT",
             string terminalId = "TERMINAL_01",
             string operatorId = "SYSTEM",
@@ -71,7 +71,7 @@ namespace PosKernel.Extensions.Restaurant
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                FROM products p 
+                FROM products p
                 JOIN categories c ON p.category_id = c.id
                 WHERE p.sku = @productId OR p.name LIKE '%' || @productId || '%'
                 LIMIT 1";
@@ -107,7 +107,7 @@ namespace PosKernel.Extensions.Restaurant
 
         /// <inheritdoc/>
         public async Task<List<ProductInfo>> SearchProductsAsync(
-            string searchTerm, 
+            string searchTerm,
             int maxResults = 50,
             CancellationToken cancellationToken = default)
         {
@@ -117,13 +117,13 @@ namespace PosKernel.Extensions.Restaurant
             await connection.OpenAsync(cancellationToken);
 
             using var command = connection.CreateCommand();
-            
+
             if (string.IsNullOrEmpty(searchTerm))
             {
                 // Return all products
                 command.CommandText = @"
                     SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                    FROM products p 
+                    FROM products p
                     JOIN categories c ON p.category_id = c.id
                     WHERE p.is_active = 1
                     ORDER BY p.popularity_rank, p.name
@@ -134,15 +134,15 @@ namespace PosKernel.Extensions.Restaurant
                 // Search by term
                 command.CommandText = @"
                     SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                    FROM products p 
+                    FROM products p
                     JOIN categories c ON p.category_id = c.id
-                    WHERE p.is_active = 1 
-                    AND (p.sku LIKE '%' || @searchTerm || '%' 
-                         OR p.name LIKE '%' || @searchTerm || '%' 
+                    WHERE p.is_active = 1
+                    AND (p.sku LIKE '%' || @searchTerm || '%'
+                         OR p.name LIKE '%' || @searchTerm || '%'
                          OR p.description LIKE '%' || @searchTerm || '%'
                          OR c.name LIKE '%' || @searchTerm || '%')
-                    ORDER BY 
-                        CASE 
+                    ORDER BY
+                        CASE
                             WHEN p.name LIKE @searchTerm || '%' THEN 1
                             WHEN p.name LIKE '%' || @searchTerm || '%' THEN 2
                             ELSE 3
@@ -152,12 +152,12 @@ namespace PosKernel.Extensions.Restaurant
                     LIMIT @maxResults";
                 command.Parameters.AddWithValue("@searchTerm", searchTerm);
             }
-            
+
             command.Parameters.AddWithValue("@maxResults", maxResults);
 
             var products = new List<ProductInfo>();
             using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            
+
             while (await reader.ReadAsync(cancellationToken))
             {
                 products.Add(new ProductInfo
@@ -185,7 +185,7 @@ namespace PosKernel.Extensions.Restaurant
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                FROM products p 
+                FROM products p
                 JOIN categories c ON p.category_id = c.id
                 WHERE p.is_active = 1
                 ORDER BY p.popularity_rank, c.display_order, p.name
@@ -193,7 +193,7 @@ namespace PosKernel.Extensions.Restaurant
 
             var products = new List<ProductInfo>();
             using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            
+
             while (await reader.ReadAsync(cancellationToken))
             {
                 products.Add(new ProductInfo
@@ -212,7 +212,7 @@ namespace PosKernel.Extensions.Restaurant
 
         /// <inheritdoc/>
         public async Task<List<ProductInfo>> GetCategoryProductsAsync(
-            string category, 
+            string category,
             CancellationToken cancellationToken = default)
         {
             await EnsureDatabaseInitializedAsync(cancellationToken);
@@ -223,7 +223,7 @@ namespace PosKernel.Extensions.Restaurant
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                FROM products p 
+                FROM products p
                 JOIN categories c ON p.category_id = c.id
                 WHERE p.is_active = 1 AND (c.name = @category OR c.id = @category)
                 ORDER BY p.popularity_rank, p.name";
@@ -231,7 +231,7 @@ namespace PosKernel.Extensions.Restaurant
 
             var products = new List<ProductInfo>();
             using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            
+
             while (await reader.ReadAsync(cancellationToken))
             {
                 products.Add(new ProductInfo
@@ -259,13 +259,13 @@ namespace PosKernel.Extensions.Restaurant
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT name
-                FROM categories 
+                FROM categories
                 WHERE is_active = 1
                 ORDER BY display_order, name";
 
             var categories = new List<string>();
             using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            
+
             while (await reader.ReadAsync(cancellationToken))
             {
                 categories.Add(reader.GetString(0));
@@ -293,14 +293,14 @@ namespace PosKernel.Extensions.Restaurant
 
             // Check if database exists and is initialized
             var dbExists = File.Exists(_databasePath);
-            
+
             using var connection = new SqliteConnection($"Data Source={_databasePath}");
             await connection.OpenAsync(cancellationToken);
 
             if (!dbExists || await IsEmptyDatabaseAsync(connection, cancellationToken))
             {
                 _logger.LogInformation("Initializing restaurant catalog database: {DatabasePath}", _databasePath);
-                
+
                 // Read and execute schema script
                 var schemaPath = FindSchemaFile();
                 if (File.Exists(schemaPath))
@@ -334,12 +334,12 @@ namespace PosKernel.Extensions.Restaurant
                 using var command = connection.CreateCommand();
                 command.CommandText = "PRAGMA integrity_check";
                 var result = command.ExecuteScalar()?.ToString();
-                
+
                 if (result != "ok")
                 {
                     throw new InvalidOperationException($"Database integrity check failed: {result}");
                 }
-                
+
                 _logger.LogInformation("Database integrity verified: {DatabasePath}", _databasePath);
             }
         }
@@ -356,7 +356,7 @@ namespace PosKernel.Extensions.Restaurant
         {
             // Split SQL by semicolon and execute each statement
             var statements = sql.Split(';', StringSplitOptions.RemoveEmptyEntries);
-            
+
             foreach (var statement in statements)
             {
                 var trimmedStatement = statement.Trim();
@@ -411,6 +411,33 @@ namespace PosKernel.Extensions.Restaurant
             }
 
             return Path.Combine("data", "catalog", "restaurant_catalog_data.sql");
+        }
+
+        /// <inheritdoc />
+        public Task<SetDefinition?> GetSetDefinitionAsync(string productSku, CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
+            throw new NotImplementedException(
+                "DESIGN DEFICIENCY: Set definition queries not implemented in InProcessRestaurantExtension. " +
+                "Implement database queries for set_definitions table to support set functionality.");
+        }
+
+        /// <inheritdoc />
+        public Task<List<SetAvailableDrink>?> GetSetAvailableDrinksAsync(string setSku, CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
+            throw new NotImplementedException(
+                "DESIGN DEFICIENCY: Set available drinks queries not implemented in InProcessRestaurantExtension. " +
+                "Implement database queries for set_available_drinks table to support set drink customization.");
+        }
+
+        /// <inheritdoc />
+        public Task<List<SetAvailableSide>?> GetSetAvailableSidesAsync(string setSku, CancellationToken cancellationToken = default)
+        {
+            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
+            throw new NotImplementedException(
+                "DESIGN DEFICIENCY: Set available sides queries not implemented in InProcessRestaurantExtension. " +
+                "Implement database queries for set_available_sides table to support set side customization.");
         }
 
         /// <summary>

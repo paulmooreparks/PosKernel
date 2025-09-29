@@ -45,7 +45,7 @@ namespace PosKernel.AI.Tools
         private ICurrencyFormattingService? _currencyFormatter;
         private StoreConfig? _storeConfig;
         private readonly object _sessionLock = new();
-        
+
         private string? _sessionId;
         private string? _currentTransactionId;
         private bool _disposed = false;
@@ -63,7 +63,7 @@ namespace PosKernel.AI.Tools
             _configuration = configuration;
             _currencyFormatter = null;
             _storeConfig = null;
-            
+
             _kernelClient = PosKernelClientFactory.CreateClient(_logger, configuration);
             _logger.LogInformation("🚀 KernelPosToolsProvider initialized with kernel auto-detection");
         }
@@ -84,12 +84,12 @@ namespace PosKernel.AI.Tools
             _storeConfig = storeConfig ?? throw new ArgumentNullException(nameof(storeConfig));
             _configuration = configuration;
             _currencyFormatter = currencyFormatter;
-            
+
             // ARCHITECTURAL PRINCIPLE: Validate store configuration completeness at construction time
             ValidateStoreConfiguration(storeConfig);
-            
+
             _kernelClient = PosKernelClientFactory.CreateClient(_logger, kernelType, configuration);
-            _logger.LogInformation("🚀 KernelPosToolsProvider initialized with {KernelType} kernel and store: {StoreName} ({Currency})", 
+            _logger.LogInformation("🚀 KernelPosToolsProvider initialized with {KernelType} kernel and store: {StoreName} ({Currency})",
                 kernelType, storeConfig.StoreName, storeConfig.Currency);
         }
 
@@ -123,7 +123,7 @@ namespace PosKernel.AI.Tools
                     var operatorId = _storeConfig.AdditionalConfig?.GetValueOrDefault("operator_id", "AI_ASSISTANT")?.ToString() ?? "AI_ASSISTANT";
 
                     _sessionId = await _kernelClient.CreateSessionAsync(terminalId, operatorId, cancellationToken);
-                    _logger.LogInformation("Created kernel session: {SessionId} for terminal: {TerminalId}, operator: {OperatorId}", 
+                    _logger.LogInformation("Created kernel session: {SessionId} for terminal: {TerminalId}, operator: {OperatorId}",
                         _sessionId, terminalId, operatorId);
                 }
                 else
@@ -170,7 +170,7 @@ namespace PosKernel.AI.Tools
             }
 
             var currency = _storeConfig.Currency;
-            
+
             var result = await _kernelClient.StartTransactionAsync(_sessionId!, currency, cancellationToken);
             if (!result.Success)
             {
@@ -178,9 +178,9 @@ namespace PosKernel.AI.Tools
             }
 
             _currentTransactionId = result.TransactionId!;
-            _logger.LogInformation("Started new transaction: {TransactionId} with currency: {Currency}", 
+            _logger.LogInformation("Started new transaction: {TransactionId} with currency: {Currency}",
                 _currentTransactionId, currency);
-            
+
             return _currentTransactionId;
         }
 
@@ -193,7 +193,7 @@ namespace PosKernel.AI.Tools
             {
                 return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreName);
             }
-            
+
             // FAIL FAST - No fallback formatting
             throw new InvalidOperationException(
                 $"DESIGN DEFICIENCY: Currency formatting service not available. " +
@@ -450,15 +450,24 @@ namespace PosKernel.AI.Tools
             }
         };
 
-        // RESTORED: Execute get_set_configuration (simple informational placeholder)
+        // Execute get_set_configuration - fail fast if not properly implemented
         private Task<string> ExecuteGetSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
-            if (toolCall.Arguments.TryGetValue("product_sku", out var skuEl))
+            if (!toolCall.Arguments.TryGetValue("product_sku", out var skuEl))
             {
-                var sku = skuEl.GetString() ?? string.Empty;
-                return Task.FromResult($"PRODUCT_INFO: {sku} configuration requires restaurant extension schema. Use update_set_configuration with drink/side selections.");
+                return Task.FromResult("ERROR: product_sku parameter required for get_set_configuration");
             }
-            return Task.FromResult("ERROR: product_sku parameter required for get_set_configuration");
+
+            var sku = skuEl.GetString() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(sku))
+            {
+                return Task.FromResult("ERROR: product_sku parameter is empty");
+            }
+
+            // ARCHITECTURAL FIX: Fail fast rather than providing misleading defaults
+            return Task.FromResult($"DESIGN_DEFICIENCY: Set configuration for {sku} requires database integration. " +
+                                 "The restaurant extension must implement GetSetDefinitionAsync, GetSetAvailableDrinksAsync, and GetSetAvailableSidesAsync methods " +
+                                 "to query the actual set_definitions, set_available_drinks, and set_available_sides tables.");
         }
 
         private async Task<string> ExecuteInterpretOrderPhraseAsync(McpToolCall toolCall, CancellationToken cancellationToken)
@@ -491,8 +500,9 @@ namespace PosKernel.AI.Tools
                 return $"INTERPRETATION_FAILED: No base match for '{phrase}' (normalized='{basePart}')";
             }
 
-            // Choose best match by name starts-with, else first
-            var product = products.OrderBy(p => p.Name.StartsWith(basePart, StringComparison.OrdinalIgnoreCase) ? 0 : 1).First();
+            // ARCHITECTURAL FIX: Use first product for now - should use AI semantic matching
+            // TODO: Replace with ISemanticMatchingService for intelligent product selection
+            var product = products.First();
 
             var sb = new StringBuilder();
             sb.Append("INTERPRETED: ");
@@ -627,9 +637,9 @@ namespace PosKernel.AI.Tools
                     }
                 }
 
-                bool isSetProduct = product.Sku.StartsWith("TSET", StringComparison.OrdinalIgnoreCase)
-                                    || product.Sku.Contains("SET", StringComparison.OrdinalIgnoreCase)
-                                    || product.Name?.IndexOf("set", StringComparison.OrdinalIgnoreCase) >= 0;
+                // ARCHITECTURAL FIX: Use proper business attributes instead of hardcoded English assumptions
+                bool isSetProduct = product.Specifications.ContainsKey("is_set") &&
+                                   product.Specifications["is_set"].ToString()?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
 
                 if (isSetProduct)
                 {
@@ -727,9 +737,9 @@ namespace PosKernel.AI.Tools
             {
                 return;
             }
-            
+
             // Kernel tools require structured modification requests
-            // Expected format: "MOD_SKU:Description|MOD_SKU2:Description2" 
+            // Expected format: "MOD_SKU:Description|MOD_SKU2:Description2"
             var modificationRequests = ParseStructuredModifications(notes);
             if (!modificationRequests.Any())
             {
@@ -758,25 +768,28 @@ namespace PosKernel.AI.Tools
                 try
                 {
                     // Prevent duplicate addition of the same modification under the same parent
-                    var alreadyExists = txn.LineItems?.Any(li => li.ParentLineNumber == parent.LineNumber && li.ProductId.Equals(modSku, StringComparison.OrdinalIgnoreCase)) == true;
+                    var parentLineNumber = parent?.LineNumber ?? 0;
+                    var alreadyExists = txn.LineItems?.Any(li => li.ParentLineNumber == parentLineNumber &&
+                        !string.IsNullOrEmpty(li.ProductId) && li.ProductId.Equals(modSku, StringComparison.OrdinalIgnoreCase)) == true;
                     if (alreadyExists)
                     {
-                        _logger.LogInformation("⏭️  SKIP_DUPLICATE_MODIFICATION: {ModSku} already present under parent line {ParentLine}", modSku, parent.LineNumber);
+                        _logger.LogInformation("⏭️  SKIP_DUPLICATE_MODIFICATION: {ModSku} already present under parent line {ParentLine}",
+                            modSku, parentLineNumber);
                         continue;
                     }
 
                     var modResult = await _kernelClient.AddModificationByLineItemIdAsync(
-                        _sessionId!,
+                        _sessionId ?? throw new InvalidOperationException("Session ID cannot be null"),
                         transactionId,
                         parentLineItemId,
                         modSku,
                         1,
                         0.0m,
                         cancellationToken);
-                    
+
                     if (modResult.Success)
                     {
-                        _logger.LogInformation("✅ NRF_MODIFICATION: Added {ModSku} ({Description}) as child of line item {ParentLineItemId}", 
+                        _logger.LogInformation("✅ NRF_MODIFICATION: Added {ModSku} ({Description}) as child of line item {ParentLineItemId}",
                             modSku, description, parentLineItemId);
 
                         // Refresh transaction snapshot for subsequent dedup checks
@@ -793,10 +806,10 @@ namespace PosKernel.AI.Tools
                     _logger.LogError(ex, "❌ Exception adding modification {ModSku} to line item {ParentLineItemId}", modSku, parentLineItemId);
                 }
             }
-            
+
             if (modificationRequests.Any())
             {
-                _logger.LogInformation("🎯 NRF_COMPLIANCE: Processed {Count} structured modifications: '{Notes}'", 
+                _logger.LogInformation("🎯 NRF_COMPLIANCE: Processed {Count} structured modifications: '{Notes}'",
                     modificationRequests.Count, preparationNotes);
             }
         }
@@ -804,14 +817,14 @@ namespace PosKernel.AI.Tools
         private List<(string ModSku, string Description)> ParseStructuredModifications(string modificationString)
         {
             var modifications = new List<(string ModSku, string Description)>();
-            
+
             if (string.IsNullOrEmpty(modificationString))
             {
                 return modifications;
             }
-            
+
             var modificationPairs = modificationString.Split('|', StringSplitOptions.RemoveEmptyEntries);
-            
+
             foreach (var pair in modificationPairs)
             {
                 var parts = pair.Split(':', 2, StringSplitOptions.RemoveEmptyEntries);
@@ -819,7 +832,7 @@ namespace PosKernel.AI.Tools
                 {
                     var modSku = parts[0].Trim();
                     var description = parts[1].Trim();
-                    
+
                     if (!string.IsNullOrEmpty(modSku) && !string.IsNullOrEmpty(description))
                     {
                         modifications.Add((modSku, description));
@@ -831,7 +844,7 @@ namespace PosKernel.AI.Tools
                     _logger.LogWarning("⚠️  MALFORMED_MODIFICATION: Could not parse '{Pair}' - expected format 'MOD_SKU:Description'", pair);
                 }
             }
-            
+
             return modifications;
         }
 
@@ -908,7 +921,7 @@ namespace PosKernel.AI.Tools
                 var hasTargetLineNumber = toolCall.Arguments.TryGetValue("target_line_number", out var tlnEl);
                 var targetLineNumber = hasTargetLineNumber ? tlnEl.GetInt32() : 0;
                 var expectedSku = toolCall.Arguments.TryGetValue("expected_sku", out var esEl) ? esEl.GetString() : null;
-                
+
                 try
                 {
                     var transactionId = await EnsureTransactionAsync(cancellationToken);
@@ -1183,17 +1196,17 @@ namespace PosKernel.AI.Tools
             try
             {
                 var products = await _restaurantClient.GetPopularItemsAsync(cancellationToken);
-                
+
                 var results = new StringBuilder();
                 results.AppendLine($"POPULAR_ITEMS: {products.Count} popular items:");
                 results.AppendLine();
-                
+
                 foreach (var product in products.Take(count))
                 {
                     results.AppendLine($"- {product.Sku}");
                     // Additional product details would come from ProductInfo properties when available
                 }
-                
+
                 return results.ToString();
             }
             catch (Exception ex)
@@ -1217,29 +1230,29 @@ namespace PosKernel.AI.Tools
             {
                 var categories = await _restaurantClient.GetCategoriesAsync(cancellationToken);
                 var allProducts = new List<RestaurantProductInfo>();
-                
+
                 foreach (var category in categories)
                 {
                     var categoryProducts = await _restaurantClient.GetCategoryProductsAsync(category, cancellationToken);
                     allProducts.AddRange(categoryProducts);
                 }
-                
+
                 var results = new StringBuilder();
                 results.AppendLine($"MENU_CONTEXT: Complete menu with {categories.Count} categories and {allProducts.Count} items:");
                 results.AppendLine();
-                
+
                 foreach (var category in categories)
                 {
                     results.AppendLine($"**{category.ToUpper()}**");
                     var categoryProducts = allProducts.Where(p => p.Sku.Contains(category, StringComparison.OrdinalIgnoreCase));
-                    
+
                     foreach (var product in categoryProducts)
                     {
                         results.AppendLine($"- {product.Sku}");
                         // Additional product details would come from ProductInfo properties when available
                     }
                 }
-                
+
                 return results.ToString();
             }
             catch (Exception ex)
@@ -1257,7 +1270,7 @@ namespace PosKernel.AI.Tools
             {
                 var transactionId = await EnsureTransactionAsync(cancellationToken);
                 var result = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
-                
+
                 if (!result.Success)
                 {
                     throw new InvalidOperationException($"Failed to get transaction total: {result.Error}");
@@ -1324,7 +1337,7 @@ namespace PosKernel.AI.Tools
             try
             {
                 var transactionId = await EnsureTransactionAsync(cancellationToken);
-                
+
                 // If amount not specified, use transaction total
                 if (amount <= 0)
                 {
@@ -1334,7 +1347,7 @@ namespace PosKernel.AI.Tools
                         amount = txn.Total;
                     }
                 }
-                
+
                 // ARCHITECTURAL PRINCIPLE: Use real kernel to process payment
                 var result = await _kernelClient.ProcessPaymentAsync(
                     _sessionId!,
@@ -1419,7 +1432,7 @@ namespace PosKernel.AI.Tools
                 if (storeConfigObj is StoreConfig sc)
                 {
                     _storeConfig = sc;
-                    _logger.LogInformation("🔄 Updated store configuration from kernel: {StoreName} ({Currency})", 
+                    _logger.LogInformation("🔄 Updated store configuration from kernel: {StoreName} ({Currency})",
                         _storeConfig.StoreName, _storeConfig.Currency);
                 }
             }

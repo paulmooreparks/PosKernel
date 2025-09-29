@@ -70,7 +70,7 @@ namespace PosKernel.Client
                 _logger.LogInformation("Connecting to POS Kernel Service on pipe: {PipeName}", _options.PipeName);
 
                 _pipeClient = new NamedPipeClientStream(".", _options.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-                
+
                 using var timeoutCts = new CancellationTokenSource(_options.ConnectionTimeoutMs);
                 using var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
@@ -109,7 +109,7 @@ namespace PosKernel.Client
                 _pipeClient = null;
 
                 _logger.LogInformation("Disconnected from POS Kernel Service");
-                
+
                 // Add await to fix CS1998 warning
                 await Task.CompletedTask;
             }
@@ -156,7 +156,7 @@ namespace PosKernel.Client
             };
 
             var response = await SendRequestAsync<dynamic>(request, cancellationToken);
-            
+
             if (response?.session_id is string sessionId)
             {
                 return sessionId;
@@ -172,7 +172,7 @@ namespace PosKernel.Client
         /// <param name="currency">The transaction currency (default: USD).</param>
         /// <param name="cancellationToken">Token to cancel the operation.</param>
         /// <returns>The result of the start transaction operation.</returns>
-        public async Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency = "USD", CancellationToken cancellationToken = default)
+        public async Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency, CancellationToken cancellationToken = default)
         {
             var request = new
             {
@@ -497,7 +497,7 @@ namespace PosKernel.Client
                 }
                 catch (Exception ex) when (attempt < _options.MaxRetryAttempts)
                 {
-                    _logger.LogWarning(ex, "Request failed, attempt {Attempt}/{MaxAttempts}, retrying...", 
+                    _logger.LogWarning(ex, "Request failed, attempt {Attempt}/{MaxAttempts}, retrying...",
                         attempt + 1, _options.MaxRetryAttempts + 1);
 
                     await DisconnectAsync(cancellationToken);
@@ -603,17 +603,17 @@ namespace PosKernel.Client
         /// Gets or sets the JSON-RPC version.
         /// </summary>
         public string JsonRpc { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the response result data.
         /// </summary>
         public object? Result { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the error information if the request failed.
         /// </summary>
         public JsonRpcClientError? Error { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the request identifier that this response corresponds to.
         /// </summary>
@@ -629,12 +629,12 @@ namespace PosKernel.Client
         /// Gets or sets the error code.
         /// </summary>
         public string Code { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the error message.
         /// </summary>
         public string Message { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets additional error data.
         /// </summary>

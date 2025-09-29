@@ -52,6 +52,14 @@ namespace PosKernel.AI.Services
         public string CultureCode { get; set; } = "";
 
         /// <summary>
+        /// Gets or sets the primary language of product names in the database.
+        /// Used by AI to know what language to translate customer input into for product searches.
+        /// Example: "en" for English product names, "ms" for Malay, "zh" for Chinese.
+        /// ARCHITECTURAL PRINCIPLE: AI needs stable translation target, not hardcoded assumptions.
+        /// </summary>
+        public string MenuLanguage { get; set; } = "";
+
+        /// <summary>
         /// Gets or sets the catalog provider type.
         /// </summary>
         public CatalogProviderType CatalogProvider { get; set; }
@@ -176,27 +184,27 @@ namespace PosKernel.AI.Services
         /// Singaporean kopitiam - traditional drinks and local food.
         /// </summary>
         Kopitiam,
-        
+
         /// <summary>
         /// American coffee shop - coffee drinks, pastries, sandwiches.
         /// </summary>
         CoffeeShop,
-        
+
         /// <summary>
         /// French bakery - bread, pastries, coffee, French specialties.
         /// </summary>
         Boulangerie,
-        
+
         /// <summary>
         /// Japanese convenience store - diverse items, efficient service.
         /// </summary>
         ConvenienceStore,
-        
+
         /// <summary>
         /// Indian chai stall - tea varieties, snacks, street food.
         /// </summary>
         ChaiStall,
-        
+
         /// <summary>
         /// Generic retail store - flexible catalog, neutral personality.
         /// </summary>
@@ -212,17 +220,17 @@ namespace PosKernel.AI.Services
         /// Mock catalog for demonstrations and testing.
         /// </summary>
         Mock,
-        
+
         /// <summary>
         /// Restaurant extension with full database catalog.
         /// </summary>
         RestaurantExtension,
-        
+
         /// <summary>
         /// Simple in-memory catalog for basic demos.
         /// </summary>
         InMemory,
-        
+
         /// <summary>
         /// Real external catalog service integration.
         /// </summary>
@@ -275,9 +283,9 @@ namespace PosKernel.AI.Services
                 PersonalityType = PersonalityType.AmericanBarista,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.InMemory,
                 StoreName = "Brew & Bean Coffee",
-                Currency = "USD",
-                CultureCode = "en-US",
-                
+                Currency = "USD", // DEMO CONFIG: Explicit test configuration, not a business default
+                CultureCode = "en-US", // DEMO CONFIG: Explicit test configuration, not a business default
+
                 // ARCHITECTURAL FIX: Proper payment methods configuration
                 PaymentMethods = new PaymentMethodsConfiguration
                 {
@@ -287,39 +295,39 @@ namespace PosKernel.AI.Services
                     PaymentInstructions = "All major cards and digital wallets accepted",
                     AcceptedMethods = new List<PaymentMethodConfig>
                     {
-                        new() { 
-                            MethodId = "cash", 
-                            DisplayName = "Cash", 
-                            Type = PaymentMethodType.Cash, 
-                            IsEnabled = true 
-                        },
-                        new() { 
-                            MethodId = "visa", 
-                            DisplayName = "Visa", 
-                            Type = PaymentMethodType.CreditCard, 
+                        new() {
+                            MethodId = "cash",
+                            DisplayName = "Cash",
+                            Type = PaymentMethodType.Cash,
                             IsEnabled = true
                         },
-                        new() { 
-                            MethodId = "mastercard", 
-                            DisplayName = "MasterCard", 
-                            Type = PaymentMethodType.CreditCard, 
+                        new() {
+                            MethodId = "visa",
+                            DisplayName = "Visa",
+                            Type = PaymentMethodType.CreditCard,
                             IsEnabled = true
                         },
-                        new() { 
-                            MethodId = "apple_pay", 
-                            DisplayName = "Apple Pay", 
-                            Type = PaymentMethodType.DigitalWallet, 
+                        new() {
+                            MethodId = "mastercard",
+                            DisplayName = "MasterCard",
+                            Type = PaymentMethodType.CreditCard,
                             IsEnabled = true
                         },
-                        new() { 
-                            MethodId = "google_pay", 
-                            DisplayName = "Google Pay", 
-                            Type = PaymentMethodType.DigitalWallet, 
+                        new() {
+                            MethodId = "apple_pay",
+                            DisplayName = "Apple Pay",
+                            Type = PaymentMethodType.DigitalWallet,
+                            IsEnabled = true
+                        },
+                        new() {
+                            MethodId = "google_pay",
+                            DisplayName = "Google Pay",
+                            Type = PaymentMethodType.DigitalWallet,
                             IsEnabled = true
                         }
                     }
                 },
-                
+
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Third-wave coffee",
@@ -340,7 +348,7 @@ namespace PosKernel.AI.Services
                 StoreName = "Toast Boleh",
                 Currency = "SGD",
                 CultureCode = "en-SG",
-                
+
                 // ARCHITECTURAL FIX: Proper payment methods configuration
                 PaymentMethods = new PaymentMethodsConfiguration
                 {
@@ -350,36 +358,36 @@ namespace PosKernel.AI.Services
                     PaymentInstructions = "Cash preferred, digital payments accepted",
                     AcceptedMethods = new List<PaymentMethodConfig>
                     {
-                        new() { 
-                            MethodId = "cash", 
-                            DisplayName = "Cash", 
-                            Type = PaymentMethodType.Cash, 
-                            IsEnabled = true 
+                        new() {
+                            MethodId = "cash",
+                            DisplayName = "Cash",
+                            Type = PaymentMethodType.Cash,
+                            IsEnabled = true
                         },
-                        new() { 
-                            MethodId = "paynow", 
-                            DisplayName = "PayNow", 
-                            Type = PaymentMethodType.BankTransfer, 
+                        new() {
+                            MethodId = "paynow",
+                            DisplayName = "PayNow",
+                            Type = PaymentMethodType.BankTransfer,
                             IsEnabled = true,
                             MinimumAmount = 1.00m
                         },
-                        new() { 
-                            MethodId = "nets", 
-                            DisplayName = "NETS", 
-                            Type = PaymentMethodType.DebitCard, 
+                        new() {
+                            MethodId = "nets",
+                            DisplayName = "NETS",
+                            Type = PaymentMethodType.DebitCard,
                             IsEnabled = true,
                             MinimumAmount = 5.00m
                         },
-                        new() { 
-                            MethodId = "grabpay", 
-                            DisplayName = "GrabPay", 
-                            Type = PaymentMethodType.DigitalWallet, 
+                        new() {
+                            MethodId = "grabpay",
+                            DisplayName = "GrabPay",
+                            Type = PaymentMethodType.DigitalWallet,
                             IsEnabled = true,
                             MinimumAmount = 2.00m
                         }
                     }
                 },
-                
+
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Traditional kopitiam culture",
@@ -389,7 +397,7 @@ namespace PosKernel.AI.Services
                     ["terminal_id"] = "AI_TERMINAL",
                     ["operator_id"] = "AI_ASSISTANT"
                 },
-                
+
                 // ARCHITECTURAL PRINCIPLE: Configurable timeout instead of hardcoded
                 DisambiguationTimeoutMinutes = 3 // Shorter for busy kopitiam environment
             };
@@ -406,7 +414,7 @@ namespace PosKernel.AI.Services
                 StoreName = "La Belle Boulangerie",
                 Currency = "EUR",
                 CultureCode = "fr-FR",
-                
+
                 // ARCHITECTURAL FIX: Proper payment methods configuration
                 PaymentMethods = new PaymentMethodsConfiguration
                 {
@@ -416,28 +424,28 @@ namespace PosKernel.AI.Services
                     PaymentInstructions = "Espèces préférées, cartes acceptées",
                     AcceptedMethods = new List<PaymentMethodConfig>
                     {
-                        new() { 
-                            MethodId = "cash", 
-                            DisplayName = "Espèces", 
-                            Type = PaymentMethodType.Cash, 
-                            IsEnabled = true 
+                        new() {
+                            MethodId = "cash",
+                            DisplayName = "Espèces",
+                            Type = PaymentMethodType.Cash,
+                            IsEnabled = true
                         },
-                        new() { 
-                            MethodId = "carte_bancaire", 
-                            DisplayName = "Carte Bancaire", 
-                            Type = PaymentMethodType.DebitCard, 
+                        new() {
+                            MethodId = "carte_bancaire",
+                            DisplayName = "Carte Bancaire",
+                            Type = PaymentMethodType.DebitCard,
                             IsEnabled = true,
                             MinimumAmount = 5.00m
                         },
-                        new() { 
-                            MethodId = "contactless", 
-                            DisplayName = "Sans Contact", 
-                            Type = PaymentMethodType.DigitalWallet, 
+                        new() {
+                            MethodId = "contactless",
+                            DisplayName = "Sans Contact",
+                            Type = PaymentMethodType.DigitalWallet,
                             IsEnabled = true
                         }
                     }
                 },
-                
+
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "Artisanal French baking",
@@ -499,8 +507,8 @@ namespace PosKernel.AI.Services
                 PersonalityType = PersonalityType.GenericCashier,
                 CatalogProvider = useRealKernel ? CatalogProviderType.RestaurantExtension : CatalogProviderType.InMemory,
                 StoreName = "Quick Stop Market",
-                Currency = "USD",
-                CultureCode = "en-US",
+                Currency = "USD", // DEMO CONFIG: Explicit test configuration, not a business default
+                CultureCode = "en-US", // DEMO CONFIG: Explicit test configuration, not a business default
                 AdditionalConfig = new Dictionary<string, object>
                 {
                     ["specialty"] = "General retail",
@@ -509,7 +517,7 @@ namespace PosKernel.AI.Services
                 }
             };
         }
-        
+
         /// <summary>
         /// Creates a sample Singapore kopitiam store configuration with realistic payment methods.
         /// ARCHITECTURAL PRINCIPLE: Each store explicitly configures its accepted payment methods.
@@ -524,8 +532,9 @@ namespace PosKernel.AI.Services
                 PersonalityType = PersonalityType.SingaporeanKopitiamUncle,
                 Currency = "SGD",
                 CultureCode = "en-SG",
+                MenuLanguage = "en", // Product names are in English in the database
                 CatalogProvider = CatalogProviderType.RestaurantExtension,
-                
+
                 // ARCHITECTURAL ENHANCEMENT: Store-specific payment methods configuration
                 PaymentMethods = new PaymentMethodsConfiguration
                 {
@@ -535,30 +544,30 @@ namespace PosKernel.AI.Services
                     PaymentInstructions = "Cash preferred, digital payments accepted for orders above S$5",
                     AcceptedMethods = new List<PaymentMethodConfig>
                     {
-                        new() { 
-                            MethodId = "cash", 
-                            DisplayName = "Cash", 
-                            Type = PaymentMethodType.Cash, 
-                            IsEnabled = true 
+                        new() {
+                            MethodId = "cash",
+                            DisplayName = "Cash",
+                            Type = PaymentMethodType.Cash,
+                            IsEnabled = true
                         },
-                        new() { 
-                            MethodId = "nets", 
-                            DisplayName = "NETS", 
-                            Type = PaymentMethodType.DebitCard, 
+                        new() {
+                            MethodId = "nets",
+                            DisplayName = "NETS",
+                            Type = PaymentMethodType.DebitCard,
                             IsEnabled = true,
                             MinimumAmount = 5.00m
                         },
-                        new() { 
-                            MethodId = "grabpay", 
-                            DisplayName = "GrabPay", 
-                            Type = PaymentMethodType.DigitalWallet, 
+                        new() {
+                            MethodId = "grabpay",
+                            DisplayName = "GrabPay",
+                            Type = PaymentMethodType.DigitalWallet,
                             IsEnabled = true,
                             MinimumAmount = 2.00m
                         },
-                        new() { 
-                            MethodId = "paynow", 
-                            DisplayName = "PayNow QR", 
-                            Type = PaymentMethodType.BankTransfer, 
+                        new() {
+                            MethodId = "paynow",
+                            DisplayName = "PayNow QR",
+                            Type = PaymentMethodType.BankTransfer,
                             IsEnabled = true,
                             MinimumAmount = 1.00m
                         }

@@ -36,7 +36,8 @@ namespace PosKernel.AI.Tools
         private readonly RestaurantExtensionClient? _restaurantClient;
         private readonly ILogger<PosToolsProvider> _logger;
         private readonly StoreConfig? _storeConfig;
-        private readonly ICurrencyFormattingService? _currencyFormatter; // NEW DEPENDENCY
+        private readonly ICurrencyFormattingService? _currencyFormatter;
+        private readonly IConfigurableThresholdService? _thresholdService;
 
         /// <summary>
         /// Initializes a new instance of the PosToolsProvider with IProductCatalogService.
@@ -44,13 +45,16 @@ namespace PosKernel.AI.Tools
         /// <param name="productCatalog">The product catalog service for database access.</param>
         /// <param name="logger">Logger for diagnostics and debugging.</param>
         /// <param name="storeConfig">Store configuration for currency and locale information.</param>
-        public PosToolsProvider(IProductCatalogService productCatalog, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null, ICurrencyFormattingService? currencyFormatter = null)
+        /// <param name="currencyFormatter">Currency formatting service.</param>
+        /// <param name="thresholdService">Configurable threshold service.</param>
+        public PosToolsProvider(IProductCatalogService productCatalog, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null, ICurrencyFormattingService? currencyFormatter = null, IConfigurableThresholdService? thresholdService = null)
         {
             _productCatalog = productCatalog ?? throw new ArgumentNullException(nameof(productCatalog));
             _restaurantClient = null;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _storeConfig = storeConfig;
-            _currencyFormatter = currencyFormatter; // SET CURRENCY FORMATTER
+            _currencyFormatter = currencyFormatter;
+            _thresholdService = thresholdService;
         }
 
         /// <summary>
@@ -59,13 +63,16 @@ namespace PosKernel.AI.Tools
         /// <param name="restaurantClient">The restaurant extension client for product operations.</param>
         /// <param name="logger">Logger for diagnostics and debugging.</param>
         /// <param name="storeConfig">Store configuration for currency and locale information.</param>
-        public PosToolsProvider(RestaurantExtensionClient restaurantClient, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null, ICurrencyFormattingService? currencyFormatter = null)
+        /// <param name="currencyFormatter">Currency formatting service.</param>
+        /// <param name="thresholdService">Configurable threshold service.</param>
+        public PosToolsProvider(RestaurantExtensionClient restaurantClient, ILogger<PosToolsProvider> logger, StoreConfig? storeConfig = null, ICurrencyFormattingService? currencyFormatter = null, IConfigurableThresholdService? thresholdService = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
             _productCatalog = null;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _storeConfig = storeConfig;
-            _currencyFormatter = currencyFormatter; // SET CURRENCY FORMATTER
+            _currencyFormatter = currencyFormatter;
+            _thresholdService = thresholdService;
         }
 
         /// <summary>
@@ -94,7 +101,7 @@ namespace PosKernel.AI.Tools
         {
             try
             {
-                _logger.LogDebug("Executing tool: {FunctionName} with args: {Arguments}", 
+                _logger.LogDebug("Executing tool: {FunctionName} with args: {Arguments}",
                     toolCall.FunctionName, JsonSerializer.Serialize(toolCall.Arguments));
 
                 return toolCall.FunctionName switch
@@ -143,7 +150,7 @@ namespace PosKernel.AI.Tools
                         confidence = new
                         {
                             type = "number",
-                            description = "Confidence level: 0.0-0.4 (disambiguate), 0.5-0.7 (context-aware), 0.8-1.0 (auto-add)",
+                            description = "Confidence level: 0.0-0.4 (require disambiguation), 0.5-0.7 (context-aware), 0.8+ (auto-add based on store configuration)",
                             @default = 0.3,
                             minimum = 0.0,
                             maximum = 1.0
@@ -167,7 +174,7 @@ namespace PosKernel.AI.Tools
             var confidence = toolCall.Arguments.ContainsKey("confidence") ? toolCall.Arguments["confidence"].GetDouble() : 0.3;
             var context = toolCall.Arguments.ContainsKey("context") ? toolCall.Arguments["context"].GetString() : "initial_order";
 
-            _logger.LogInformation("Adding item: '{Item}' x{Qty}, Confidence: {Confidence}, Context: {Context}", 
+            _logger.LogInformation("Adding item: '{Item}' x{Qty}, Confidence: {Confidence}, Context: {Context}",
                 itemDescription, quantity, confidence, context ?? "initial_order");
 
             if (string.IsNullOrWhiteSpace(itemDescription))
@@ -195,7 +202,7 @@ namespace PosKernel.AI.Tools
                 var exactMatches = searchResults.Where(p => IsExactMatch(itemDescription, p)).ToList();
                 var specificMatches = searchResults.Where(p => IsSpecificProductMatch(itemDescription, p)).ToList();
 
-                // FIXED DECISION LOGIC - Proper confidence handling  
+                // FIXED DECISION LOGIC - Proper confidence handling
                 if (context == "clarification_response")
                 {
                     // Customer is clarifying after disambiguation - use best match
@@ -207,12 +214,12 @@ namespace PosKernel.AI.Tools
                     // Single exact match AND only one search result - always auto-add regardless of confidence
                     return AddProductToTransaction(exactMatches.First(), quantity, transaction);
                 }
-                else if (exactMatches.Count == 1 && confidence >= 0.8)
+                else if (exactMatches.Count == 1 && confidence >= GetThreshold("product_disambiguation", "auto_add", 0.8))
                 {
                     // Single exact match with HIGH confidence - auto-add even if other results exist
                     return AddProductToTransaction(exactMatches.First(), quantity, transaction);
                 }
-                else if (confidence >= 0.9)
+                else if (confidence >= GetThreshold("product_matching", "exact_match", 0.9))
                 {
                     // Very high confidence - pick best available match even with multiple options
                     var bestMatch = exactMatches.FirstOrDefault() ?? specificMatches.FirstOrDefault() ?? searchResults.First();
@@ -223,7 +230,7 @@ namespace PosKernel.AI.Tools
                     // Low/Medium confidence OR multiple valid options - require disambiguation
                     var disambiguationOptions = searchResults.Take(3).ToList(); // Limit to 3 options
                     var optionsList = string.Join(", ", disambiguationOptions.Select(p => $"{p.Name} ({FormatCurrency(GetProductPrice(p))})"));
-                    
+
                     return $"DISAMBIGUATION_NEEDED: Found {disambiguationOptions.Count} options for '{itemDescription}': {optionsList}";
                 }
             }
@@ -422,7 +429,7 @@ namespace PosKernel.AI.Tools
                 }
             };
         }
-        
+
         private McpTool CreateLoadMenuContextTool()
         {
             return new McpTool
@@ -441,12 +448,12 @@ namespace PosKernel.AI.Tools
         {
             return new McpTool
             {
-                Name = "load_payment_methods_context", 
+                Name = "load_payment_methods_context",
                 Description = "Loads the accepted payment methods for this store - ARCHITECTURAL PRINCIPLE: Payment methods are store-specific configuration, not universal constants",
                 Parameters = new
                 {
                     type = "object",
-                    properties = new { include_limits = new { type = "boolean", description = "Whether to include amount limits and restrictions (default: true)", @default = true } } 
+                    properties = new { include_limits = new { type = "boolean", description = "Whether to include amount limits and restrictions (default: true)", @default = true } }
                 }
             };
         }
@@ -457,13 +464,13 @@ namespace PosKernel.AI.Tools
             var maxResults = toolCall.Arguments.TryGetValue("max_results", out var maxElement) ? maxElement.GetInt32() : 10;
 
             var products = await SearchProductsAsync(searchTerm, maxResults);
-            
+
             if (!products.Any())
             {
                 return $"No products found matching: {searchTerm}";
             }
 
-            var results = products.Select(p => 
+            var results = products.Select(p =>
                 $"• {p.Name} - {FormatCurrency(p.BasePrice)} ({p.Category})").ToList();
 
             return $"Found {products.Count} products:\n" + string.Join("\n", results);
@@ -493,7 +500,7 @@ namespace PosKernel.AI.Tools
             var count = toolCall.Arguments.TryGetValue("count", out var countElement) ? countElement.GetInt32() : 5;
 
             List<IProductInfo> products;
-            
+
             if (_productCatalog != null)
             {
                 var catalogProducts = await _productCatalog.GetPopularItemsAsync();
@@ -508,7 +515,7 @@ namespace PosKernel.AI.Tools
             {
                 return "No product service available";
             }
-            
+
             var popularItems = products.Take(count);
 
             if (!popularItems.Any())
@@ -516,7 +523,7 @@ namespace PosKernel.AI.Tools
                 return "No popular items available";
             }
 
-            var results = popularItems.Select(p => 
+            var results = popularItems.Select(p =>
                 $"• {p.Name} - {FormatCurrency(p.BasePrice)}").ToList();
 
             return $"Top {popularItems.Count()} popular items:\n" + string.Join("\n", results);
@@ -563,23 +570,23 @@ namespace PosKernel.AI.Tools
 
             verification.AppendLine($"TOTAL: {FormatCurrency(transaction.Total.ToDecimal())}");
             verification.AppendLine($"Status: Ready for payment confirmation");
-            
+
             return verification.ToString().Trim();
         }
 
         private string ExecuteProcessPayment(McpToolCall toolCall, Transaction transaction)
         {
             // CRITICAL FIX: Handle both "method" and "payment_method" parameter names
-            var paymentMethod = toolCall.Arguments.TryGetValue("payment_method", out var methodElement) 
+            var paymentMethod = toolCall.Arguments.TryGetValue("payment_method", out var methodElement)
                 ? methodElement.GetString() : null;
-                
+
             if (string.IsNullOrEmpty(paymentMethod))
             {
-                paymentMethod = toolCall.Arguments.TryGetValue("method", out var altMethodElement) 
+                paymentMethod = toolCall.Arguments.TryGetValue("method", out var altMethodElement)
                     ? altMethodElement.GetString() : "cash";
             }
-            
-            var amount = toolCall.Arguments.TryGetValue("amount", out var amountElement) 
+
+            var amount = toolCall.Arguments.TryGetValue("amount", out var amountElement)
                 ? new Money((long)(amountElement.GetDecimal() * 100), transaction.Currency)
                 : transaction.Total;
 
@@ -590,12 +597,12 @@ namespace PosKernel.AI.Tools
 
             // CRITICAL FIX: Support both cash and card payments properly
             var method = paymentMethod?.ToLower() ?? "cash";
-            
+
             if (method == "cash")
             {
                 transaction.AddCashTender(amount);
                 var change = transaction.ChangeDue.ToDecimal();
-                
+
                 return $"Payment processed: {FormatCurrency(amount.ToDecimal())} cash received\n" +
                       $"Total: {FormatCurrency(transaction.Total.ToDecimal())}\n" +
                       $"Change due: {FormatCurrency(change)}\n" +
@@ -605,7 +612,7 @@ namespace PosKernel.AI.Tools
             {
                 // For card payments, assume exact amount (no change)
                 transaction.AddCashTender(transaction.Total); // Mock as cash tender internally
-                
+
                 return $"Payment processed: {FormatCurrency(transaction.Total.ToDecimal())} card payment\n" +
                       $"Total: {FormatCurrency(transaction.Total.ToDecimal())}\n" +
                       $"Change due: {FormatCurrency(0m)}\n" +
@@ -619,7 +626,7 @@ namespace PosKernel.AI.Tools
 
         private async Task<string> ExecuteLoadMenuContextAsync(McpToolCall toolCall)
         {
-            var includeCategories = toolCall.Arguments.TryGetValue("include_categories", out var categoriesElement) 
+            var includeCategories = toolCall.Arguments.TryGetValue("include_categories", out var categoriesElement)
                 ? categoriesElement.GetBoolean() : true;
 
             try
@@ -633,7 +640,7 @@ namespace PosKernel.AI.Tools
                     var menuContext = new StringBuilder();
                     menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
                     menuContext.AppendLine("=============================================================");
-                    
+
                     if (categories.Any())
                     {
                         menuContext.AppendLine("\nCATEGORIES:");
@@ -644,10 +651,10 @@ namespace PosKernel.AI.Tools
                     }
 
                     menuContext.AppendLine($"\nFULL MENU ({allProducts.Count} items):");
-                    
+
                     // Group by category for better organization
                     var productsByCategory = allProducts.GroupBy(p => p.Category).OrderBy(g => g.Key);
-                    
+
                     foreach (var categoryGroup in productsByCategory)
                     {
                         menuContext.AppendLine($"\n{categoryGroup.Key.ToUpper()}:");
@@ -663,7 +670,7 @@ namespace PosKernel.AI.Tools
                     }
 
                     menuContext.AppendLine("\nUncle now has complete menu knowledge for intelligent order processing!");
-                    
+
                     return menuContext.ToString();
                 }
                 else if (_restaurantClient != null)
@@ -681,7 +688,7 @@ namespace PosKernel.AI.Tools
                     var menuContext = new StringBuilder();
                     menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
                     menuContext.AppendLine("=============================================================");
-                    
+
                     if (categories.Any())
                     {
                         menuContext.AppendLine("\nCATEGORIES:");
@@ -727,7 +734,7 @@ namespace PosKernel.AI.Tools
 
         private Task<string> ExecuteLoadPaymentMethodsContextAsync(McpToolCall toolCall)
         {
-            var includeLimits = toolCall.Arguments.TryGetValue("include_limits", out var limitsElement) 
+            var includeLimits = toolCall.Arguments.TryGetValue("include_limits", out var limitsElement)
                 ? limitsElement.GetBoolean() : true;
 
             try
@@ -744,7 +751,7 @@ namespace PosKernel.AI.Tools
                 }
 
                 var paymentMethodsContext = new StringBuilder();
-                
+
                 paymentMethodsContext.AppendLine("PAYMENT METHODS CONTEXT - Store-Specific Payment Configuration:");
                 paymentMethodsContext.AppendLine("=".PadRight(70, '='));
                 paymentMethodsContext.AppendLine();
@@ -756,12 +763,12 @@ namespace PosKernel.AI.Tools
                 if (methods != null && methods.Any())
                 {
                     paymentMethodsContext.AppendLine("ACCEPTED PAYMENT METHODS:");
-                    
+
                     foreach (var method in methods.Where(m => m.IsEnabled))
                     {
                         paymentMethodsContext.AppendLine($"  • {method.DisplayName} ({method.MethodId})");
                         paymentMethodsContext.AppendLine($"    Type: {method.Type}");
-                        
+
                         if (includeLimits)
                         {
                             if (method.MinimumAmount.HasValue)
@@ -797,7 +804,7 @@ namespace PosKernel.AI.Tools
 
                 paymentMethodsContext.AppendLine("ARCHITECTURAL PRINCIPLE: Only process payments using methods listed above.");
                 paymentMethodsContext.AppendLine("If customer requests unlisted payment method, inform them it's not accepted.");
-                
+
                 return Task.FromResult(paymentMethodsContext.ToString());
             }
             catch (Exception ex)
@@ -821,8 +828,8 @@ namespace PosKernel.AI.Tools
             };
 
             var normalizedTerm = vagueTerm.ToLowerInvariant();
-            
-            if (semanticMappings.TryGetValue(normalizedTerm, out var searchTerms))
+
+            if (semanticMappings.TryGetValue(normalizedTerm, out var searchTerms) && _productCatalog != null)
             {
                 var results = new List<IProductInfo>();
                 foreach (var term in searchTerms)
@@ -830,7 +837,10 @@ namespace PosKernel.AI.Tools
                     var matches = await _productCatalog.SearchProductsAsync(term, 3);
                     results.AddRange(matches);
                 }
-                return results.GroupBy(p => p.Sku).Select(g => g.First()).ToList();
+                return results.Where(p => !string.IsNullOrEmpty(p.Sku))
+                              .GroupBy(p => p.Sku!)
+                              .Select(g => g.First())
+                              .ToList();
             }
 
             return Array.Empty<IProductInfo>();
@@ -840,7 +850,7 @@ namespace PosKernel.AI.Tools
         {
             // Simple broader search without hardcoded language assumptions
             var searchWords = searchTerm.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            
+
             foreach (var word in searchWords)
             {
                 if (word.Length > 2) // Skip very short words
@@ -852,7 +862,7 @@ namespace PosKernel.AI.Tools
                     }
                 }
             }
-            
+
             return new List<IProductInfo>();
         }
 
@@ -860,28 +870,28 @@ namespace PosKernel.AI.Tools
         {
             var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
             var normalizedProductName = (product.Name ?? string.Empty).ToLowerInvariant().Trim();
-            
+
             // CRITICAL FIX: When customer clarifies with specific terms, auto-match them
-            
+
             // Exact matches - always specific
             if (normalizedSearch == normalizedProductName || normalizedSearch == (product.Sku ?? string.Empty).ToLowerInvariant())
             {
                 return true;
             }
-            
+
             // KOPITIAM INTELLIGENCE: Handle customer clarifications
             // When customer says "kaya toast" after disambiguation, they mean the basic one
             if (normalizedSearch == "kaya toast" && normalizedProductName == "kaya toast")
             {
                 return true; // Customer clarified - choose basic kaya toast
             }
-            
+
             // When customer says "teh c kosong", they're being specific
             if (normalizedSearch == "teh c kosong" && normalizedProductName == "teh c kosong")
             {
                 return true; // Customer was specific - choose teh C kosong
             }
-            
+
             // Handle other specific kopitiam terms
             var specificKopitiamTerms = new Dictionary<string, string[]>
             {
@@ -892,28 +902,28 @@ namespace PosKernel.AI.Tools
                 { "kopi", new[] { "kopi" } },
                 { "teh c", new[] { "teh c" } }
             };
-            
+
             if (specificKopitiamTerms.TryGetValue(normalizedSearch, out var matches))
             {
                 return matches.Any(match => normalizedProductName.Contains(match));
             }
-            
+
             // Only force disambiguation for very generic terms
             var veryGenericTerms = new[] { "coffee", "drink", "food", "snack", "pastry", "muffin", "sandwich" };
             if (veryGenericTerms.Contains(normalizedSearch))
             {
                 return false; // These need disambiguation
             }
-            
+
             // Size/specificity qualifiers make it more specific
             var specificityIndicators = new[] { "large", "small", "medium", "hot", "iced", "decaf", "regular", "kosong", "siew dai", "gao", "poh", "peng" };
             var hasSpecificity = specificityIndicators.Any(indicator => normalizedSearch.Contains(indicator));
-            
+
             if (hasSpecificity && normalizedProductName.Contains(normalizedSearch.Replace(" kosong", "").Replace(" peng", "")))
             {
                 return true; // Specific enough with modifiers
             }
-            
+
             return false; // When in doubt, require disambiguation
         }
 
@@ -923,30 +933,30 @@ namespace PosKernel.AI.Tools
             var name = product.Name ?? string.Empty;
             var hasHotDrink = transaction.Lines.Any(l => l.ProductId.ToString().Contains("COFFEE") || l.ProductId.ToString().Contains("KOPI") || l.ProductId.ToString().Contains("TEH"));
             var hasFood = transaction.Lines.Any(l => l.ProductId.ToString().Contains("CROISSANT") || l.ProductId.ToString().Contains("MUFFIN") || l.ProductId.ToString().Contains("TOAST") || l.ProductId.ToString().Contains("KUEH"));
-            
+
             var context = new BusinessContext();
-            
+
             // Business Rule 1: Suggest food with drinks
             if ((name.ToLower().Contains("coffee") || name.ToLower().Contains("kopi") || name.ToLower().Contains("teh")) && !hasFood)
             {
                 context.SuggestUpsell = true;
                 context.UpsellCategory = name.ToLower().Contains("kopi") || name.ToLower().Contains("teh") ? "kueh" : "pastry";
             }
-            
-            // Business Rule 2: Suggest drinks with food  
+
+            // Business Rule 2: Suggest drinks with food
             if ((name.ToLower().Contains("croissant") || name.ToLower().Contains("muffin") || name.ToLower().Contains("toast") || name.ToLower().Contains("kueh")) && !hasHotDrink)
             {
                 context.SuggestUpsell = true;
                 context.UpsellCategory = "drink";
             }
-            
+
             // Business Rule 3: Time-based recommendations (could be configurable)
             var currentHour = DateTime.Now.Hour;
             if (currentHour < 10 && (name.ToLower().Contains("coffee") || name.ToLower().Contains("kopi")))
             {
                 context.PriorityBoost = true; // Morning coffee rush priority
             }
-            
+
             return context;
         }
 
@@ -954,13 +964,13 @@ namespace PosKernel.AI.Tools
         {
             // "Sales Manager" prioritization logic
             var prioritizedProducts = products.ToList();
-            
+
             // Business Intelligence Rule 1: Prioritize items that create upsell opportunities
-            prioritizedProducts.Sort((a, b) => 
+            prioritizedProducts.Sort((a, b) =>
             {
                 var aContext = AnalyzeBusinessContext(a, transaction);
                 var bContext = AnalyzeBusinessContext(b, transaction);
-                
+
                 // Prioritize items that enable upselling
                 if (aContext.SuggestUpsell && !bContext.SuggestUpsell)
                 {
@@ -970,7 +980,7 @@ namespace PosKernel.AI.Tools
                 {
                     return 1;
                 }
-                
+
                 // Then prioritize by time-based rules
                 if (aContext.PriorityBoost && !bContext.PriorityBoost)
                 {
@@ -980,11 +990,11 @@ namespace PosKernel.AI.Tools
                 {
                     return 1;
                 }
-                
+
                 // Finally, sort by price (configurable strategy)
                 return a.BasePriceCents.CompareTo(b.BasePriceCents);
             });
-            
+
             // Limit results based on business rules (avoid overwhelming customers)
             return prioritizedProducts.Take(GetMaxOptionsForTerm(originalTerm)).ToList();
         }
@@ -1004,13 +1014,13 @@ namespace PosKernel.AI.Tools
         /// <summary>
         /// ARCHITECTURAL PRINCIPLE: Currency formatting must use service - no client-side assumptions.
         /// </summary>
-        private string FormatCurrency(decimal amount) 
+        private string FormatCurrency(decimal amount)
         {
             if (_currencyFormatter != null && _storeConfig != null)
             {
                 return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreId);
             }
-            
+
             // ARCHITECTURAL PRINCIPLE: FAIL FAST - No fallback formatting
             throw new InvalidOperationException(
                 $"DESIGN DEFICIENCY: Currency formatting service not available. " +
@@ -1029,13 +1039,13 @@ namespace PosKernel.AI.Tools
                     "Client cannot decide currency defaults. Configure store currency in StoreConfig.");
             }
             var unitPrice = new Money((long)(price * 100), currency); // Convert to minor units
-            
+
             for (int i = 0; i < quantity; i++)
             {
                 var productIdName = product.Name ?? product.Sku ?? "UNKNOWN";
                 transaction.AddLine(new ProductId(productIdName), 1, unitPrice);
             }
-            
+
             var totalPrice = price * quantity;
             var displayName = product.Name ?? product.Sku ?? "Item";
             return $"ADDED: {displayName} x{quantity} @ {FormatCurrency(price)} each = {FormatCurrency(totalPrice)}";
@@ -1045,21 +1055,21 @@ namespace PosKernel.AI.Tools
         {
             // Try to get price from different possible properties
             var productType = product.GetType();
-            
+
             // Try BasePrice property
             var basePriceProperty = productType.GetProperty("BasePrice");
             if (basePriceProperty != null && basePriceProperty.PropertyType == typeof(decimal))
             {
                 return (decimal)basePriceProperty.GetValue(product)!;
             }
-            
+
             // Try Price property
             var priceProperty = productType.GetProperty("Price");
             if (priceProperty != null && priceProperty.PropertyType == typeof(decimal))
             {
                 return (decimal)priceProperty.GetValue(product)!;
             }
-            
+
             // Default fallback price
             return 2.50m;
         }
@@ -1068,14 +1078,23 @@ namespace PosKernel.AI.Tools
         {
             var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
             var normalizedProductName = (product.Name ?? string.Empty).ToLowerInvariant().Trim();
-            
+
             // Direct exact matches (SKU or full name match)
             if (normalizedSearch == normalizedProductName || normalizedSearch == (product.Sku ?? string.Empty).ToLowerInvariant())
             {
                 return true;
             }
-            
+
             return false;
+        }
+
+        /// <summary>
+        /// Gets confidence threshold from service, with fallback to hardcoded value.
+        /// ARCHITECTURAL FIX: Replace magic numbers with configurable thresholds.
+        /// </summary>
+        private double GetThreshold(string context, string operation, double fallback)
+        {
+            return _thresholdService?.GetConfidenceThreshold(context, operation) ?? fallback;
         }
 
         // Simple business context data structure

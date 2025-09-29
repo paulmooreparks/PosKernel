@@ -191,8 +191,11 @@ public class TerminalChatDisplay : IChatDisplay
                         Application.Invoke(() =>
                         {
                             ShowMessage(response);
-                            terminalUI?.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
-                            terminalUI?.LogDisplay?.AddLog($"Receipt updated: {orchestrator.CurrentReceipt.Items.Count} items, Status: {orchestrator.CurrentReceipt.Status}");
+                            // ❌ REMOVED THIS LINE - violates event-driven architecture:
+                            // terminalUI?.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
+
+                            // ✅ Events will handle receipt updates automatically now
+                            terminalUI?.LogDisplay?.AddLog($"DEBUG: Receipt updates now handled by events. Items: {orchestrator.CurrentReceipt.Items.Count}, Status: {orchestrator.CurrentReceipt.Status}");
 
                             // Update prompt display with the last prompt sent to AI
                             terminalUI?.UpdatePromptDisplay();
@@ -200,27 +203,10 @@ public class TerminalChatDisplay : IChatDisplay
                             // _inputField.SetFocus();
                         });
 
-                        // CLEAN: Simple post-payment detection
-                        if (previousReceiptStatus != PaymentStatus.Completed && newReceiptStatus == PaymentStatus.Completed)
-                        {
-                            terminalUI?.LogDisplay?.AddLog("INFO: Payment completed - generating post-payment message");
-
-                            // Wait a moment then generate post-payment message
-                            await Task.Delay(1000);
-                            var postPaymentMessage = await orchestrator.GeneratePostPaymentMessageAsync();
-
-                            Application.Invoke(() =>
-                            {
-                                ShowMessage(postPaymentMessage);
-                                terminalUI?.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
-                                terminalUI?.UpdatePromptDisplay();
-                                // _inputField.SetFocus();
-                            });
-                        }
-                        else
-                        {
-                            terminalUI?.LogDisplay?.AddLog($"DEBUG: No payment completion detected - Previous: {previousReceiptStatus}, New: {newReceiptStatus}");
-                        }
+                        // ARCHITECTURAL FIX: Remove UI-layer business logic for payment completion detection
+                        // Payment completion should be handled entirely within ChatOrchestrator
+                        // This prevents duplicate post-payment messages
+                        terminalUI?.LogDisplay?.AddLog($"DEBUG: No payment completion detection in UI layer - Previous: {previousReceiptStatus}, New: {newReceiptStatus}");
                     }
                     catch (Exception ex)
                     {
@@ -371,14 +357,14 @@ public class TerminalReceiptDisplay : IReceiptDisplay
 
         // ARCHITECTURAL FIX: Use structured receipt formatter instead of manual string building
         var formatter = new StructuredReceiptFormatter(_currencyFormatter, _storeConfig, 40);
-        
+
         try
         {
             var content = formatter.FormatReceipt(receipt);
-            
+
             // Log a timestamped snapshot to file
             _logFiles?.WriteReceiptSnapshot(content);
-            
+
             Application.Invoke(() =>
             {
                 _receiptView.Text = content;
@@ -442,10 +428,10 @@ public class TerminalReceiptDisplay : IReceiptDisplay
             foreach (var item in receipt.Items)
             {
                 var lineTotal = item.ExtendedPrice;
-                var itemLine = item.Quantity > 1 
+                var itemLine = item.Quantity > 1
                     ? $"{item.Quantity}x {item.ProductName}"
                     : item.ProductName;
-                
+
                 if (item.ParentLineItemId.HasValue)
                 {
                     var indentPrefix = "  → ";
@@ -536,7 +522,7 @@ public class TerminalLogDisplay : ILogDisplay
 
     public void AddLog(string message)
     {
-        // ARCHITECTURAL PRINCIPLE: Use invariant culture for internal debug timestamps  
+        // ARCHITECTURAL PRINCIPLE: Use invariant culture for internal debug timestamps
         var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
         var logEntry = $"[{timestamp}] {message}";
 
@@ -666,6 +652,9 @@ public class TerminalUserInterface : IUserInterface
     {
         _orchestrator = orchestrator;
 
+        // ARCHITECTURAL FIX: Subscribe to receipt change events
+        _orchestrator.ReceiptChanged += OnReceiptChanged;
+
         // Enable thought logging with the UI log display
         if (_logDisplay != null)
         {
@@ -697,6 +686,18 @@ public class TerminalUserInterface : IUserInterface
             {
                 UpdatePromptDisplay();
             });
+        });
+    }
+
+    /// <summary>
+    /// ARCHITECTURAL FIX: Event handler for reactive receipt updates.
+    /// Handles receipt change events with proper thread safety using Application.Invoke().
+    /// </summary>
+    private void OnReceiptChanged(object? sender, ReceiptChangedEventArgs e)
+    {
+        Application.Invoke(() => {
+            Receipt?.UpdateReceipt(e.Receipt);
+            _logDisplay?.AddLog($"EVENT: Receipt updated - {e.ChangeType}: {e.Context}");
         });
     }
 
@@ -906,7 +907,7 @@ public class TerminalUserInterface : IUserInterface
             ColorScheme = contentColorScheme
         };
 
-        // Create receipt scrollbar 
+        // Create receipt scrollbar
         var receiptScrollBar = new ScrollBar
         {
             X = Pos.AnchorEnd(),
@@ -1141,7 +1142,7 @@ public class TerminalUserInterface : IUserInterface
         _logDisplay = new TerminalLogDisplay(logView, logScrollBar, _logFiles);
         _promptDisplay = new TerminalPromptDisplay(promptView, promptScrollBar, promptLabel, promptContainer, chatView, receiptView, logContainer, _logFiles);
 
-        // Receipt display needs currency service - this will be updated later when store config is available  
+        // Receipt display needs currency service - this will be updated later when store config is available
         Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay, logFiles: _logFiles);
         Log = _logDisplay; // Expose log display through ILogDisplay interface
 

@@ -249,7 +249,21 @@ namespace PosKernel.Service.Services {
 
         private async Task<object?> HandleStartTransactionAsync(JsonElement? parameters, CancellationToken cancellationToken) {
             var sessionId = parameters?.GetProperty("session_id").GetString() ?? throw new ArgumentException("session_id required");
-            var currency = parameters?.GetProperty("currency").GetString() ?? "USD";
+
+            // ARCHITECTURAL PRINCIPLE: Client must NOT decide currency defaults - system must provide currency configuration
+            if (!parameters.HasValue || !parameters.Value.TryGetProperty("currency", out var currencyProperty) || currencyProperty.ValueKind == JsonValueKind.Null)
+            {
+                throw new InvalidOperationException(
+                    "DESIGN DEFICIENCY: StartTransaction requires currency parameter. " +
+                    "Client cannot decide currency defaults. " +
+                    "System must provide currency configuration via store settings or session context.");
+            }
+
+            var currency = currencyProperty.GetString();
+            if (string.IsNullOrWhiteSpace(currency))
+            {
+                throw new ArgumentException("Currency parameter cannot be empty", nameof(parameters));
+            }
 
             var result = await _kernelEngine.StartTransactionAsync(sessionId, currency, cancellationToken);
             return result;

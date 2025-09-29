@@ -19,6 +19,59 @@ using PosKernel.Extensions.Restaurant;
 namespace PosKernel.Extensions.Restaurant
 {
     /// <summary>
+    /// Represents a set definition from the database.
+    /// </summary>
+    public class SetDefinition
+    {
+        /// <summary>Set product SKU</summary>
+        public string SetSku { get; set; } = string.Empty;
+        /// <summary>Set type (e.g., TOAST_SET, LOCAL_SET)</summary>
+        public string SetType { get; set; } = string.Empty;
+        /// <summary>Main product SKU for the set</summary>
+        public string MainProductSku { get; set; } = string.Empty;
+        /// <summary>Base price in cents</summary>
+        public decimal BasePriceCents { get; set; }
+        /// <summary>Whether the set is active</summary>
+        public bool IsActive { get; set; }
+    }
+
+    /// <summary>
+    /// Represents an available drink for a set.
+    /// </summary>
+    public class SetAvailableDrink
+    {
+        /// <summary>Set SKU this drink belongs to</summary>
+        public string SetSku { get; set; } = string.Empty;
+        /// <summary>Product SKU of the drink</summary>
+        public string ProductSku { get; set; } = string.Empty;
+        /// <summary>Display name of the drink</summary>
+        public string ProductName { get; set; } = string.Empty;
+        /// <summary>Drink size (e.g., MEDIUM, LARGE)</summary>
+        public string DrinkSize { get; set; } = string.Empty;
+        /// <summary>Whether this is the default drink choice</summary>
+        public bool IsDefault { get; set; }
+        /// <summary>Whether this drink option is active</summary>
+        public bool IsActive { get; set; }
+    }
+
+    /// <summary>
+    /// Represents an available side for a set.
+    /// </summary>
+    public class SetAvailableSide
+    {
+        /// <summary>Set SKU this side belongs to</summary>
+        public string SetSku { get; set; } = string.Empty;
+        /// <summary>Product SKU of the side</summary>
+        public string ProductSku { get; set; } = string.Empty;
+        /// <summary>Display name of the side</summary>
+        public string ProductName { get; set; } = string.Empty;
+        /// <summary>Whether this is the default side choice</summary>
+        public bool IsDefault { get; set; }
+        /// <summary>Whether this side option is active</summary>
+        public bool IsActive { get; set; }
+    }
+
+    /// <summary>
     /// Interface for restaurant extension operations.
     /// Can be implemented as both in-process service or IPC client.
     /// </summary>
@@ -28,7 +81,7 @@ namespace PosKernel.Extensions.Restaurant
         /// Validates a product and returns detailed information.
         /// </summary>
         Task<ProductValidationResult> ValidateProductAsync(
-            string productId, 
+            string productId,
             string storeId = "STORE_DEFAULT",
             string terminalId = "TERMINAL_01",
             string operatorId = "SYSTEM",
@@ -38,7 +91,7 @@ namespace PosKernel.Extensions.Restaurant
         /// Searches for products matching the given search term.
         /// </summary>
         Task<List<ProductInfo>> SearchProductsAsync(
-            string searchTerm, 
+            string searchTerm,
             int maxResults = 50,
             CancellationToken cancellationToken = default);
 
@@ -51,7 +104,7 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets all products in a specific category.
         /// </summary>
         Task<List<ProductInfo>> GetCategoryProductsAsync(
-            string category, 
+            string category,
             CancellationToken cancellationToken = default);
 
         /// <summary>
@@ -63,6 +116,21 @@ namespace PosKernel.Extensions.Restaurant
         /// Checks if the service is available.
         /// </summary>
         Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Gets set definition information for a product SKU.
+        /// </summary>
+        Task<SetDefinition?> GetSetDefinitionAsync(string productSku, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Gets available drinks for a set product.
+        /// </summary>
+        Task<List<SetAvailableDrink>?> GetSetAvailableDrinksAsync(string setSku, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Gets available sides for a set product.
+        /// </summary>
+        Task<List<SetAvailableSide>?> GetSetAvailableSidesAsync(string setSku, CancellationToken cancellationToken = default);
     }
 
     /// <summary>

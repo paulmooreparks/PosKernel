@@ -32,8 +32,9 @@ namespace PosKernel.Service.Services
 
         /// <summary>
         /// Starts a new transaction within a session.
+        /// ARCHITECTURAL PRINCIPLE: Currency must be explicitly provided - no defaults allowed.
         /// </summary>
-        Task<TransactionResult> StartTransactionAsync(string sessionId, string currency = "USD", CancellationToken cancellationToken = default);
+        Task<TransactionResult> StartTransactionAsync(string sessionId, string currency, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Adds a line item to the current transaction.
@@ -187,32 +188,32 @@ namespace PosKernel.Service.Services
         /// Gets or sets the unique session identifier.
         /// </summary>
         public string SessionId { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the terminal identifier.
         /// </summary>
         public string TerminalId { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the operator identifier.
         /// </summary>
         public string OperatorId { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets when the session was created.
         /// </summary>
         public DateTime CreatedAt { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the last activity timestamp.
         /// </summary>
         public DateTime LastActivity { get; set; }
-        
+
         /// <summary>
         /// Gets or sets whether the session is active.
         /// </summary>
         public bool IsActive { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the current transaction identifier, if any.
         /// </summary>
@@ -228,32 +229,32 @@ namespace PosKernel.Service.Services
         /// Gets or sets whether the operation was successful.
         /// </summary>
         public bool Success { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the error message if the operation failed.
         /// </summary>
         public string? Error { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the transaction identifier.
         /// </summary>
         public string? TransactionId { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the session identifier.
         /// </summary>
         public string? SessionId { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the transaction total amount.
         /// </summary>
         public decimal Total { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the transaction state.
         /// </summary>
         public string State { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets additional transaction data.
         /// </summary>
@@ -269,32 +270,32 @@ namespace PosKernel.Service.Services
         /// Gets or sets the timestamp when the snapshot was taken.
         /// </summary>
         public DateTime Timestamp { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the total number of transactions processed.
         /// </summary>
         public int TotalTransactions { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the number of currently active sessions.
         /// </summary>
         public int ActiveSessions { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the average transaction processing time in milliseconds.
         /// </summary>
         public double AverageTransactionTime { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the number of requests processed per second.
         /// </summary>
         public double RequestsPerSecond { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the current memory usage in bytes.
         /// </summary>
         public long MemoryUsageBytes { get; set; }
-        
+
         /// <summary>
         /// Gets or sets additional custom metrics.
         /// </summary>
@@ -310,17 +311,17 @@ namespace PosKernel.Service.Services
         /// Gets or sets the overall health status.
         /// </summary>
         public HealthStatus Status { get; set; }
-        
+
         /// <summary>
         /// Gets or sets a description of the health check result.
         /// </summary>
         public string Description { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets detailed health check information.
         /// </summary>
         public Dictionary<string, object> Details { get; set; } = new();
-        
+
         /// <summary>
         /// Gets or sets the duration of the health check operation.
         /// </summary>
@@ -336,12 +337,12 @@ namespace PosKernel.Service.Services
         /// The service is operating normally.
         /// </summary>
         Healthy,
-        
+
         /// <summary>
         /// The service is operational but with reduced performance.
         /// </summary>
         Degraded,
-        
+
         /// <summary>
         /// The service is not operating correctly.
         /// </summary>

@@ -50,9 +50,9 @@ namespace PosKernel.AI.Core
             AnalyzeStructuralPatterns(userInput, analysis);
             AnalyzeConversationFlow(conversationHistory, analysis);
             AnalyzeContextualTiming(currentReceipt, conversationHistory, analysis);
-            
+
             DetermineFinalIntent(analysis);
-            
+
             return analysis;
         }
 
@@ -62,34 +62,34 @@ namespace PosKernel.AI.Core
         private void AnalyzeStructuralPatterns(string userInput, OrderIntentAnalysis analysis)
         {
             _thoughtLogger.LogStep(1, "Analyzing structural patterns");
-            
+
             var input = userInput.Trim();
             var wordCount = input.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
             var hasNumbers = input.Any(char.IsDigit);
             var hasQuestionMark = input.EndsWith('?');
             var isVeryShort = wordCount <= 2;
-            
+
             _thoughtLogger.LogThought($"Structural analysis - Length: {input.Length}, Words: {wordCount}, HasNumbers: {hasNumbers}, HasQuestion: {hasQuestionMark}");
-            
+
             // ARCHITECTURAL PRINCIPLE: Universal structural patterns only
             if (isVeryShort && !hasNumbers)
             {
                 analysis.StructuralIndicators.Add("Very short response - structurally ambiguous");
                 analysis.CompletionLikelihood += 0.2; // Reduced - let AI determine semantics
             }
-            
+
             if (hasNumbers)
             {
                 analysis.StructuralIndicators.Add("Contains numbers - likely quantity specification");
                 analysis.NewOrderLikelihood += 0.4; // Reduced - let AI handle context
             }
-            
+
             if (hasQuestionMark)
             {
                 analysis.StructuralIndicators.Add("Question format - inquiry detected");
                 analysis.QuestionLikelihood = 0.6; // Reduced - let AI interpret meaning
             }
-            
+
             if (wordCount >= 3)
             {
                 analysis.StructuralIndicators.Add("Multi-word input - complex intent likely");
@@ -103,23 +103,23 @@ namespace PosKernel.AI.Core
         private void AnalyzeConversationFlow(List<ChatMessage> conversationHistory, OrderIntentAnalysis analysis)
         {
             _thoughtLogger.LogStep(2, "Analyzing conversation flow patterns");
-            
+
             var recentMessages = conversationHistory.TakeLast(3).ToList();
             var lastSystemMessage = recentMessages.LastOrDefault(m => m.IsSystem || !m.Sender.Equals("Customer", StringComparison.OrdinalIgnoreCase));
-            
+
             if (lastSystemMessage != null)
             {
                 var systemContent = lastSystemMessage.Content;
-                
+
                 // ARCHITECTURAL PRINCIPLE: Universal structural patterns only - no language-specific terms
                 if (systemContent.Contains("?"))
                 {
                     analysis.RecentClarificationContext = true;
                     _thoughtLogger.LogThought("Recent system message was question format");
                 }
-                
+
                 // ARCHITECTURAL PRINCIPLE: Look for structural completion indicators only
-                if (IsRecentMessage(lastSystemMessage, TimeSpan.FromMinutes(2)) && 
+                if (IsRecentMessage(lastSystemMessage, TimeSpan.FromMinutes(2)) &&
                     ContainsStructuralCompletionIndicators(systemContent))
                 {
                     analysis.RecentCompletionContext = true;
@@ -127,7 +127,7 @@ namespace PosKernel.AI.Core
                     _thoughtLogger.LogThought("Recent system message has structural completion indicators");
                 }
             }
-            
+
             // Pattern: Message timing analysis (universal)
             if (conversationHistory.Count >= 2)
             {
@@ -135,7 +135,7 @@ namespace PosKernel.AI.Core
                     .Where(m => m.Sender.Equals("Customer", StringComparison.OrdinalIgnoreCase))
                     .TakeLast(2)
                     .ToList();
-                
+
                 if (lastTwoCustomerMessages.Count == 2)
                 {
                     var timeBetween = lastTwoCustomerMessages[1].Timestamp - lastTwoCustomerMessages[0].Timestamp;
@@ -160,11 +160,11 @@ namespace PosKernel.AI.Core
             {
                 "x", "=", ":", "-" // Mathematical/listing symbols that suggest itemization
             };
-            
+
             // ARCHITECTURAL PRINCIPLE: Universal number patterns (not currency-specific)
             var hasNumberPattern = System.Text.RegularExpressions.Regex.IsMatch(content, @"\d+\.\d+"); // Any decimal pattern
             var hasListingStructure = structuralIndicators.Any(indicator => content.Contains(indicator));
-            
+
             return hasNumberPattern || hasListingStructure;
         }
 
@@ -174,20 +174,20 @@ namespace PosKernel.AI.Core
         private void AnalyzeContextualTiming(Receipt currentReceipt, List<ChatMessage> conversationHistory, OrderIntentAnalysis analysis)
         {
             _thoughtLogger.LogStep(3, "Analyzing contextual timing patterns");
-            
+
             // ARCHITECTURAL PRINCIPLE: Structural analysis only - no business value assumptions
             if (currentReceipt.Items.Any())
             {
                 var orderSize = currentReceipt.Items.Sum(i => i.Quantity);
                 var conversationLength = conversationHistory.Count;
-                
+
                 if (orderSize >= 2 && conversationLength >= 4)
                 {
                     analysis.SubstantialOrderPattern = true;
                     analysis.CompletionLikelihood += 0.1; // Reduced - just structural hint
                     _thoughtLogger.LogThought($"Substantial interaction pattern - {orderSize} items, {conversationLength} exchanges");
                 }
-                
+
                 // ARCHITECTURAL FIX: Remove currency/value assumptions - just indicate items exist
                 analysis.CompletionLikelihood += 0.05; // Minimal structural boost
             }
@@ -213,28 +213,29 @@ namespace PosKernel.AI.Core
         private void DetermineFinalIntent(OrderIntentAnalysis analysis)
         {
             _thoughtLogger.LogStep(4, "Making final intent determination");
-            
+
             _thoughtLogger.LogThought($"Likelihood scores - Completion: {analysis.CompletionLikelihood:F2}, NewOrder: {analysis.NewOrderLikelihood:F2}, Question: {analysis.QuestionLikelihood:F2}");
-            
+
             // ARCHITECTURAL PRINCIPLE: Extremely conservative structural analysis - defer to AI for all but clear structural cases
-            
+
             // Clear structural question indicators
             if (analysis.QuestionLikelihood > 0.5)
             {
                 analysis.Intent = OrderIntent.Question;
                 analysis.Reasoning = "Clear question structure detected";
             }
-            // ARCHITECTURAL PRINCIPLE: Very high threshold for structural completion detection
-            else if (analysis.CompletionLikelihood > 0.8 && 
+            // ARCHITECTURAL PRINCIPLE: Reasonable threshold for structural completion detection
+            // Lower threshold allows common completion phrases to be handled properly
+            else if (analysis.CompletionLikelihood > 0.4 &&
                      analysis.HasItems &&
                      analysis.RecentCompletionContext &&
                      analysis.SubstantialOrderPattern)
             {
                 analysis.Intent = OrderIntent.ReadyForPayment;
-                analysis.Reasoning = $"High structural completion confidence ({analysis.CompletionLikelihood:F2}) with multiple indicators";
+                analysis.Reasoning = $"Structural completion confidence ({analysis.CompletionLikelihood:F2}) with contextual indicators";
             }
             // Clear structural ordering signals
-            else if (analysis.NewOrderLikelihood > 0.6 && 
+            else if (analysis.NewOrderLikelihood > 0.6 &&
                      analysis.NewOrderLikelihood > analysis.CompletionLikelihood)
             {
                 analysis.Intent = OrderIntent.ContinueOrdering;
@@ -247,7 +248,7 @@ namespace PosKernel.AI.Core
                 analysis.Reasoning = "Structural analysis inconclusive - deferring to AI semantic understanding";
                 _thoughtLogger.LogThought("AMBIGUOUS_INTENT_DEFAULT: Structural analysis insufficient - using AI semantic processing");
             }
-            
+
             _thoughtLogger.LogThought($"FINAL_INTENT_DECISION: Intent={analysis.Intent}, Reasoning={analysis.Reasoning}");
         }
     }
@@ -266,7 +267,7 @@ namespace PosKernel.AI.Core
         public int ConversationLength { get; set; }
         public string ReasonCode { get; set; } = "";
         public List<string> StructuralIndicators { get; set; } = new();
-        
+
         // Structural pattern properties
         public double CompletionLikelihood { get; set; } = 0.0;
         public double NewOrderLikelihood { get; set; } = 0.0;

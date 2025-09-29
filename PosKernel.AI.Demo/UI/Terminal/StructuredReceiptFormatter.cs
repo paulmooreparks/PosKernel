@@ -18,6 +18,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using PosKernel.AI.Models;
 using PosKernel.AI.Services;
+using PosKernel.Configuration;
 using PosKernel.Configuration.Services;
 
 namespace PosKernel.AI.Demo.UI.Terminal;
@@ -61,43 +62,48 @@ public class StructuredReceiptFormatter
             // Read parent_line_item_id relationships, not cultural presentation strings
             RenderTransactionItems(receipt.Items, content, 0);
 
-            // Totals section
-            content.AppendLine();
-            content.AppendLine(new string('-', _receiptWidth));
-            content.AppendLine(FormatTotalLine("SUBTOTAL", receipt.Total));
-            content.AppendLine(FormatTotalLine("TOTAL", receipt.Total));
-        }
-        else
-        {
-            content.AppendLine();
-            content.AppendLine(CenterText("(Empty Order)"));
-        }
-
-        // Footer section
+        // Totals section
+        content.AppendLine();
         content.AppendLine(new string('-', _receiptWidth));
+        content.AppendLine(FormatTotalLine("SUBTOTAL", receipt.Total));
+        content.AppendLine(FormatTotalLine("TOTAL", receipt.Total));
 
-        return content.ToString();
+        // Payment section - show payment status if completed
+        if (receipt.Status == PaymentStatus.Completed)
+        {
+            content.AppendLine(new string('-', _receiptWidth));
+            content.AppendLine(FormatTotalLine("PAID", receipt.Total));
+        }
+    }
+    else
+    {
+        content.AppendLine();
+        content.AppendLine(CenterText("(Empty Order)"));
+    }
+
+    // Footer section
+    content.AppendLine(new string('-', _receiptWidth));        return content.ToString();
     }
 
     // ARCHITECTURAL PRINCIPLE: Render NRF-compliant hierarchical transaction structure
     // Read parent_line_item_id relationships, not cultural presentation strings
-    
+
     private void RenderTransactionItems(List<PosKernel.AI.Models.ReceiptLineItem> items, StringBuilder content, int indentLevel)
     {
         // Find top-level items (no parent)
         var topLevelItems = items.Where(item => item.ParentLineItemId == null).ToList();
-        
+
         foreach (var item in topLevelItems)
         {
             RenderLineItemWithChildren(item, items, content, indentLevel);
         }
     }
-    
+
     private void RenderLineItemWithChildren(PosKernel.AI.Models.ReceiptLineItem item, List<PosKernel.AI.Models.ReceiptLineItem> allItems, StringBuilder content, int indentLevel)
     {
         var indent = new string(' ', indentLevel * 2);
         var formattedPrice = FormatCurrency(item.ExtendedPrice);
-        
+
         // Render current item
         var itemLine = $"{indent}{item.ProductName}";
         if (item.ExtendedPrice > 0 || indentLevel == 0) // Show price for top-level items or non-zero items
@@ -105,7 +111,7 @@ public class StructuredReceiptFormatter
             itemLine = itemLine.PadRight(35 - indent.Length) + formattedPrice;
         }
         content.AppendLine(itemLine);
-        
+
         // Find and render child items
         var children = allItems.Where(child => child.ParentLineItemId == item.LineNumber).ToList();
         foreach (var child in children)
@@ -122,7 +128,7 @@ public class StructuredReceiptFormatter
     {
         var formattedAmount = FormatCurrency(amount);
         var labelColumnWidth = _receiptWidth - _priceColumnWidth;
-        
+
         return $"{label.PadRight(labelColumnWidth)}{formattedAmount.PadLeft(_priceColumnWidth)}";
     }
 
@@ -194,7 +200,7 @@ public class StructuredReceiptFormatter
             // "Teh Si Kosong" -> "Teh C" with "No sugar"
             var drinkName = customization.Replace("kosong", "", StringComparison.OrdinalIgnoreCase).Trim();
             drinkName = NormalizeDrinkName(drinkName);
-            
+
             var drink = new ReceiptModification
             {
                 Name = drinkName,
@@ -211,7 +217,7 @@ public class StructuredReceiptFormatter
             // "Teh C Siew Dai" -> "Teh C" with "Less sugar"
             var drinkName = customization.Replace("siew dai", "", StringComparison.OrdinalIgnoreCase).Trim();
             drinkName = NormalizeDrinkName(drinkName);
-            
+
             var drink = new ReceiptModification
             {
                 Name = drinkName,
@@ -228,7 +234,7 @@ public class StructuredReceiptFormatter
             // "Teh C Gah Dai" -> "Teh C" with "Extra sugar"
             var drinkName = customization.Replace("gah dai", "", StringComparison.OrdinalIgnoreCase).Trim();
             drinkName = NormalizeDrinkName(drinkName);
-            
+
             var drink = new ReceiptModification
             {
                 Name = drinkName,
@@ -268,7 +274,7 @@ public class StructuredReceiptFormatter
 
         // Handle "Si" -> "C" conversion (evaporated milk)
         drinkName = Regex.Replace(drinkName, @"\bsi\b", "C", RegexOptions.IgnoreCase);
-        
+
         // Standardize capitalization
         var words = drinkName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         for (int i = 0; i < words.Length; i++)

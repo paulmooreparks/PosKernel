@@ -56,7 +56,7 @@ namespace PosKernel.Client
         public static IPosKernelClient CreateClient(ILogger logger, IConfiguration? configuration = null)
         {
             var kernelTypeStr = configuration?.GetSection("PosKernel:KernelType")?.Value ?? "Auto";
-            
+
             if (!Enum.TryParse<KernelType>(kernelTypeStr, ignoreCase: true, out var kernelType))
             {
                 logger.LogWarning("Invalid kernel type '{KernelType}' in configuration, using Auto", kernelTypeStr);
@@ -92,7 +92,7 @@ namespace PosKernel.Client
         internal static IPosKernelClient CreateCSharpServiceClient(ILogger logger, IConfiguration? configuration)
         {
             logger.LogInformation("Creating C# service client");
-            
+
             var options = new PosKernelClientOptions();
             if (configuration != null)
             {
@@ -103,7 +103,7 @@ namespace PosKernel.Client
                 }
             }
 
-            var typedLogger = logger as ILogger<PosKernelClient> ?? 
+            var typedLogger = logger as ILogger<PosKernelClient> ??
                 new LoggerWrapper<PosKernelClient>(logger);
 
             return new PosKernelClient(typedLogger, options);
@@ -115,7 +115,7 @@ namespace PosKernel.Client
         internal static IPosKernelClient CreateRustServiceClient(ILogger logger, IConfiguration? configuration)
         {
             logger.LogInformation("Creating Rust service gRPC client");
-            
+
             var options = new RustKernelClientOptions();
             if (configuration != null)
             {
@@ -126,7 +126,7 @@ namespace PosKernel.Client
                 }
             }
 
-            var typedLogger = logger as ILogger<RustKernelClient> ?? 
+            var typedLogger = logger as ILogger<RustKernelClient> ??
                 new LoggerWrapper<RustKernelClient>(logger);
 
             return new RustKernelClient(typedLogger, options);
@@ -138,7 +138,7 @@ namespace PosKernel.Client
         private static IPosKernelClient CreateAutoClient(ILogger logger, IConfiguration? configuration)
         {
             logger.LogInformation("Creating auto-detecting kernel client (Rust → C# fallback)");
-            
+
             return new AutoKernelClient(logger, configuration);
         }
     }
@@ -174,7 +174,7 @@ namespace PosKernel.Client
                 _logger.LogInformation("Attempting to connect to Rust kernel service...");
                 _activeClient = PosKernelClientFactory.CreateRustServiceClient(_logger, _configuration);
                 await _activeClient.ConnectAsync(cancellationToken);
-                
+
                 _logger.LogInformation("✅ Connected to Rust kernel service successfully");
                 return;
             }
@@ -191,7 +191,7 @@ namespace PosKernel.Client
                 _logger.LogInformation("Attempting to connect to C# kernel service...");
                 _activeClient = PosKernelClientFactory.CreateCSharpServiceClient(_logger, _configuration);
                 await _activeClient.ConnectAsync(cancellationToken);
-                
+
                 _logger.LogInformation("✅ Connected to C# kernel service as fallback");
             }
             catch (Exception ex)
@@ -228,12 +228,12 @@ namespace PosKernel.Client
             {
                 throw new ObjectDisposedException(nameof(AutoKernelClient));
             }
-            
+
             if (_activeClient == null)
             {
                 throw new InvalidOperationException("Not connected to any kernel service. Call ConnectAsync first.");
             }
-            
+
             return _activeClient;
         }
 
@@ -241,7 +241,7 @@ namespace PosKernel.Client
         public Task<string> CreateSessionAsync(string terminalId, string operatorId, CancellationToken cancellationToken = default)
             => EnsureConnected().CreateSessionAsync(terminalId, operatorId, cancellationToken);
 
-        public Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency = "USD", CancellationToken cancellationToken = default)
+        public Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency, CancellationToken cancellationToken = default)
             => EnsureConnected().StartTransactionAsync(sessionId, currency, cancellationToken);
 
         public Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
@@ -298,7 +298,7 @@ namespace PosKernel.Client
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => _logger.BeginScope(state);
         public bool IsEnabled(LogLevel logLevel) => _logger.IsEnabled(logLevel);
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) 
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             => _logger.Log(logLevel, eventId, state, exception, formatter);
     }
 }

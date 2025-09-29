@@ -28,7 +28,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 
 namespace PosKernel.AI.Core {
-    
+
     public enum ConversationState
     {
         Initial,
@@ -39,8 +39,8 @@ namespace PosKernel.AI.Core {
         ReadyForPayment,
         ProcessingPayment
     }
-    
-    public class ChatOrchestrator {
+
+    public class ChatOrchestrator : IReceiptChangeNotifier {
         private readonly McpClient _mcpClient;
         private readonly KernelPosToolsProvider? _kernelToolsProvider;
         private readonly PosToolsProvider? _mockToolsProvider;
@@ -49,18 +49,42 @@ namespace PosKernel.AI.Core {
         private readonly StoreConfig _storeConfig;
         private readonly TimeSpan DisambiguationTimeout;
         private readonly ICurrencyFormattingService? _currencyFormatter;
+        private readonly ISemanticMatchingService? _semanticMatchingService;
         private readonly Receipt _receipt;
         private readonly List<ChatMessage> _conversationHistory;
         private readonly PaymentStateMachine _paymentState;
         private bool _useRealKernel;
         private ThoughtLogger _thoughtLogger;
         private OrderCompletionAnalyzer _orderAnalyzer;
-        
+
         // Cache to avoid repeated name lookups for the same SKU
         private readonly Dictionary<string, string> _skuNameCache = new(StringComparer.OrdinalIgnoreCase);
 
         private TemplateRenderer _renderer;
         private bool _autoClearScheduled = false;
+
+        // ARCHITECTURAL FIX: Event-driven receipt updates instead of polling
+        public event EventHandler<ReceiptChangedEventArgs>? ReceiptChanged;
+
+        /// <summary>
+        /// Raises the ReceiptChanged event with proper context and thread safety.
+        /// ARCHITECTURAL PRINCIPLE: Centralized event notification ensures consistency.
+        /// </summary>
+        private void NotifyReceiptChanged(ReceiptChangeType changeType, string? context = null)
+        {
+            try
+            {
+                var args = new ReceiptChangedEventArgs(changeType, _receipt, context);
+                ReceiptChanged?.Invoke(this, args);
+                _logger.LogDebug("Receipt change event raised: {ChangeType}, Items: {ItemCount}, Status: {Status}",
+                    changeType, _receipt.Items.Count, _receipt.Status);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to notify receipt change subscribers: {ChangeType}", changeType);
+                // Don't throw - event notification failures shouldn't break business logic
+            }
+        }
 
         public Receipt CurrentReceipt => _receipt;
         public IReadOnlyList<ChatMessage> ConversationHistory => _conversationHistory;
@@ -83,7 +107,8 @@ namespace PosKernel.AI.Core {
             ILogger<ChatOrchestrator> logger,
             KernelPosToolsProvider? kernelToolsProvider = null,
             PosToolsProvider? mockToolsProvider = null,
-            ICurrencyFormattingService? currencyFormatter = null)
+            ICurrencyFormattingService? currencyFormatter = null,
+            ISemanticMatchingService? semanticMatchingService = null)
         {
             _mcpClient = mcpClient ?? throw new ArgumentNullException(nameof(mcpClient));
             _personality = personality ?? throw new ArgumentNullException(nameof(personality));
@@ -92,6 +117,7 @@ namespace PosKernel.AI.Core {
             _kernelToolsProvider = kernelToolsProvider;
             _mockToolsProvider = mockToolsProvider;
             _currencyFormatter = currencyFormatter;
+            _semanticMatchingService = semanticMatchingService;
 
             _useRealKernel = kernelToolsProvider != null;
 
@@ -126,24 +152,24 @@ namespace PosKernel.AI.Core {
         public async Task<ChatMessage> InitializeAsync() {
             try {
                 var context = new PosKernel.AI.Services.PromptContext();
-                
+
                 _logger.LogInformation($"🔍 ORCHESTRATOR_DEBUG: Initializing with PersonalityType={_personality.Type}, StaffTitle={_personality.StaffTitle}");
-                
+
                 if (_useRealKernel && _kernelToolsProvider != null)
                 {
                     var availableTools = _kernelToolsProvider.GetAvailableTools();
-                    
+
                     var contextLoadPrompt = "Load menu context and payment methods context for this store. " +
                                           "Execute the load_menu_context and load_payment_methods_context tools. " +
                                           "Do not provide conversational responses - just execute the tools to initialize your knowledge.";
-                    
+
                     _logger.LogInformation("Loading store context at initialization...");
                     LastPrompt = contextLoadPrompt;
                     await _mcpClient.CompleteWithToolsAsync(contextLoadPrompt, availableTools ?? Array.Empty<McpTool>());
-                    
+
                     var greetingPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "greeting", context);
                     _logger.LogInformation("Generating greeting message...");
-                    
+
                     LastPrompt = greetingPrompt;
                     var emptyToolsList = new List<McpTool>(); // No tools for greeting
                     var greetingResponse = await _mcpClient.CompleteWithToolsAsync(greetingPrompt, emptyToolsList);
@@ -195,52 +221,83 @@ namespace PosKernel.AI.Core {
         {
             userInput ??= string.Empty; // defensive
             _logger.LogInformation("Processing user input: {Input}", userInput);
-            
-            var intentAnalysis = _orderAnalyzer.AnalyzeOrderIntent(userInput, _receipt, _conversationHistory);
-            
-            _thoughtLogger.LogThought($"STRUCTURAL_INTENT_ANALYSIS: Intent: {intentAnalysis.Intent}, Confidence: {intentAnalysis.ConfidenceLevel:F2}, Reason: {intentAnalysis. ReasonCode}");
-            
-            var response = await HandleWithSimplifiedOrdering(userInput, intentAnalysis);
-            
+
+            // ARCHITECTURAL FIX: Let AI handle semantic understanding instead of broken structural analysis
+            // The AI templates already contain proper completion detection logic
+            var response = await HandleWithSemanticUnderstanding(userInput);
+
             _conversationHistory.Add(new ChatMessage
             {
-                Sender = "Customer", 
-                Content = userInput, 
+                Sender = "Customer",
+                Content = userInput,
                 Timestamp = DateTime.Now,
                 IsSystem = false,
                 ShowInCleanMode = true
             });
-            
+
             _conversationHistory.Add(response);
-            
+
             return response;
         }
 
-        private bool LooksLikePaymentMethod(string? input)
+        // ARCHITECTURAL FIX: Let AI handle semantic understanding instead of structural analysis
+        private async Task<ChatMessage> HandleWithSemanticUnderstanding(string userInput)
+        {
+            _thoughtLogger.LogThought(
+                $"SEMANTIC_AI_HANDLING: Items in receipt: {_receipt.Items.Count}, Receipt status: {_receipt.Status}");
+
+            // Handle payment phase
+            if (_receipt.Status == PaymentStatus.ReadyForPayment)
+            {
+                _thoughtLogger.LogThought("PAYMENT_PHASE_INPUT: Delegating to AI payment handling based on conversation context");
+
+                var direct = await TryProcessPaymentDirectAsync(userInput);
+                if (direct != null)
+                {
+                    return direct;
+                }
+
+                return await ProcessUserRequestAsync(userInput ?? string.Empty, "payment");
+            }
+
+            // Handle ordering phase - let AI semantic understanding determine the intent
+            if (_receipt.Status == PaymentStatus.Building)
+            {
+                // ARCHITECTURAL FIX: Let AI templates handle ALL semantic understanding including completion detection
+                // The ordering-flow template already contains proper completion detection logic
+                return await ProcessUserRequestAsync(userInput ?? string.Empty, "ordering");
+            }
+
+            // Handle other cases with AI semantic understanding
+            return await ProcessUserRequestAsync(userInput ?? string.Empty, "ordering");
+        }
+
+        // ARCHITECTURAL PRINCIPLE: Client must NOT decide payment method matching - use AI semantic understanding
+        private async Task<bool> LooksLikePaymentMethodAsync(string? input)
         {
             if (string.IsNullOrWhiteSpace(input))
             {
                 return false;
             }
 
-            var normalized = new string(input.Where(c => !char.IsWhiteSpace(c) && c != '-' && c != '_').ToArray()).ToLowerInvariant();
             var methods = _storeConfig?.PaymentMethods?.AcceptedMethods;
-            if (methods == null)
+            if (methods?.Any() != true)
             {
                 return false;
             }
 
-            foreach (var m in methods.Where(m => m.IsEnabled))
+            if (_semanticMatchingService == null)
             {
-                var idNorm = new string((m.MethodId ?? string.Empty).Where(c => !char.IsWhiteSpace(c) && c != '-' && c != '_').ToArray()).ToLowerInvariant();
-                var nameNorm = new string((m.DisplayName ?? string.Empty).Where(c => !char.IsWhiteSpace(c) && c != '-' && c != '_').ToArray()).ToLowerInvariant();
-                if (normalized == idNorm || normalized == nameNorm)
-                {
-                    return true;
-                }
+                throw new InvalidOperationException(
+                    "DESIGN DEFICIENCY: Payment method detection requires ISemanticMatchingService. " +
+                    "Client cannot decide payment method matching defaults. " +
+                    "Register ISemanticMatchingService in DI container.");
             }
 
-            return false;
+            return await _semanticMatchingService.MatchesConceptAsync(
+                input,
+                "payment_method",
+                "payment method identification");
         }
 
         // Minimal deterministic tool planning wrapper for ordering/payment phases
@@ -269,9 +326,8 @@ namespace PosKernel.AI.Core {
             var aiResponse = await _mcpClient.CompleteWithToolsAsync(prompt, tools);
 
             // Execute any tool calls the AI requested
-            bool anyToolExecuted = false;
             bool anyItemsAdded = false;
-            
+
             if (_useRealKernel && _kernelToolsProvider != null && aiResponse.ToolCalls.Any())
             {
                 foreach (var call in aiResponse.ToolCalls)
@@ -279,7 +335,6 @@ namespace PosKernel.AI.Core {
                     try
                     {
                         await _kernelToolsProvider.ExecuteToolAsync(call, CancellationToken.None);
-                        anyToolExecuted = true;
                     }
                     catch (Exception ex)
                     {
@@ -298,11 +353,13 @@ namespace PosKernel.AI.Core {
                 }
             }
 
-            // Deterministic discovery fallback: if AI didn't add items and this is ordering context
+            // Deterministic discovery fallback: Only if AI didn't make any tool calls at all
             string discoveryResults = string.Empty;
-            if (!anyItemsAdded && !string.Equals(contextHint, "payment", StringComparison.OrdinalIgnoreCase) 
+            if (!anyItemsAdded && !aiResponse.ToolCalls.Any()
+                && !string.Equals(contextHint, "payment", StringComparison.OrdinalIgnoreCase)
                 && _useRealKernel && _kernelToolsProvider != null)
             {
+                _thoughtLogger.LogThought("DISCOVERY_FALLBACK: AI made no tool calls, providing search results for response generation");
                 discoveryResults = await TryDiscoverProductAsync(userInput);
                 if (!string.IsNullOrWhiteSpace(discoveryResults))
                 {
@@ -315,12 +372,12 @@ namespace PosKernel.AI.Core {
 
             if (_receipt.Status == PaymentStatus.Completed)
             {
-                ScheduleAutoClearIfConfigured();
+                ClearReceiptForNextCustomer();
             }
 
             // Use AI response content, with fallbacks
             var content = aiResponse.Content?.Trim() ?? string.Empty;
-            
+
             // Check if new items were added for deterministic acknowledgment
             var addedLines = _receipt.Items.Where(i => !beforeIds.Contains(i.LineItemId ?? string.Empty)).ToList();
             if (addedLines.Count > 0 && string.IsNullOrWhiteSpace(content))
@@ -379,21 +436,23 @@ namespace PosKernel.AI.Core {
                 };
                 var result = await _kernelToolsProvider!.ExecuteToolAsync(searchCall, CancellationToken.None);
                 var resultText = result?.ToString() ?? string.Empty;
-                
+
                 if (!string.IsNullOrWhiteSpace(resultText) && !resultText.StartsWith("PRODUCT_NOT_FOUND", StringComparison.OrdinalIgnoreCase))
                 {
                     return resultText;
                 }
 
-                // Try token-based search for multilingual phrases
+                // ARCHITECTURAL FIX: Use configurable token processing instead of hardcoded length filtering
+                // No arbitrary length restrictions - AI can determine token relevance
                 var tokens = userInput.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Where(t => t.Length >= 3).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
                 foreach (var token in tokens)
                 {
                     var tokenCall = new McpToolCall
                     {
-                        FunctionName = "search_products", 
+                        FunctionName = "search_products",
                         Arguments = new Dictionary<string, JsonElement>
                         {
                             ["search_term"] = JsonDocument.Parse(JsonSerializer.Serialize(token)).RootElement
@@ -401,7 +460,7 @@ namespace PosKernel.AI.Core {
                     };
                     var tokenResult = await _kernelToolsProvider.ExecuteToolAsync(tokenCall, CancellationToken.None);
                     var tokenText = tokenResult?.ToString() ?? string.Empty;
-                    
+
                     if (!string.IsNullOrWhiteSpace(tokenText) && !tokenText.StartsWith("PRODUCT_NOT_FOUND", StringComparison.OrdinalIgnoreCase))
                     {
                         return tokenText;
@@ -420,23 +479,34 @@ namespace PosKernel.AI.Core {
             }
         }
 
+        // ARCHITECTURAL FIX: Build discovery prompt using consolidated template system
         private string BuildDiscoveryPrompt(string userInput, string searchResults, PosKernel.AI.Services.PromptContext ctx)
         {
-            var basePrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering", ctx);
-            
-            return $@"{basePrompt}
+            try
+            {
+                // Use ordering-flow template which already includes base context
+                var basePrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering-flow", ctx);
 
-## DISCOVERY RESULTS
-The customer said: ""{userInput}""
-Search results found: {searchResults}
+                var discoveryContext = new PosKernel.AI.Services.PromptContext
+                {
+                    UserInput = userInput,
+                    CartItems = ctx.CartItems,
+                    CurrentTotal = ctx.CurrentTotal,
+                    Currency = ctx.Currency
+                };
 
-Based on these search results, respond naturally as a kopitiam uncle:
-- If results show multiple options (like standalone item + set), present both and ask customer to choose
-- If results show one clear match, acknowledge and ask if they want to add it
-- Keep the tone conversational and helpful
-- Use the actual product names and prices from the search results
-
-DO NOT use tool calls in this response - just provide a natural conversational response based on the search results provided.";
+                var discoveryPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "discovery-results", discoveryContext);
+                return basePrompt + "\n\n" + discoveryPrompt.Replace("{{SearchResults}}", searchResults);
+            }
+            catch (Exception ex)
+            {
+                // ARCHITECTURAL PRINCIPLE: Fail fast if template system is broken
+                _logger.LogError(ex, "DESIGN DEFICIENCY: discovery-results template missing for personality {PersonalityType}", _personality.Type);
+                throw new InvalidOperationException(
+                    $"DESIGN DEFICIENCY: discovery-results template not found for {_personality.Type}. " +
+                    $"Cannot build discovery prompt without proper template system. " +
+                    $"Add discovery-results.md template to ~/.poskernel/ai_config/prompts/", ex);
+            }
         }
 
         private static string SanitizeToolPhaseContent(string content)
@@ -470,7 +540,7 @@ DO NOT use tool calls in this response - just provide a natural conversational r
             {
                 return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreName);
             }
-            
+
             throw new InvalidOperationException(
                 $"DESIGN DEFICIENCY: Currency formatting service not available. " +
                 $"Cannot format {amount} without proper currency service. " +
@@ -484,9 +554,9 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 $"Items in receipt: {_receipt.Items.Count}, Receipt status: {_receipt.Status}");
 
             // Content-based fast interpret path (no length heuristics)
-            if (_receipt.Status == PaymentStatus.Building 
-                && intentAnalysis.Intent != OrderIntent.Question 
-                && !LooksLikePaymentMethod(userInput))
+            if (_receipt.Status == PaymentStatus.Building
+                && intentAnalysis.Intent != OrderIntent.Question
+                && !await LooksLikePaymentMethodAsync(userInput))
             {
                 var quick = await TryInterpretAndAddAsync(userInput ?? string.Empty);
                 if (quick != null)
@@ -503,13 +573,14 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 var direct = await TryProcessPaymentDirectAsync(userInput);
                 if (direct != null)
                 {
+                    // ARCHITECTURAL FIX: Don't generate additional post-payment message if direct payment succeeded
                     return direct;
                 }
 
                 return await ProcessUserRequestAsync(userInput ?? string.Empty, "payment");
             }
 
-            if (_receipt.Items.Any() && LooksLikePaymentMethod(userInput))
+            if (_receipt.Items.Any() && await LooksLikePaymentMethodAsync(userInput))
             {
                 _thoughtLogger.LogThought("PAYMENT_SHORT_INPUT_DETECTED: Routing to payment context");
 
@@ -517,6 +588,7 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 var direct = await TryProcessPaymentDirectAsync(userInput);
                 if (direct != null)
                 {
+                    // ARCHITECTURAL FIX: Don't generate additional post-payment message if direct payment succeeded
                     return direct;
                 }
 
@@ -527,7 +599,7 @@ DO NOT use tool calls in this response - just provide a natural conversational r
             {
                 case OrderIntent.ContinueOrdering:
                     return await ProcessUserRequestAsync(userInput ?? string.Empty, "ordering");
-                
+
                 case OrderIntent.ReadyForPayment:
                     if (_receipt.Items.Any())
                     {
@@ -540,47 +612,58 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                         _thoughtLogger.LogThought("ORDER_COMPLETION_NO_ITEMS: Customer indicating completion but no items in order");
                         return await ProcessUserRequestAsync(userInput ?? string.Empty, "ordering");
                     }
-                
+
                 case OrderIntent.Question:
                     _thoughtLogger.LogThought("QUESTION_INTENT: Customer asking question - provide information, don't automatically process");
                     return await ProcessUserRequestAsync(userInput ?? string.Empty, "ordering");
-                
+
                 case OrderIntent.Ambiguous:
                     _thoughtLogger.LogThought("AMBIGUOUS_INTENT: Let AI semantic analysis determine intent");
                     return await ProcessUserRequestAsync(userInput ?? string.Empty, "ordering");
-                
+
                 default:
                     return await ProcessUserRequestAsync(userInput ?? string.Empty, "ordering");
             }
         }
 
-        private bool TryResolvePaymentMethod(string input, out string methodId)
+        // ARCHITECTURAL PRINCIPLE: No hardcoded string normalization - use AI semantic matching for payment method resolution
+        private async Task<(bool found, string methodId)> TryResolvePaymentMethodAsync(string input)
         {
-            methodId = string.Empty;
             if (string.IsNullOrWhiteSpace(input))
             {
-                return false;
+                return (false, string.Empty);
             }
 
-            var normalized = new string(input.Where(c => !char.IsWhiteSpace(c) && c != '-' && c != '_').ToArray()).ToLowerInvariant();
             var methods = _storeConfig?.PaymentMethods?.AcceptedMethods;
-            if (methods == null)
+            if (methods == null || !methods.Any())
             {
-                return false;
+                return (false, string.Empty);
             }
 
-            foreach (var m in methods.Where(m => m.IsEnabled))
+            if (_semanticMatchingService == null)
             {
-                var idNorm = new string((m.MethodId ?? string.Empty).Where(c => !char.IsWhiteSpace(c) && c != '-' && c != '_').ToArray()).ToLowerInvariant();
-                var nameNorm = new string((m.DisplayName ?? string.Empty).Where(c => !char.IsWhiteSpace(c) && c != '-' && c != '_').ToArray()).ToLowerInvariant();
-                if (normalized == idNorm || normalized == nameNorm)
+                throw new InvalidOperationException(
+                    "DESIGN DEFICIENCY: Payment method resolution requires ISemanticMatchingService. " +
+                    "Client cannot decide payment method resolution defaults. " +
+                    "Register ISemanticMatchingService in DI container.");
+            }
+
+            var candidates = methods
+                .Where(m => m.IsEnabled)
+                .Select(m => new SemanticCandidate
                 {
-                    methodId = m.MethodId ?? string.Empty;
-                    return true;
-                }
-            }
+                    Id = m.MethodId ?? string.Empty,
+                    DisplayName = m.DisplayName ?? string.Empty,
+                    Aliases = new[] { m.MethodId, m.DisplayName }.Where(s => !string.IsNullOrEmpty(s)).ToArray()!
+                })
+                .ToList();
 
-            return false;
+            var match = await _semanticMatchingService.GetBestMatchAsync(
+                input,
+                candidates,
+                "payment_method_resolution");
+
+            return match != null ? (true, match.Candidate.Id) : (false, string.Empty);
         }
 
         private async Task<ChatMessage?> TryProcessPaymentDirectAsync(string? userInput)
@@ -590,7 +673,8 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 return null;
             }
 
-            if (!TryResolvePaymentMethod(userInput ?? string.Empty, out var methodId) || string.IsNullOrWhiteSpace(methodId))
+            var (found, methodId) = await TryResolvePaymentMethodAsync(userInput ?? string.Empty);
+            if (!found || string.IsNullOrWhiteSpace(methodId))
             {
                 return null;
             }
@@ -620,6 +704,9 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                     _logger.LogError(ex, "Failed to refresh receipt after direct payment");
                 }
 
+                // ARCHITECTURAL FIX: Event-driven auto-clear
+                ClearReceiptForNextCustomer();
+
                 var msg = new ChatMessage
                 {
                     Sender = _personality.StaffTitle,
@@ -635,81 +722,32 @@ DO NOT use tool calls in this response - just provide a natural conversational r
             return null;
         }
 
-        // RESTORED: Build tool analysis prompt
+        // ARCHITECTURAL FIX: Build tool analysis prompt using consolidated template system
         private string BuildToolAnalysisPrompt(PosKernel.AI.Services.PromptContext promptContext, string contextHint)
         {
-            var prompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering", promptContext);
-
-            var items = _receipt.Items.Any() ? string.Join(", ", _receipt.Items.Select(i => $"{i.Quantity}x {i.ProductName}")) : "none";
-            var total = _receipt.Items.Any() ? FormatCurrency(_receipt.Total) : FormatCurrency(0m);
-
-            prompt += "\n\n## CUSTOMER INPUT (verbatim):\n" + (promptContext.UserInput ?? string.Empty) + "\n";
-            
-            // ARCHITECTURAL FIX: Include recent conversation history for contextual understanding
-            prompt += "\n## RECENT CONVERSATION CONTEXT:\n";
-            var recentMessages = _conversationHistory.TakeLast(4).Where(m => !m.IsSystem).ToList();
-            if (recentMessages.Any())
+            try
             {
-                foreach (var msg in recentMessages)
-                {
-                    prompt += $"{msg.Sender}: {msg.Content}\n";
-                }
-                // ARCHITECTURAL FIX: Removed hardcoded contextual reference guidance - now handled by personality prompts
+                // Use the consolidated ordering-flow template that includes all necessary context
+                var prompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering-flow", promptContext);
+                return prompt + (!string.IsNullOrEmpty(contextHint) ? $"\n\n## CONTEXT HINT: {contextHint}" : "");
             }
-            else
+            catch (Exception ex)
             {
-                prompt += "This is the first interaction in this conversation.\n";
+                // ARCHITECTURAL PRINCIPLE: Fail fast if template system is broken
+                _logger.LogError(ex, "DESIGN DEFICIENCY: ordering-flow template missing for personality {PersonalityType}", _personality.Type);
+                throw new InvalidOperationException(
+                    $"DESIGN DEFICIENCY: ordering-flow template not found for {_personality.Type}. " +
+                    $"Cannot build tool analysis prompt without proper template system. " +
+                    $"Add ordering-flow.md template to ~/.poskernel/ai_config/prompts/", ex);
             }
-            
-            prompt += "\n## CURRENT ORDER STATE:\n" +
-                      $"Items: {items}\n" +
-                      $"Total: {total}\n" +
-                      $"ReceiptStatus: {_receipt.Status}\n";
-
-            prompt += "\nPRODUCT DISCOVERY ENFORCEMENT (Culture-Neutral):\n" +
-                      "- Allowed tools in this phase: search_products, get_set_configuration, update_set_configuration, add_item_to_transaction, apply_modifications_to_line, get_popular_items.\n" +
-                      "- Forbidden tools in this phase: get_transaction, calculate_transaction_total, process_payment.\n" +
-                      "- Do NOT list or suggest specific product names unless they come from tool results in THIS PHASE.\n" +
-                      "- When the user mentions an item (any language), FIRST call search_products with their words. If 0 results, retry with a semantically translated/normalized query (token re-ordering, singular/plural, stopword removal, script normalization).\n" +
-                      "- Only if still 0 results, ask one concise clarifying question and, if needed, call get_popular_items.\n" +
-                      "- If a single result is a SET, add it immediately; otherwise present options from tool results and ask the customer to choose.\n";
-
-            if (_receipt.Items.Any() && _receipt.Status == PaymentStatus.Building)
-            {
-                prompt += "\nORDER COMPLETION DETECTION (Culture-Neutral): If the customer indicates they are finished ordering in any language or phrasing, " +
-                          "IMMEDIATELY transition to payment by calling load_payment_methods_context, provide an order summary with the current total, and ask how they want to pay. " +
-                          "NEVER call calculate_transaction_total for completion handling; it is informational only and MUST NOT be used here.\n";
-            }
-
-            if (_receipt.Status == PaymentStatus.ReadyForPayment)
-            {
-                prompt += "\nPAYMENT_PHASE: The receipt is ReadyForPayment.\n" +
-                          "If the customer specifies a valid payment method (by name or colloquial term), call process_payment with that method.\n" +
-                          "If the method is unclear, first call load_payment_methods_context and then ask the customer to choose explicitly.\n" +
-                          "Do not re-list payment methods without new information.\n";
-            }
-
-            if (contextHint == "payment" && _receipt.Items.Any())
-            {
-                prompt += "\n\nTOOL_ANALYSIS_CONTEXT: Customer is specifying a payment method.\n" +
-                          $"CURRENT_ORDER: {items}\n" +
-                          $"ORDER_TOTAL: {total}\n" +
-                          "Act according to the payment method the customer specified using the appropriate tool.";
-            }
-
-            prompt += "\n\n## TOOL_EXECUTION_PHASE: Analyze and Execute Tools Only\n" +
-                      "Do NOT provide conversational responses in this phase. Determine and execute tools based on the customer's request.\n";
-
-            return prompt;
         }
 
-        // NEW: Fast interpret prompt for short phrases (RAG-style planning via tools)
+        // ARCHITECTURAL FIX: Fast interpret using consolidated template system (no redundant template loading)
         private string BuildFastInterpretPrompt(string phrase)
         {
             var items = _receipt.Items.Any() ? string.Join(", ", _receipt.Items.Select(i => $"{i.Quantity}x {i.ProductName}")) : "none";
             var total = _receipt.Items.Any() ? FormatCurrency(_receipt.Total) : FormatCurrency(0m);
 
-            // Include the full ordering personality prompt to inherit domain guidance (translation, sets, rules)
             var ctx = new PosKernel.AI.Services.PromptContext
             {
                 UserInput = phrase,
@@ -717,57 +755,65 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 CurrentTotal = total,
                 Currency = _receipt.Store.Currency
             };
-            var baseOrdering = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering", ctx);
 
-            var sb = new StringBuilder();
-            sb.AppendLine(baseOrdering);
-            sb.AppendLine();
-            sb.AppendLine("# FAST_INTERPRET OVERRIDE (TOOLS ONLY)");
-            sb.AppendLine("You are now in a tools-only micro-phase to interpret the phrase quickly and perform concrete tool calls.");
-            sb.AppendLine("GROUNDING:");
-            sb.AppendLine("- Allowed tools: search_products, get_set_configuration, update_set_configuration, add_item_to_transaction, apply_modifications_to_line.");
-            sb.AppendLine("- Forbidden tools: get_transaction, calculate_transaction_total, process_payment (not ordering).");
-            sb.AppendLine("- First call search_products using the exact user phrase. If 0 results, try a semantically translated/normalized variant (token re-ordering, singular/plural, stopword removal, script normalization). Use only results from tools.");
-            sb.AppendLine("- Select the best matching SKU. If it is a set, call get_set_configuration/update_set_configuration as needed.");
-            sb.AppendLine("- Call add_item_to_transaction with the chosen SKU and a sensible quantity (default 1 unless the phrase specifies otherwise).");
-            sb.AppendLine("- If the phrase implies modifications (e.g., sweetness level, ice amount/temperature, add/remove options), call apply_modifications_to_line with appropriate modifications supported by the item.");
-            sb.AppendLine("RULES:");
-            sb.AppendLine("- Execute tools only. Do not produce conversational text.");
-            sb.AppendLine("- Do not invent SKUs or options not present in tool results.");
-            sb.AppendLine("- If no viable SKU after retries, ask ONE concise clarifying question and try search_products again. If still none, stop and return control (no more tool calls in this phase).");
-            sb.AppendLine("- Do NOT call apply_modifications_to_line unless: (a) you just added the target item in THIS phase, or (b) the phrase explicitly refers to changing an existing line (e.g., 'make the coffee <prep>').");
-            sb.AppendLine("- When the phrase names a product (standalone noun), treat it as a new item request (search -> add). Do NOT interpret it as a modification to a different existing item.");
-            sb.AppendLine();
-            sb.AppendLine($"PHRASE: {phrase}");
-            sb.AppendLine("CURRENT ORDER STATE:");
-            sb.AppendLine($"- Items: {items}");
-            sb.AppendLine($"- Total: {total}");
-            sb.AppendLine($"- ReceiptStatus: {_receipt.Status}");
-            sb.AppendLine();
-            sb.AppendLine("TOOL_EXECUTION_PHASE: Analyze and execute tools only. Do not write a chat reply.");
-            return sb.ToString();
+            try
+            {
+                // Use ordering-flow template which already includes cultural intelligence
+                var orderingFlow = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering-flow", ctx);
+
+                // Add fast-interpret specific instructions
+                var fastInterpretPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "fast-interpret", ctx);
+                return orderingFlow + "\n\n" + fastInterpretPrompt;
+            }
+            catch (Exception ex)
+            {
+                // ARCHITECTURAL PRINCIPLE: Fail fast if template system is broken
+                _logger.LogError(ex, "DESIGN DEFICIENCY: fast-interpret template missing for personality {PersonalityType}", _personality.Type);
+                throw new InvalidOperationException(
+                    $"DESIGN DEFICIENCY: fast-interpret template not found for {_personality.Type}. " +
+                    $"Cannot build fast interpret prompt without proper template system. " +
+                    $"Add fast-interpret.md template to ~/.poskernel/ai_config/prompts/", ex);
+            }
         }
 
-        // NEW: Order summary + payment prompt creator (no hardcoded payment lists)
+        // ARCHITECTURAL FIX: Order summary + payment prompt using template system (no hardcoded content)
         private Task<ChatMessage> CreateOrderSummaryWithPaymentPrompt()
         {
             var items = _receipt.Items.Any()
                 ? string.Join(", ", _receipt.Items.Select(i => $"{i.Quantity}x {i.ProductName}"))
                 : "none";
 
-            var content = new StringBuilder();
-            content.Append($"OK. Your current order: {items}. Total: {FormatCurrency(_receipt.Total)}. ");
-            content.Append("How you want to pay?");
-
-            var msg = new ChatMessage
+            try
             {
-                Sender = _personality.StaffTitle,
-                Content = content.ToString(),
-                IsSystem = false,
-                ShowInCleanMode = true,
-                Timestamp = DateTime.Now
-            };
-            return Task.FromResult(msg);
+                var ctx = new PosKernel.AI.Services.PromptContext
+                {
+                    UserInput = "", // Not user-initiated
+                    CartItems = items,
+                    CurrentTotal = FormatCurrency(_receipt.Total),
+                    Currency = _receipt.Store.Currency
+                };
+
+                var paymentPrompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "payment_request", ctx);
+
+                var msg = new ChatMessage
+                {
+                    Sender = _personality.StaffTitle,
+                    Content = paymentPrompt.Trim(),
+                    IsSystem = false,
+                    ShowInCleanMode = true,
+                    Timestamp = DateTime.Now
+                };
+                return Task.FromResult(msg);
+            }
+            catch (Exception ex)
+            {
+                // ARCHITECTURAL PRINCIPLE: Fail fast if template missing - don't hardcode fallback
+                _logger.LogError(ex, "DESIGN DEFICIENCY: payment_request template missing for personality {PersonalityType}", _personality.Type);
+                throw new InvalidOperationException(
+                    $"DESIGN DEFICIENCY: payment_request template not found for {_personality.Type}. " +
+                    $"Cannot create payment prompt without proper template. " +
+                    $"Add payment_request.md template to ~/.poskernel/ai_config/prompts/", ex);
+            }
         }
 
         // NEW: Refresh receipt snapshot from kernel using tools provider (reflection for portability)
@@ -777,6 +823,10 @@ DO NOT use tool calls in this response - just provide a natural conversational r
             {
                 return;
             }
+
+            // ARCHITECTURAL FIX: Capture receipt state before changes for event notification
+            var beforeStatus = _receipt.Status;
+            var beforeItemCount = _receipt.Items.Count;
 
             var getTxnCall = new McpToolCall { FunctionName = "get_transaction", Arguments = new Dictionary<string, JsonElement>() };
             var resultObj = await _kernelToolsProvider.ExecuteToolAsync(getTxnCall, CancellationToken.None);
@@ -792,6 +842,9 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                     {
                         _receipt.Status = PaymentStatus.Building;
                     }
+
+                    // ARCHITECTURAL FIX: Event-driven notification of receipt clearing
+                    NotifyReceiptChanged(ReceiptChangeType.Cleared, "Transaction not found in kernel");
                     return;
                 }
                 throw new InvalidOperationException($"DESIGN DEFICIENCY: get_transaction returned string instead of structured result: {s}");
@@ -916,6 +969,27 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 var subtotal = _receipt.Subtotal;
                 var computedTax = kernelTotal - subtotal;
                 _receipt.Tax = computedTax > 0 ? computedTax : 0m;
+
+                // ARCHITECTURAL FIX: Event-driven notification of receipt changes
+                var statusChanged = beforeStatus != _receipt.Status;
+                var itemsChanged = beforeItemCount != _receipt.Items.Count;
+
+                if (statusChanged && _receipt.Status == PaymentStatus.Completed)
+                {
+                    NotifyReceiptChanged(ReceiptChangeType.PaymentCompleted, "Payment processed successfully");
+                }
+                else if (statusChanged)
+                {
+                    NotifyReceiptChanged(ReceiptChangeType.StatusChanged, $"Status changed from {beforeStatus} to {_receipt.Status}");
+                }
+                else if (itemsChanged)
+                {
+                    NotifyReceiptChanged(ReceiptChangeType.ItemsUpdated, $"Items changed from {beforeItemCount} to {_receipt.Items.Count}");
+                }
+                else
+                {
+                    NotifyReceiptChanged(ReceiptChangeType.Updated, "Receipt refreshed from kernel");
+                }
             }
             catch (Exception ex)
             {
@@ -929,6 +1003,8 @@ DO NOT use tool calls in this response - just provide a natural conversational r
             {
                 return null;
             }
+
+            // Let AI personality determine completion intent through prompts
 
             // First try fast RAG-style interpretation via MCP tool planning
             var ragAck = await FastInterpretAndAddViaToolsAsync(userInput);
@@ -966,7 +1042,13 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 var value = kv[1].Trim();
                 if (key.Equals("sku", StringComparison.OrdinalIgnoreCase)) { sku = value; }
                 else if (key.Equals("name", StringComparison.OrdinalIgnoreCase)) { name = value; }
-                else if (key.Equals("quantity", StringComparison.OrdinalIgnoreCase)) { if (int.TryParse(value, out var n)) qty = Math.Max(1, n); }
+                else if (key.Equals("quantity", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (int.TryParse(value, out var n))
+                    {
+                        qty = Math.Max(1, n);
+                    }
+                }
                 else if (key.Equals("mods", StringComparison.OrdinalIgnoreCase)) { mods = value; }
             }
             if (string.IsNullOrWhiteSpace(sku))
@@ -1099,6 +1181,7 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 }
                 var qty = Math.Max(1, added.Quantity);
 
+                // Let AI personality handle set customization through prompts
                 var msg = new ChatMessage
                 {
                     Sender = _personality.StaffTitle,
@@ -1114,6 +1197,26 @@ DO NOT use tool calls in this response - just provide a natural conversational r
             {
                 _logger.LogError(ex, "FAST_INTERPRET_ERROR: {Message}", ex.Message);
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// ARCHITECTURAL FIX: Immediate clearing + event notification, no arbitrary delays.
+        /// Clears receipt immediately when payment is completed, respecting configuration.
+        /// </summary>
+        private void ClearReceiptForNextCustomer()
+        {
+            if (_storeConfig?.AdditionalConfig?.TryGetValue("auto_clear_seconds", out var secondsObj) == true
+                && int.TryParse(secondsObj?.ToString(), out var seconds) && seconds > 0)
+            {
+                // ARCHITECTURAL FIX: Immediate clearing + event notification, no arbitrary delays
+                _receipt.Items.Clear();
+                _receipt.Tax = 0m;
+                _receipt.Status = PaymentStatus.Building;
+                _receipt.TransactionId = Guid.NewGuid().ToString()[..8];
+                _autoClearScheduled = false;
+
+                NotifyReceiptChanged(ReceiptChangeType.Cleared, "Receipt cleared for next customer");
             }
         }
 
@@ -1156,7 +1259,7 @@ DO NOT use tool calls in this response - just provide a natural conversational r
                 }
             });
         }
-        
+
         public async Task<ChatMessage> GeneratePostPaymentMessageAsync()
         {
             try

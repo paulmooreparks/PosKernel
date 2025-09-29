@@ -1,32 +1,33 @@
 # AI Integration Architecture for POS Kernel
 
-**System**: POS Kernel v0.5.0-ai-complete  
-**Scope**: AI/ML integration implementation with Domain Extension support  
-**Analysis Date**: January 2025  
-**Status**: Phase 1 Complete - Restaurant Extension + AI Integration  
-**Architectural Principle**: Keep kernel pure, AI in user-space
+**System**: POS Kernel v0.7.5+ with Template-Driven AI
+**Scope**: AI/ML integration with template-based cultural intelligence
+**Analysis Date**: September 2025
+**Status**: Production Ready - Template System Complete
+**Architectural Principle**: Keep kernel pure, AI cultural intelligence in configurable templates
 
 ## Implementation Status
 
-### Phase 1 Completed (January 2025)
+### Latest Achievement (September 2025)
 
-**Restaurant Extension + AI Integration Successfully Deployed**:
+**Template-Driven Cultural Intelligence Successfully Deployed**:
 
-- SQLite database integration: Restaurant catalog with 12 products, categories, allergens, specifications
-- AI natural language processing: Real-time conversation with AI assistant
-- Domain extension architecture: Clean separation between AI demo and business data
-- Production-ready transactions: Real kernel contracts (Transaction, ProductId, Money)
-- Fuzzy matching: AI handles typos and natural language variations
-- Payment processing: Distinguishes between payment questions vs payment requests
-- Real business data: Products, pricing, categories from SQLite restaurant extension
+- Template system: All cultural knowledge in configurable `.md` files, zero C# hardcoding
+- Cultural translation: "roti bakar kaya set" → "Traditional Kaya Toast Set" via templates
+- Store customization: Different AI personalities per store without code changes
+- Fail-fast design: Clear errors when cultural configuration missing
+- Architectural compliance: Complete elimination of hardcoded cultural assumptions
+- Multi-language support: MenuLanguage configuration enables proper translation targeting
 
 **Working Demo**:
 ```bash
-cd PosKernel.AI && dotnet run
-# Result: Interactive AI assistant with real restaurant database integration
+cd PosKernel.AI.Demo && dotnet run
+Customer: "set roti bakar kaya"
+Uncle: "OK, Traditional Kaya Toast Set S$7.40. What drink you want?"
+# Result: Perfect cultural translation via template system
 ```
 
-**Key Achievement**: AI demo now uses real domain extension data instead of mock data, validating the extension architecture works with AI integration.
+**Key Achievement**: AI system now uses sophisticated template-based prompts that prevent cultural assumptions from being hardcoded in C# code, ensuring maintainable and customizable cultural intelligence.
 
 ## Implemented Architecture
 
@@ -34,23 +35,28 @@ cd PosKernel.AI && dotnet run
 
 ```
 AI Application Layer
-  Interactive AI Assistant, Natural Language Processing
+  Template-Driven Cultural Intelligence, Zero C# Hardcoding
   OpenAI GPT-4o Integration, Conversational Commerce
-  Real-time Transaction Building
+  Real-time Cultural Translation, Store-Specific Personalities
+                    ↓
+AI Template System
+  ~/.poskernel/ai_config/prompts/[Provider]/[Model]/[Personality]/
+  Cultural Rules, Business Logic, Response Patterns
+  Configurable per Store, Fail-Fast Design
                     ↓
 AI Integration Layer
-  Model Context Protocol, Prompt Engineering
+  Model Context Protocol, Template Loading
   Context Management, Response Validation
   Natural Language Parsing, Conversation History
                     ↓
 AI-Enhanced Host Layer
   RestaurantProductCatalogService
-  Transaction Hints, Product Recommendations
+  MenuLanguage Configuration, Cultural Translation
   Payment Intent Detection, Conversation Flow Control
                     ↓
 Restaurant Domain Extension
   SQLite Database, Product Catalog
-  Allergen Information, Specifications & Attributes  
+  Allergen Information, Specifications & Attributes
   Upsell Suggestions, Real Business Logic
                     ↓
 Standard POS Kernel (AI-Agnostic)
@@ -67,30 +73,30 @@ Standard POS Kernel (AI-Agnostic)
 public class RestaurantProductCatalogService : IProductCatalogService
 {
     private readonly SqliteConnection _database;
-    
+
     public async Task<IReadOnlyList<IProductInfo>> GetPopularItemsAsync() {
         // SQLite query to restaurant extension database
         using var command = _database.CreateCommand();
         command.CommandText = @"
-            SELECT p.sku, p.name, p.description, p.base_price_cents 
+            SELECT p.sku, p.name, p.description, p.base_price_cents
             FROM products p
-            WHERE p.is_active = 1 
+            WHERE p.is_active = 1
             ORDER BY p.popularity_rank
             LIMIT 10";
-            
+
         // Returns real product data: Small Coffee ($2.99), Large Coffee ($3.99), etc.
     }
 }
 
 // AI Natural Language Processing
 private static async Task RunInteractiveChatSessionAsync(
-    McpClient aiClient, 
+    McpClient aiClient,
     IProductCatalogService productCatalog) {
-    
+
     var availableProducts = await productCatalog.GetPopularItemsAsync();
-    var menuItems = string.Join("\n", availableProducts.Select(p => 
+    var menuItems = string.Join("\n", availableProducts.Select(p =>
         $"- {p.Name}: ${p.BasePriceCents / 100.0:F2}"));
-    
+
     // AI receives real restaurant data in prompts
     var prompt = $@"AVAILABLE MENU:
 {menuItems}
@@ -99,15 +105,15 @@ CUSTOMER JUST SAID: ""{userInput}""
 RESPOND AS A CAREFUL, INTELLIGENT ASSISTANT:";
 }
 
-// Real Transaction Processing  
-var product = availableProducts.FirstOrDefault(p => 
+// Real Transaction Processing
+var product = availableProducts.FirstOrDefault(p =>
     p.Name.Contains(itemName, StringComparison.OrdinalIgnoreCase));
 
 if (product != null) {
     // Real kernel contracts
     var productId = new ProductId(product.Sku);
     var unitPrice = new Money(product.BasePriceCents, transaction.Currency);
-    
+
     transaction.AddLine(productId, 1, unitPrice);
     Console.WriteLine($"Added {product.Name} - ${product.BasePriceCents / 100.0:F2}");
 }
@@ -118,7 +124,7 @@ if (product != null) {
 ### Proven Domain Extension Integration
 
 1. **Security isolation**: AI is in user-space, kernel remains pure
-2. **Extensibility**: Restaurant extension provides real business data  
+2. **Extensibility**: Restaurant extension provides real business data
 3. **Fail-safe**: POS transactions work with or without AI
 4. **Real data**: SQLite database with comprehensive product catalog
 5. **Natural language**: AI understands variations and typos
@@ -129,11 +135,11 @@ if (product != null) {
 **Conversation Flow**:
 ```
 User: What drinks do you have?
-AI: We have Small Coffee for $2.99, Medium Coffee for $3.49, 
-    Large Coffee for $3.99, Caffe Latte for $4.99, and 
+AI: We have Small Coffee for $2.99, Medium Coffee for $3.49,
+    Large Coffee for $3.99, Caffe Latte for $4.99, and
     Cappuccino for $4.49. Would you like to add any of these?
 
-User: The capu puccino  
+User: The capu puccino
 AI: ADDING: Cappuccino - $4.49
     I've added a Cappuccino to your order. Would you like anything else?
 Added Cappuccino - $4.49
@@ -141,7 +147,7 @@ Added Cappuccino - $4.49
 Current order: CAPPUCCINO ($4.49)
 
 User: What flou avour miff uffins?
-AI: We have Blueberry Muffins available for $2.49. 
+AI: We have Blueberry Muffins available for $2.49.
     Would you like to add one to your order?
 
 User: Yes
@@ -199,7 +205,7 @@ Pure POS Kernel Core
 
 **Successfully Integrated AI with Real Business Data**:
 - Restaurant extension SQLite database integrated with AI natural language processing
-- Real transactions using kernel contracts (ProductId, Money, Transaction)  
+- Real transactions using kernel contracts (ProductId, Money, Transaction)
 - Production-ready architecture with proper separation of concerns
 - Fuzzy matching and intelligent conversation management
 - Cross-platform .NET 9 implementation

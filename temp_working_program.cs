@@ -115,13 +115,13 @@ namespace PosKernel.AI {
                 // Add appropriate POS services - NO FALLBACKS!
                 if (useRealKernel) {
                     ui.Log.AddLog("INFO: Configuring real kernel integration...");
-                    
+
                     // Register services without store config first - will be updated after store selection
                     services.AddSingleton<RestaurantExtensionClient>();
-                    
+
                     // DON'T register KernelPosToolsProvider yet - it requires StoreConfig
                     // It will be registered after store selection
-                    
+
                     ui.Log.AddLog("SUCCESS: Real kernel services configured (store config pending)");
                 }
                 else {
@@ -133,7 +133,7 @@ namespace PosKernel.AI {
                 }
 
                 // DON'T add orchestrator yet - it needs the store config too
-                
+
                 using var serviceProvider = services.BuildServiceProvider();
 
                 // Show store selection dialog within the TUI AFTER basic services are configured
@@ -157,7 +157,7 @@ namespace PosKernel.AI {
                         var currencyFormatter = serviceProvider.GetRequiredService<ICurrencyFormattingService>();
 
                         ui.Log.AddLog($"INFO: Creating KernelPosToolsProvider with StoreConfig for {storeSelectionResult.StoreName} ({storeSelectionResult.Currency})");
-                        
+
                         // Use the constructor that takes StoreConfig AND currency formatter
                         return new KernelPosToolsProvider(
                             restaurantClient,
@@ -197,24 +197,24 @@ namespace PosKernel.AI {
                     // Set orchestrator - UI now handles the case where it's not available gracefully
                     var terminalGuiUI = (TerminalUserInterface)ui;
                     terminalGuiUI.SetOrchestrator(orchestrator);
-                    
+
                     // Set up currency services for receipt display
                     var currencyFormatter = updatedServiceProvider.GetRequiredService<ICurrencyFormattingService>();
                     terminalGuiUI.SetCurrencyServices(currencyFormatter, storeSelectionResult);
-                    
+
                     ui.Log.AddLog("Orchestrator set successfully");
 
                     // Test connections if using real kernel - NO GRACEFUL HANDLING
                     if (useRealKernel) {
                         ui.Log.ShowStatus("Connecting to real kernel services...");
-                        
+
                         // Test Restaurant Extension connection - FAIL FAST if not available
                         var restaurantClient = updatedServiceProvider.GetRequiredService<RestaurantExtensionClient>();
                         ui.Log.AddLog("INFO: Testing Restaurant Extension Service connection...");
                         var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
                         ui.Log.ShowStatus($"✅ Connected to Restaurant Extension ({testProducts.Count} test products found)");
-                        
-                        // Test Kernel connection - FAIL FAST if not available  
+
+                        // Test Kernel connection - FAIL FAST if not available
                         var kernelTools = updatedServiceProvider.GetRequiredService<KernelPosToolsProvider>();
                         ui.Log.AddLog("INFO: Testing Kernel Service connection...");
                         // The kernel connection will be tested on first use - let it fail there if needed
@@ -337,7 +337,7 @@ namespace PosKernel.AI {
                 IsDefault = true
             };
 
-            // Create Cancel button  
+            // Create Cancel button
             var cancelButton = new Button() {
                 Title = " Cancel ",
                 Width = 10,
@@ -492,13 +492,11 @@ namespace PosKernel.AI {
         public StoreConfiguration GetStoreConfiguration(string storeId)
         {
             // For now, return a generic store configuration
-            // In a real system, this would be looked up from a database or configuration
-            return new StoreConfiguration
-            {
-                StoreId = storeId,
-                Currency = "USD", // Default - will be overridden by StoreConfig
-                Locale = "en-US"  // Default - will be overridden by StoreConfig  
-            };
+            // ARCHITECTURAL FIX: Fail fast rather than providing defaults
+            throw new InvalidOperationException(
+                $"DESIGN DEFICIENCY: StoreConfiguration not found for store {storeId}. " +
+                $"Store configurations must be provided by user-space services, not hardcoded defaults. " +
+                $"Register proper store configuration service.");
         }
     }
 }

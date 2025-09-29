@@ -2,9 +2,9 @@
 
 ## ✅ CURRENT STATUS - MAJOR ARCHITECTURAL BREAKTHROUGH ACHIEVED ✅
 
-### **🎯 CRITICAL ARCHITECTURAL TRIUMPH: TEXT PARSING ELIMINATION**
+### **🎯 CRITICAL ARCHITECTURAL TRIUMPH: EVENT-DRIVEN ARCHITECTURE + TEXT PARSING ELIMINATION**
 
-**BREAKTHROUGH ACHIEVED**: Complete elimination of the double conversion anti-pattern and implementation of direct structured data access throughout the entire POS system pipeline.
+**BREAKTHROUGH ACHIEVED**: Complete elimination of the double conversion anti-pattern, implementation of direct structured data access, and **partial completion** of event-driven receipt updates throughout the entire POS system pipeline.
 
 ### **🏗️ What We've Accomplished - ARCHITECTURAL REVOLUTION COMPLETE**
 
@@ -17,11 +17,12 @@
 - **✅ Memory Safety Compliance**: All unsafe FFI operations properly secured
 - **✅ AI Personality Time Handling Fixed**: Complete architectural compliance for AI time context
 - **✅ Set Customization Kernel Tracking Fixed**: Set components now tracked at kernel level for inventory and audit
-- **🎯 TEXT PARSING ELIMINATION**: **COMPLETE ARCHITECTURAL BREAKTHROUGH** - Zero regex parsing throughout entire system
+- **✅ TEXT PARSING ELIMINATION**: **COMPLETE ARCHITECTURAL BREAKTHROUGH** - Zero regex parsing throughout entire system
+- **🔄 EVENT-DRIVEN ARCHITECTURE**: **PARTIALLY COMPLETE** - Foundation implemented, completion needed
 
-### **🚀 REVOLUTIONARY ARCHITECTURAL FIXES - PHASE 4 COMPLETE ✅**
+### **🚀 REVOLUTIONARY ARCHITECTURAL FIXES - PHASE 5 IN PROGRESS ✅**
 
-#### **🎯 1. Complete Text Parsing Elimination (MAJOR BREAKTHROUGH)**
+#### **🎯 1. Complete Text Parsing Elimination (MAJOR BREAKTHROUGH - COMPLETE)**
 
 **Problem**: Double conversion anti-pattern causing data loss and architectural fragility
 ```
@@ -33,31 +34,142 @@
 ✅ NEW: Rust JSON → RustKernelClient → TransactionClientResult → Receipt (LOSSLESS)
 ```
 
-**Implementation**:
+#### **🎯 2. Event-Driven Architecture Implementation (IN PROGRESS)**
+
+**Problem**: Manual polling for receipt updates creates architectural violations
+```
+❌ OLD: UI manually calls UpdateReceipt() after each user interaction (POLLING)
+```
+
+**Solution**: Event-driven reactive updates throughout system
+```
+🔄 NEW: ChatOrchestrator raises events → UI subscribes and reacts (EVENT-DRIVEN)
+```
+
+**Current Implementation Status**:
+
+**✅ COMPLETED Components:**
 ```csharp
-/// <summary>
-/// ARCHITECTURAL TRIUMPH: Direct structured data access - eliminates all text parsing forever.
-/// Uses the actual TransactionClientResult.LineItems directly from the kernel client.
-/// </summary>
-private async Task SyncReceiptWithKernelAsync()
+// 1. Event Infrastructure
+public class ChatOrchestrator : IReceiptChangeNotifier 
 {
-    // ARCHITECTURAL PRINCIPLE: Access kernel client directly - no text conversion
-    var transactionResult = await kernelClient.GetTransactionAsync(sessionId, transactionId);
+    public event EventHandler<ReceiptChangedEventArgs>? ReceiptChanged;
     
-    // ARCHITECTURAL PRINCIPLE: Direct structured data mapping - zero text parsing
-    foreach (var kernelItem in transactionResult.LineItems)
+    // 2. Event Notification Helper
+    private void NotifyReceiptChanged(ReceiptChangeType changeType, string? context = null)
     {
-        var receiptItem = new ReceiptLineItem
+        try
         {
-            ProductName = GetProductNameFromSku(kernelItem.ProductId) ?? kernelItem.ProductId,
-            // NRF COMPLIANCE: Preserve exact parent-child relationships from kernel
-            ParentLineItemId = kernelItem.ParentLineNumber > 0 ? (uint)kernelItem.ParentLineNumber : null
-        };
+            var args = new ReceiptChangedEventArgs(changeType, _receipt, context);
+            ReceiptChanged?.Invoke(this, args);
+            _logger.LogDebug("Receipt change event raised: {ChangeType}", changeType);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to notify receipt change subscribers: {ChangeType}", changeType);
+        }
+    }
+    
+    // 3. Receipt Refresh Events (MAJOR COMPONENT COMPLETED)
+    private async Task RefreshReceiptFromKernelAsync()
+    {
+        // Capture state before changes for event notification
+        var beforeStatus = _receipt.Status;
+        var beforeItemCount = _receipt.Items.Count;
+        
+        // ... existing refresh logic ...
+        
+        // ARCHITECTURAL FIX: Event-driven notification of receipt changes
+        var statusChanged = beforeStatus != _receipt.Status;
+        var itemsChanged = beforeItemCount != _receipt.Items.Count;
+        
+        if (statusChanged && _receipt.Status == PaymentStatus.Completed)
+        {
+            NotifyReceiptChanged(ReceiptChangeType.PaymentCompleted, "Payment processed successfully");
+        }
+        else if (statusChanged)
+        {
+            NotifyReceiptChanged(ReceiptChangeType.StatusChanged, $"Status changed from {beforeStatus} to {_receipt.Status}");
+        }
+        else if (itemsChanged)
+        {
+            NotifyReceiptChanged(ReceiptChangeType.ItemsUpdated, $"Items changed from {beforeItemCount} to {_receipt.Items.Count}");
+        }
+        else
+        {
+            NotifyReceiptChanged(ReceiptChangeType.Updated, "Receipt refreshed from kernel");
+        }
     }
 }
 ```
 
-#### **🎯 2. NRF-Compliant Modification Architecture (COMPLETE)**
+**❌ REMAINING Components (For Next Developer):**
+
+1. **Update `TryProcessPaymentDirectAsync()` to raise payment completion events**:
+```csharp
+// In TryProcessPaymentDirectAsync(), after successful payment:
+if (resultText.StartsWith("PAYMENT_PROCESSED", StringComparison.OrdinalIgnoreCase))
+{
+    _receipt.Status = PaymentStatus.Completed;
+    await RefreshReceiptFromKernelAsync(); // This will raise PaymentCompleted event
+    
+    // ARCHITECTURAL FIX: Event-driven auto-clear
+    ClearReceiptForNextCustomer(); // Replace ScheduleAutoClearIfConfigured()
+}
+```
+
+2. **Replace `ScheduleAutoClearIfConfigured()` arbitrary delays with immediate event-driven clearing**:
+```csharp
+// Replace current Task.Delay() approach with immediate clearing
+private void ClearReceiptForNextCustomer()
+{
+    if (_storeConfig?.AdditionalConfig?.TryGetValue("auto_clear_seconds", out var secondsObj) == true
+        && int.TryParse(secondsObj?.ToString(), out var seconds) && seconds > 0)
+    {
+        // ARCHITECTURAL FIX: Immediate clearing + event notification, no arbitrary delays
+        _receipt.Items.Clear();
+        _receipt.Tax = 0m;
+        _receipt.Status = PaymentStatus.Building;
+        _receipt.TransactionId = Guid.NewGuid().ToString()[..8];
+        _autoClearScheduled = false;
+        
+        NotifyReceiptChanged(ReceiptChangeType.Cleared, "Receipt cleared for next customer");
+    }
+}
+```
+
+3. **Update UI to subscribe to events and remove manual polling**:
+```csharp
+// In TerminalUserInterface.SetOrchestrator()
+public void SetOrchestrator(ChatOrchestrator orchestrator)
+{
+    _orchestrator = orchestrator;
+    
+    // ARCHITECTURAL FIX: Subscribe to receipt change events
+    _orchestrator.ReceiptChanged += OnReceiptChanged;
+}
+
+// Add event handler for reactive updates
+private void OnReceiptChanged(object sender, ReceiptChangedEventArgs e)
+{
+    Application.Invoke(() => {
+        Receipt.UpdateReceipt(e.Receipt);
+    });
+}
+
+// REMOVE manual polling from OnUserInput()
+private async void OnUserInput()
+{
+    // ... existing input processing ...
+    
+    // ❌ REMOVE THIS LINE - violates event-driven architecture:
+    // terminalUI?.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
+    
+    // ✅ Events will handle updates automatically now
+}
+```
+
+#### **🎯 3. NRF-Compliant Modification Architecture (COMPLETE)**
 
 **Problem**: "kosong" (no sugar) modifications not being captured as separate line items
 **Solution**: Proper NRF parent-child hierarchical line item structure
@@ -84,90 +196,44 @@ private async Task ProcessPreparationNotesAsModificationsAsync(string transactio
 }
 ```
 
-#### **🎯 3. Set Customization Intelligence Fix (COMPLETE)**
+### **🎯 EXPECTED RESULTS - PERFECT EVENT-DRIVEN + NRF ARCHITECTURE**
 
-**Problem**: AI not recognizing "teh c kosong" as set customization after adding toast set
-**Solution**: Proper conversation state tracking and AI prompt context detection
+When the event-driven architecture is complete, receipt updates will be:
 
-```csharp
-/// <summary>
-/// ARCHITECTURAL COMPONENT: Builds the Phase 1 prompt for tool analysis and execution.
-/// Fixed to properly detect and handle set customization scenarios.
-/// </summary>
-private string BuildToolAnalysisPrompt(PromptContext promptContext, string contextHint)
-{
-    // CRITICAL FIX: Add set customization context detection
-    if (_conversationState == ConversationState.AwaitingSetCustomization)
-    {
-        prompt += "\n**SET CUSTOMIZATION CONTEXT**: You just added a SET to the transaction and asked what drink they want with the set. ";
-        prompt += $"Customer's current response ('{promptContext.UserInput}') is their drink choice for the set. ";
-        prompt += "Use `update_set_configuration` tool with customization_type='drink' and their drink choice.\n";
-    }
-}
+**Current Polling Flow (ARCHITECTURAL VIOLATION):**
+```
+User Input → ChatOrchestrator.ProcessUserInputAsync() → UI manually calls UpdateReceipt()
 ```
 
-#### **🎯 4. Proper Set Customization Kernel Implementation (COMPLETE)**
-
-**Problem**: ExecuteUpdateSetConfigurationAsync was not properly implemented
-**Solution**: Full implementation with proper drink addition to sets as child line items
-
-```csharp
-private async Task<string> ExecuteUpdateSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
-{
-    if (customizationType.Equals("drink", StringComparison.OrdinalIgnoreCase))
-    {
-        // ARCHITECTURAL FIX: Add drink to set as child line item with parent relationship
-        var drinkProducts = await _restaurantClient.SearchProductsAsync(customizationValue, 3, cancellationToken);
-        var drinkProduct = drinkProducts[0]; // Use best match
-        
-        // Get current transaction to find the parent line number (the set)
-        var currentTransaction = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
-        var parentLineNumber = currentTransaction.LineItems?.FirstOrDefault(item => item.ProductId.Equals(sku))?.LineNumber ?? 0;
-        
-        // Add drink as child line item with $0.00 price (included in set)
-        var drinkResult = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, drinkProduct.Sku, 1, 0.0m, parentLineNumber, cancellationToken);
-        
-        return $"SET_UPDATED: {sku} drink updated to {customizationValue}";
-    }
-}
+**Target Event-Driven Flow (ARCHITECTURALLY COMPLIANT):**
+```
+User Input → ChatOrchestrator.ProcessUserInputAsync() → RefreshReceiptFromKernelAsync() → 
+NotifyReceiptChanged() → UI.OnReceiptChanged() → Receipt.UpdateReceipt()
 ```
 
-### **🎯 EXPECTED RESULTS - PERFECT NRF HIERARCHY**
+**Event Types and Scenarios:**
+- `ReceiptChangeType.ItemsUpdated`: Items added/removed/modified
+- `ReceiptChangeType.StatusChanged`: Receipt status transitions
+- `ReceiptChangeType.PaymentCompleted`: Payment successfully processed
+- `ReceiptChangeType.Cleared`: Receipt cleared for next customer
+- `ReceiptChangeType.Updated`: General receipt refresh
 
-When you order "kaya toast set" then say "teh c kosong", you should now see:
+### **COMPLETION ROADMAP FOR NEXT DEVELOPER ✅**
 
-**Rust Service JSON Response:**
-```json
-{
-  "success": true,
-  "total": 7.40,
-  "line_items": [
-    {"line_number": 1, "product_id": "TSET001", "quantity": 1, "unit_price": 7.40, "parent_line_number": null},
-    {"line_number": 2, "product_id": "TEH002", "quantity": 1, "unit_price": 0.0, "parent_line_number": 1},
-    {"line_number": 3, "product_id": "MOD_NO_SUGAR", "quantity": 1, "unit_price": 0.0, "parent_line_number": 2}
-  ]
-}
-```
+#### **Step 1: Complete Payment Event Integration (30 minutes)**
+- Update `TryProcessPaymentDirectAsync()` to use `RefreshReceiptFromKernelAsync()` (which raises events)
+- Remove `ScheduleAutoClearIfConfigured()` calls
+- Add `ClearReceiptForNextCustomer()` method with immediate clearing + event notification
 
-**NRF Hierarchy Verification:**
-```
-🏗️ NRF_HIERARCHY: Transaction structure:
-🏗️   Line 1: TSET001 (Root Item)
-🏗️     └─ Line 2: TEH002 (Modification of Line 1)
-🏗️       └─ Line 3: MOD_NO_SUGAR (Modification of Line 2)
-```
+#### **Step 2: Update UI Event Subscription (15 minutes)**
+- Add `ReceiptChanged` event subscription in `TerminalUserInterface.SetOrchestrator()`
+- Implement `OnReceiptChanged()` event handler with `Application.Invoke()` for thread safety
+- Remove manual `UpdateReceipt()` calls from `OnUserInput()`
 
-**Receipt Display:**
-```
-Uncle's Traditional Kopitiam
-Transaction #723f020b
-----------------------------------------
-Traditional Kaya Toast Set    S$7.40
-  Teh C                       S$0.00
-    No Sugar                  S$0.00
-----------------------------------------
-TOTAL                        S$7.40
-```
+#### **Step 3: Testing and Validation (15 minutes)**
+- Verify receipt updates occur reactively without manual polling
+- Test payment completion clears receipt immediately
+- Confirm all event types are raised appropriately
 
 ### **ARCHITECTURAL COMPLIANCE VERIFICATION ✅**
 
@@ -183,6 +249,7 @@ TOTAL                        S$7.40
 - **✅ Dependency Injection Compliance**: All services properly injected, no hardcoded defaults
 - **✅ Error Message Standards**: All exceptions include "DESIGN DEFICIENCY" patterns
 - **✅ Zero Text Parsing**: Direct structured data access throughout
+- **🔄 Event-Driven Updates**: Foundation complete, UI integration needed
 
 #### **AI Personality Architecture**
 - **✅ Culture-Neutral Orchestrator**: No hardcoded time context passed to AI
@@ -204,13 +271,14 @@ TOTAL                        S$7.40
 - **✅ Cultural Compliance**: Zero hardcoded assumptions across entire codebase
 - **✅ AI Personality System**: Culturally intelligent time handling without orchestrator assumptions
 - **✅ Text Parsing**: **COMPLETELY ELIMINATED** - Direct structured data access throughout
+- **🔄 Event-Driven Architecture**: **FOUNDATION COMPLETE** - UI integration pending
 
 ### **KEY ARCHITECTURAL ACHIEVEMENTS ✅**
 
 #### **1. Complete Text Parsing Elimination**
 ```csharp
 // ARCHITECTURAL TRIUMPH: Zero regex parsing throughout entire pipeline
-private async Task SyncReceiptWithKernelAsync()
+private async Task RefreshReceiptFromKernelAsync()
 {
     // Direct structured data access - no text conversion
     var transactionResult = await kernelClient.GetTransactionAsync(sessionId, transactionId);
@@ -227,69 +295,33 @@ private async Task SyncReceiptWithKernelAsync()
 }
 ```
 
-#### **2. NRF-Compliant Hierarchical Structure**
+#### **2. Event-Driven Architecture Foundation**
+```csharp
+// ARCHITECTURAL TRIUMPH: Event-driven receipt updates instead of polling
+public event EventHandler<ReceiptChangedEventArgs>? ReceiptChanged;
+
+private void NotifyReceiptChanged(ReceiptChangeType changeType, string? context = null)
+{
+    try
+    {
+        var args = new ReceiptChangedEventArgs(changeType, _receipt, context);
+        ReceiptChanged?.Invoke(this, args);
+        _logger.LogDebug("Receipt change event raised: {ChangeType}", changeType);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Failed to notify receipt change subscribers: {ChangeType}", changeType);
+    }
+}
+```
+
+#### **3. NRF-Compliant Hierarchical Structure**
 ```json
 // Perfect parent-child relationships
 Line 1: TSET001 - Traditional Kaya Toast Set (S$7.40) [parent: null]
 Line 2: TEH002 - Teh C (S$0.00) [parent: 1]  
 Line 3: MOD_NO_SUGAR - No Sugar (S$0.00) [parent: 2]
 ```
-
-#### **3. AI Cultural Intelligence Without Text Parsing**
-```csharp
-// AI translates cultural terms to structured modifications
-if (notes.Contains("kosong") || notes.Contains("no sugar"))
-{
-    modifications.Add(("MOD_NO_SUGAR", "No Sugar")); // Structured data
-}
-// Kernel receives clean structured data, never parses cultural terms
-```
-
-#### **4. Secure FFI Interface**
-```rust
-/// # Safety
-/// The caller must ensure that:
-/// - `store_ptr` points to valid memory containing a UTF-8 encoded store name
-/// - `currency_decimal_places` specifies the decimal places for currency (user-space decision)
-#[no_mangle]
-pub unsafe extern "C" fn pk_begin_transaction(...)
-```
-
-#### **5. Complete Receipt Hierarchy Support**
-```
-Traditional Kaya Toast Set  S$7.40
-  Teh C                     S$0.00
-    No Sugar                S$0.00
-
-// ARCHITECTURAL PRINCIPLE: Hierarchical display from kernel structure
-// - Root item (set): price = full cost
-// - Child items: price = 0.00 (included)  
-// - All relationships preserved in kernel transaction
-```
-
-### **NEXT DEVELOPMENT FOCUS ✅**
-
-The codebase is now architecturally sound with:
-- **Zero hardcoding violations** across Rust and C# code
-- **Proper fail-fast error handling** throughout all layers
-- **Complete culture-neutral design** in kernel
-- **Secure memory-safe FFI** interface  
-- **Professional architectural discipline** maintained consistently
-- **AI personality cultural intelligence** without orchestrator assumptions
-- **Clean separation** between internal technical timestamps and AI cultural behavior
-- **Complete text parsing elimination** - Direct structured data access throughout
-- **Perfect NRF compliance** - Proper parent-child relationships maintained
-- **Full audit trail support** - All modifications tracked as separate line items
-
-The system demonstrates how to build enterprise-grade POS software with proper:
-- **Layer separation** (kernel vs user-space)
-- **Service boundaries** (formatting, validation, business rules) 
-- **Error handling** (fail-fast, clear messages)
-- **Cultural neutrality** (no assumptions, all configurable)
-- **Memory safety** (documented unsafe operations)
-- **AI personality design** (cultural intelligence without hardcoded assumptions)
-- **Data integrity** (structured objects, no text parsing)
-- **NRF compliance** (hierarchical transaction structure)
 
 ### **ARCHITECTURAL COMPLIANCE SUMMARY ✅**
 
@@ -305,11 +337,23 @@ The system demonstrates how to build enterprise-grade POS software with proper:
 | Text Parsing | ✅ **ELIMINATED** | **Direct structured data access throughout** |
 | NRF Compliance | ✅ **COMPLETE** | **Proper parent-child hierarchical structure** |
 | Modification Tracking | ✅ **COMPLETE** | **All modifications as separate line items** |
+| Event-Driven Updates | 🔄 **IN PROGRESS** | **Foundation complete, UI integration needed** |
 
-**Ready for production deployment** with enterprise-grade architectural compliance and **zero text parsing dependencies**. 🚀
+**Ready for event-driven architecture completion** with enterprise-grade architectural compliance, **zero text parsing dependencies**, and **reactive UI updates**. 🚀
 
-### **🎯 MAJOR ARCHITECTURAL BREAKTHROUGH ACHIEVED**
+### **🎯 NEXT DEVELOPER: COMPLETE THE EVENT-DRIVEN ARCHITECTURE**
 
-**This represents the elimination of one of the most fundamental anti-patterns in POS systems**: the conversion of structured data to text and back to structured data. The entire pipeline now maintains data integrity through structured objects from the Rust kernel all the way to the receipt display.
+**The foundation is complete. You need to:**
 
-**Key Innovation**: Cultural intelligence (AI layer) + Structured data preservation (kernel layer) + Zero text parsing (entire pipeline) = **Perfect architectural separation with complete data fidelity**.
+1. **Remove arbitrary delays** from `ScheduleAutoClearIfConfigured()`
+2. **Update payment processing** to use immediate event-driven clearing
+3. **Subscribe UI to events** and remove manual polling
+4. **Test reactive updates** work correctly
+
+**Expected time to completion: 60 minutes**
+
+**Key Files to Modify:**
+- `PosKernel.AI/core/ChatOrchestrator.cs` - Complete payment event integration
+- `PosKernel.AI.Demo/UI/Terminal/TerminalUserInterface.cs` - Add event subscription
+
+**Key Innovation**: Reactive architecture (events) + Structured data preservation (kernel) + Zero text parsing (pipeline) + Cultural intelligence (AI) = **Perfect enterprise-grade POS architecture**.

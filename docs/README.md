@@ -1,33 +1,34 @@
 # POS Kernel Documentation
 
-**System**: POS Kernel v0.7.0+ with Universal Product Modifications  
-**Status**: Development Build - Modifications Framework Complete  
-**Latest Achievement**: Universal modifications + multi-language architecture implementation
+**System**: POS Kernel v0.7.5+ with Template-Driven AI Architecture
+**Status**: Production Ready - Cultural Intelligence Complete
+**Latest Achievement**: Template-based AI prompts with zero hardcoded cultural assumptions
 
 ## Quick Start
 
 **New to POS Kernel?** Start here:
 1. [ARCHITECTURE_INDEX.md](ARCHITECTURE_INDEX.md) - Complete documentation overview
-2. [product-modifications-localization-architecture.md](product-modifications-localization-architecture.md) - Latest major feature
+2. [ai-prompt-template-architecture.md](ai-prompt-template-architecture.md) - Latest AI template system
 3. [ai-setup-guide.md](ai-setup-guide.md) - Get AI demo running
 4. [BUILD_RULES.md](BUILD_RULES.md) - Development guidelines
 
 ## Latest Major Achievement
 
-### Universal Product Modifications + Multi-Language System
+### Template-Driven AI Cultural Intelligence System
 
-**Architecture Implementation**: Complete modifications framework with Singapore kopitiam design
+**Architecture Implementation**: Complete elimination of hardcoded cultural assumptions in C# code
 
 ```
-Customer: "kopi si kosong"  
-AI: Identifies base="Kopi C", modification="no_sugar"
-Receipt: "Kopi C (无糖) $1.40" [Chinese localization]
+Customer: "set roti bakar kaya"
+Template: Translates "roti bakar kaya set" → "kaya toast set"
+Database: Finds "Traditional Kaya Toast Set" (TSET001)
+AI: "OK, Traditional Kaya Toast Set S$7.40. What drink you want?"
 ```
 
 **Key Documents**:
-- [product-modifications-localization-architecture.md](product-modifications-localization-architecture.md) - Complete specification
-- [internationalization-strategy.md](internationalization-strategy.md) - Enhanced with cultural AI
-- [catalog-architecture.md](catalog-architecture.md) - Updated with modifications schema
+- [ai-prompt-template-architecture.md](ai-prompt-template-architecture.md) - Complete template system specification
+- [ai-integration-architecture.md](ai-integration-architecture.md) - AI-kernel integration patterns
+- [internationalization-strategy.md](internationalization-strategy.md) - Multi-cultural framework
 
 ## Documentation Categories
 
@@ -37,7 +38,7 @@ Receipt: "Kopi C (无糖) $1.40" [Chinese localization]
 - [domain-extension-architecture.md](domain-extension-architecture.md) - Extension pattern (proven with Restaurant)
 - [extensibility-architecture.md](extensibility-architecture.md) - General extensibility strategy
 
-### Business & Product Management  
+### Business & Product Management
 - [product-modifications-localization-architecture.md](product-modifications-localization-architecture.md) - Universal modifications framework
 - [catalog-architecture.md](catalog-architecture.md) - Enhanced product catalog with modifications
 - [product-catalog-cal-architecture.md](product-catalog-cal-architecture.md) - Catalog Abstraction Layer
@@ -46,7 +47,8 @@ Receipt: "Kopi C (无糖) $1.40" [Chinese localization]
 - [internationalization-strategy.md](internationalization-strategy.md) - Enhanced with modifications system
 - [product-modifications-localization-architecture.md](product-modifications-localization-architecture.md) - Multi-language implementation
 
-### AI Integration
+### AI Integration & Cultural Intelligence
+- [ai-prompt-template-architecture.md](ai-prompt-template-architecture.md) - Template-driven AI prompts (NEW)
 - [ai-integration-architecture.md](ai-integration-architecture.md) - AI-POS integration strategy
 - [ai-demo-technical-overview.md](ai-demo-technical-overview.md) - Technical implementation details
 - [ai-setup-guide.md](ai-setup-guide.md) - Configuration and setup
@@ -63,7 +65,7 @@ Receipt: "Kopi C (无糖) $1.40" [Chinese localization]
 ```sql
 -- Architecture: Traditional kopitiam with cultural modifications
 Customer Order: "kopi si kosong satu, teh peng dua"
-AI Translation: 1x Kopi C (no sugar), 2x Teh Peng  
+AI Translation: 1x Kopi C (no sugar), 2x Teh Peng
 System Processing: Multi-language receipt generation
 Performance Target: Sub-10ms database operations
 ```
@@ -71,24 +73,25 @@ Performance Target: Sub-10ms database operations
 ### Multi-Store Framework (Architecture Complete)
 ```
 Kopitiam: Free modifications (traditional)
-Coffee Shop: Premium upcharges (+$0.65 oat milk)  
+Coffee Shop: Premium upcharges (+$0.65 oat milk)
 Grocery: Substitutions (organic +$0.50)
 Bakery: Custom orders (extra filling, sugar-free)
 ```
 
-### Cultural AI Intelligence
+### Cultural AI Intelligence (Production Ready)
 ```
-No Hard-Coding: AI learns cultural context intelligently
-Multi-Language: BCP 47 compliance with script support
-Natural Parsing: "kopi si kosong" → base + modifications
-Context Aware: Kopitiam vs coffee shop vs grocery intelligence
+Template-Driven Translation: "roti bakar kaya set" → "kaya toast set"
+Database Integration: Finds "Traditional Kaya Toast Set" automatically
+Zero Hardcoding: All cultural knowledge in configurable template files
+Multi-Store Support: Different personalities per store (Kopitiam, American Diner, Japanese Conbini)
+Fail-Fast Design: Clear errors when cultural configuration missing
 ```
 
 ## Technical Achievements
 
 ### Architecture Quality - Implemented
 - **Database Operations**: Target < 10ms average
-- **AI Cultural Parsing**: Target < 100ms average  
+- **AI Cultural Parsing**: Target < 100ms average
 - **Multi-Language Receipt**: Target < 200ms generation
 - **End-to-End Transaction**: Target ~2 seconds total
 
@@ -100,7 +103,7 @@ Context Aware: Kopitiam vs coffee shop vs grocery intelligence
 
 ### Architecture Quality - Complete
 - **Zero Kernel Changes**: Uses existing metadata elegantly
-- **Universal Framework**: Works with any store type/culture  
+- **Universal Framework**: Works with any store type/culture
 - **Extension Pattern**: Domain-specific business logic
 - **Service Ready**: Transformation architecture prepared
 
@@ -108,7 +111,7 @@ Context Aware: Kopitiam vs coffee shop vs grocery intelligence
 
 ### ✅ Phase 1 Complete: Universal Modifications Architecture
 - Universal modifications framework implementation
-- Singapore kopitiam architecture design  
+- Singapore kopitiam architecture design
 - Multi-language localization framework (4 languages)
 - AI cultural intelligence integration architecture
 
@@ -129,7 +132,7 @@ Context Aware: Kopitiam vs coffee shop vs grocery intelligence
 **Comprehensive Culturally-Aware POS Architecture**:
 
 - **Truly Global**: Works seamlessly across cultures (Singapore proven)
-- **Multi-Business**: Supports any store type (kopitiam to grocery)  
+- **Multi-Business**: Supports any store type (kopitiam to grocery)
 - **AI-Enhanced**: Cultural intelligence without hard-coding
 - **High-Performance**: Sub-10ms operations with full feature set
 - **Compliance-Ready**: Multi-jurisdiction tax and privacy support
