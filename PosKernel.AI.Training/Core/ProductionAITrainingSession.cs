@@ -26,7 +26,7 @@ using PosKernel.Abstractions;
 namespace PosKernel.AI.Training.Core;
 
 /// <summary>
-/// Training session that uses the EXACT same ChatOrchestrator, RestaurantExtensionClient, and services as PosKernel.AI
+/// Training session that uses the EXACT same PosAiAgent, RestaurantExtensionClient, and services as PosKernel.AI
 /// ARCHITECTURAL PRINCIPLE: No duplication - reuse production AI infrastructure completely
 /// </summary>
 public class ProductionAITrainingSession : ITrainingSession
@@ -39,7 +39,7 @@ public class ProductionAITrainingSession : ITrainingSession
     private readonly Random _random = new();
     private CancellationTokenSource? _cancellationTokenSource;
     private readonly object _stateLock = new();
-    
+
     // Session state
     private TrainingSessionState _state = TrainingSessionState.NotStarted;
     private TrainingStatistics _currentStats = new();
@@ -66,10 +66,10 @@ public class ProductionAITrainingSession : ITrainingSession
         _promptType = promptType;
 
         // Get production services (EXACT same instances as PosKernel.AI demo)
-        // ARCHITECTURAL FIX: Don't cache ChatOrchestrator - each scenario needs fresh instance
+        // ARCHITECTURAL FIX: Don't cache PosAiAgent - each scenario needs fresh instance
         _restaurantClient = _productionServices.GetRequiredService<RestaurantExtensionClient>();
 
-        _logger.LogInformation("ProductionAITrainingSession initialized with REAL production services - RestaurantClient: {ClientType}. ChatOrchestrator instances created fresh per scenario for transaction isolation.", 
+        _logger.LogInformation("ProductionAITrainingSession initialized with REAL production services - RestaurantClient: {ClientType}. PosAiAgent instances created fresh per scenario for transaction isolation.",
             _restaurantClient.GetType().Name);
     }
 
@@ -78,26 +78,26 @@ public class ProductionAITrainingSession : ITrainingSession
     public event EventHandler<GenerationCompleteEventArgs>? GenerationComplete;
     public event EventHandler<TrainingCompleteEventArgs>? TrainingComplete;
 
-    public TrainingSessionState State 
-    { 
-        get 
-        { 
-            lock (_stateLock) 
-            { 
-                return _state; 
-            } 
-        } 
+    public TrainingSessionState State
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _state;
+            }
+        }
     }
 
-    public TrainingStatistics CurrentStats 
-    { 
-        get 
-        { 
-            lock (_stateLock) 
-            { 
-                return _currentStats; 
-            } 
-        } 
+    public TrainingStatistics CurrentStats
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _currentStats;
+            }
+        }
     }
 
     public async Task<TrainingResults> RunTrainingSessionAsync(TrainingConfiguration config, CancellationToken cancellationToken = default)
@@ -115,14 +115,14 @@ public class ProductionAITrainingSession : ITrainingSession
                     $"DESIGN DEFICIENCY: Training session already started or completed. " +
                     $"Current state: {_state}. Create new session instance for each training run.");
             }
-            
+
             _state = TrainingSessionState.Initializing;
             _sessionId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
             _startTime = DateTime.UtcNow;
             _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         }
 
-        _logger.LogInformation("Starting PRODUCTION AI training session {SessionId} - using EXACT same ChatOrchestrator as PosKernel.AI demo", 
+        _logger.LogInformation("Starting PRODUCTION AI training session {SessionId} - using EXACT same PosAiAgent as PosKernel.AI demo",
             _sessionId);
 
         try
@@ -155,11 +155,11 @@ public class ProductionAITrainingSession : ITrainingSession
                     $"DESIGN DEFICIENCY: Cannot pause training session in state {_state}. " +
                     $"Session must be Running to pause.");
             }
-            
+
             _state = TrainingSessionState.Paused;
             _pausedTime = DateTime.UtcNow;
         }
-        
+
         _logger.LogInformation("Production AI training session {SessionId} paused", _sessionId);
         await Task.CompletedTask;
     }
@@ -174,11 +174,11 @@ public class ProductionAITrainingSession : ITrainingSession
                     $"DESIGN DEFICIENCY: Cannot resume training session in state {_state}. " +
                     $"Session must be Paused to resume.");
             }
-            
+
             _pausedDuration = _pausedDuration.Add(DateTime.UtcNow - _pausedTime);
             _state = TrainingSessionState.Running;
         }
-        
+
         _logger.LogInformation("Production AI training session {SessionId} resumed", _sessionId);
         await Task.CompletedTask;
     }
@@ -192,11 +192,11 @@ public class ProductionAITrainingSession : ITrainingSession
                 _logger.LogInformation("Training session {SessionId} already in terminal state {State}, ignoring abort request", _sessionId, _state);
                 return;
             }
-            
+
             _logger.LogInformation("Aborting training session {SessionId} from state {State}", _sessionId, _state);
             _state = TrainingSessionState.Aborted;
         }
-        
+
         _cancellationTokenSource?.Cancel();
         await HandleAbortAsync("Production AI training aborted by user request");
     }
@@ -206,13 +206,13 @@ public class ProductionAITrainingSession : ITrainingSession
         var generationResults = new List<GenerationResult>();
         var bestScore = 0.0;
         var totalImprovement = 0.0;
-        
+
         // ARCHITECTURAL FIX: Get currency from the production services store configuration
         var storeConfig = _productionServices.GetRequiredService<StoreConfig>();
-        
+
         // Get current production prompt as baseline - AI handles time context naturally
-        var currentPromptContext = new PromptContext 
-        { 
+        var currentPromptContext = new PromptContext
+        {
             Currency = storeConfig.Currency
         };
         var currentProductionPrompt = await _promptService.GetCurrentPromptAsync(_personalityType, _promptType, currentPromptContext);
@@ -242,20 +242,20 @@ public class ProductionAITrainingSession : ITrainingSession
             };
         }
 
-        _logger.LogInformation("PRODUCTION AI training loop started - testing REAL ChatOrchestrator with transaction isolation per scenario");
+        _logger.LogInformation("PRODUCTION AI training loop started - testing REAL PosAiAgent with transaction isolation per scenario");
 
-        // Main training loop using REAL production ChatOrchestrator with fresh instances per scenario
+        // Main training loop using REAL production PosAiAgent with fresh instances per scenario
         for (var generation = 1; generation <= config.MaxGenerations; generation++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            
+
             // Wait if paused
             while (State == TrainingSessionState.Paused)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await Task.Delay(100, cancellationToken);
             }
-            
+
             // Check if aborted
             if (State == TrainingSessionState.Aborted)
             {
@@ -273,8 +273,8 @@ public class ProductionAITrainingSession : ITrainingSession
                 bestScore = generationResult.Score;
                 totalImprovement += improvement;
                 optimizedPrompt = generationResult.PromptVariation;
-                
-                _logger.LogInformation("🎯 NEW BEST SCORE in production AI generation {Generation}: {Score:F3} (improvement: {Improvement:F3})", 
+
+                _logger.LogInformation("🎯 NEW BEST SCORE in production AI generation {Generation}: {Score:F3} (improvement: {Improvement:F3})",
                     generation, bestScore, improvement);
 
                 // ARCHITECTURAL FIX: Log the prompt optimization attempt
@@ -296,36 +296,36 @@ public class ProductionAITrainingSession : ITrainingSession
                 if (_promptService is PromptManagementService enhancedService)
                 {
                     await enhancedService.SaveOptimizedPromptAsync(
-                        _personalityType, 
-                        _promptType, 
-                        optimizedPrompt, 
-                        bestScore, 
+                        _personalityType,
+                        _promptType,
+                        optimizedPrompt,
+                        bestScore,
                         _sessionId,
                         changesSummary);
                 }
                 else
                 {
                     await _promptService.SaveOptimizedPromptAsync(
-                        _personalityType, 
-                        _promptType, 
-                        optimizedPrompt, 
-                        bestScore, 
+                        _personalityType,
+                        _promptType,
+                        optimizedPrompt,
+                        bestScore,
                         _sessionId);
                 }
-                
-                _logger.LogInformation("PRODUCTION PROMPT OPTIMIZED: Updated {PersonalityType}/{PromptType} prompt used by PosKernel.AI", 
+
+                _logger.LogInformation("PRODUCTION PROMPT OPTIMIZED: Updated {PersonalityType}/{PromptType} prompt used by PosKernel.AI",
                     _personalityType, _promptType);
-                
+
                 // ARCHITECTURAL FIX: Verify the prompt was actually updated by reloading it
                 await VerifyPromptUpdateAsync(optimizedPrompt);
-                
+
                 // ARCHITECTURAL FIX: Log confirmation of prompt file update
                 _logger.LogInformation("💾 PROMPT FILE UPDATED: Production AI will now use optimized prompt for future interactions");
             }
             else
             {
                 // ARCHITECTURAL FIX: Log when generation doesn't improve
-                _logger.LogInformation("📉 NO IMPROVEMENT in generation {Generation}: Score {Score:F3} (best remains {BestScore:F3})", 
+                _logger.LogInformation("📉 NO IMPROVEMENT in generation {Generation}: Score {Score:F3} (best remains {BestScore:F3})",
                     generation, generationResult.Score, bestScore);
             }
 
@@ -342,15 +342,15 @@ public class ProductionAITrainingSession : ITrainingSession
                 IsImprovement = generationResult.Improvement > 0,
                 IsNewBest = generationResult.Score >= bestScore
             };
-            
+
             GenerationComplete?.Invoke(this, generationCompleteArgs);
 
             // ARCHITECTURAL FIX: More restrictive early termination - only stop if we have significant improvement and multiple generations
-            if (totalImprovement >= config.ImprovementThreshold && 
-                generation >= Math.Max(3, config.MaxGenerations / 2) && 
+            if (totalImprovement >= config.ImprovementThreshold &&
+                generation >= Math.Max(3, config.MaxGenerations / 2) &&
                 bestScore > 0.85)  // Only stop if we have really good performance
             {
-                _logger.LogInformation("🏆 PRODUCTION AI training threshold achieved in generation {Generation}. Total improvement: {TotalImprovement:F3}, Best score: {BestScore:F3}", 
+                _logger.LogInformation("🏆 PRODUCTION AI training threshold achieved in generation {Generation}. Total improvement: {TotalImprovement:F3}, Best score: {BestScore:F3}",
                     generation, totalImprovement, bestScore);
                 break;
             }
@@ -362,7 +362,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Complete the session
         var finalState = TrainingSessionState.Completed;
         var endTime = DateTime.UtcNow;
-        
+
         lock (_stateLock)
         {
             _state = finalState;
@@ -403,10 +403,10 @@ public class ProductionAITrainingSession : ITrainingSession
             OptimizedPrompt = optimizedPrompt,
             Metrics = results.Metrics
         };
-        
+
         TrainingComplete?.Invoke(this, completionArgs);
 
-        _logger.LogInformation("🎉 PRODUCTION AI training session {SessionId} completed successfully in {Duration} with final score {FinalScore:F3} - PosKernel.AI prompts optimized", 
+        _logger.LogInformation("🎉 PRODUCTION AI training session {SessionId} completed successfully in {Duration} with final score {FinalScore:F3} - PosKernel.AI prompts optimized",
             _sessionId, results.Duration, results.FinalScore);
 
         return results;
@@ -421,7 +421,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // ARCHITECTURAL FIX: Get currency from the production services store configuration
         var storeConfig = _productionServices.GetRequiredService<StoreConfig>();
 
-        _logger.LogDebug("Starting PRODUCTION generation {Generation} using REAL ChatOrchestrator + OpenAI + RestaurantExtension", 
+        _logger.LogDebug("Starting PRODUCTION generation {Generation} using REAL PosAiAgent + OpenAI + RestaurantExtension",
             generation);
 
         // ARCHITECTURAL FIX: Generate a prompt variation for this generation
@@ -436,18 +436,18 @@ public class ProductionAITrainingSession : ITrainingSession
         // Generate real scenarios from the SAME restaurant extension as PosKernel.AI demo
         var realScenarios = await GenerateRealScenariosFromProductionDataAsync(config.ScenarioCount);
 
-        // Test each scenario against the REAL production ChatOrchestrator with the prompt variation
+        // Test each scenario against the REAL production PosAiAgent with the prompt variation
         foreach (var scenario in realScenarios)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            
+
             // Check if aborted
             if (State == TrainingSessionState.Aborted)
             {
                 _logger.LogInformation("Training session {SessionId} aborted during scenario testing", _sessionId);
                 break;
             }
-            
+
             // Wait if paused
             while (State == TrainingSessionState.Paused)
             {
@@ -495,7 +495,7 @@ public class ProductionAITrainingSession : ITrainingSession
             Duration = generationDuration
         };
 
-        _logger.LogInformation("✅ PRODUCTION generation {Generation}: Score={Score:F3}, OpenAI calls={Calls}, Duration={Duration}", 
+        _logger.LogInformation("✅ PRODUCTION generation {Generation}: Score={Score:F3}, OpenAI calls={Calls}, Duration={Duration}",
             generation, averageScore, scenariosEvaluated, generationDuration);
 
         return result;
@@ -508,13 +508,13 @@ public class ProductionAITrainingSession : ITrainingSession
     private async Task<string> GeneratePromptVariationAsync(int generation, TrainingConfiguration config, StoreConfig storeConfig)
     {
         // Get the current baseline prompt - AI handles time context naturally
-        var promptContext = new PromptContext 
-        { 
+        var promptContext = new PromptContext
+        {
             Currency = storeConfig.Currency
         };
-        
+
         var baselinePrompt = await _promptService.GetCurrentPromptAsync(_personalityType, _promptType, promptContext);
-        
+
         if (generation == 1)
         {
             // First generation: use baseline as-is for comparison
@@ -524,16 +524,16 @@ public class ProductionAITrainingSession : ITrainingSession
 
         // ARCHITECTURAL FIX: Generate meaningful prompt variations based on AI training best practices
         var variations = GenerateMeaningfulPromptVariations(baselinePrompt, config);
-        
+
         // Select variation based on generation number
         if (variations.Any())
         {
             var selectedIndex = (generation - 2) % variations.Count;
             var selectedVariation = variations[selectedIndex];
-            
-            _logger.LogInformation("🎯 Generation {Generation}: Selected variation {VariationIndex}/{TotalVariations} - {VariationType}", 
+
+            _logger.LogInformation("🎯 Generation {Generation}: Selected variation {VariationIndex}/{TotalVariations} - {VariationType}",
                 generation, selectedIndex + 1, variations.Count, GetVariationType(selectedIndex));
-            
+
             return selectedVariation;
         }
 
@@ -572,7 +572,7 @@ public class ProductionAITrainingSession : ITrainingSession
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate training variations from files, using fallback enhancements");
-            
+
             // Fallback: basic performance-focused enhancements
             return GenerateFallbackVariations(baselinePrompt, config);
         }
@@ -587,11 +587,11 @@ public class ProductionAITrainingSession : ITrainingSession
         var enhancements = new List<TrainingEnhancement>();
 
         // ARCHITECTURAL FIX: Get training directory from environment
-        var posKernelHome = Environment.GetEnvironmentVariable("POSKERNEL_HOME") 
+        var posKernelHome = Environment.GetEnvironmentVariable("POSKERNEL_HOME")
             ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".poskernel");
 
         var trainingPath = Path.Combine(posKernelHome, "training");
-        
+
         // Load general training prompt
         var generalTrainingFile = Path.Combine(trainingPath, "training-prompt.md");
         if (File.Exists(generalTrainingFile))
@@ -603,14 +603,14 @@ public class ProductionAITrainingSession : ITrainingSession
         // ARCHITECTURAL FIX: Load personality-specific training enhancements
         var personalityTrainingPath = Path.Combine(trainingPath, "stores", _personalityType.ToString());
         var personalityEnhancementsFile = Path.Combine(personalityTrainingPath, "training-enhancements.md");
-        
+
         if (File.Exists(personalityEnhancementsFile))
         {
             var personalityContent = File.ReadAllText(personalityEnhancementsFile);
             var parsedEnhancements = ParseTrainingEnhancements(personalityContent);
             enhancements.AddRange(parsedEnhancements);
-            
-            _logger.LogInformation("Loaded {Count} training enhancements for {PersonalityType} from {File}", 
+
+            _logger.LogInformation("Loaded {Count} training enhancements for {PersonalityType} from {File}",
                 parsedEnhancements.Count, _personalityType, personalityEnhancementsFile);
         }
         else
@@ -661,7 +661,7 @@ public class ProductionAITrainingSession : ITrainingSession
         try
         {
             var lines = section.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            
+
             var title = lines[0].Trim();
             var focusLine = lines.FirstOrDefault(l => l.Contains("**Focus**:"));
             var templateIndex = Array.FindIndex(lines, l => l.Contains("**Enhancement Template**:"));
@@ -763,7 +763,7 @@ public class ProductionAITrainingSession : ITrainingSession
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to apply holistic enhancement {Enhancement}, using fallback approach");
-            
+
             // Fallback: minimal enhancement without artifacts
             return ApplyFallbackEnhancement(baselinePrompt, enhancement);
         }
@@ -814,7 +814,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Enhance tool execution patterns
         var oldToolPattern = "Use add_item_to_transaction";
         var newToolPattern = "Use add_item_to_transaction when confident about product match (>0.8 confidence). Always provide conversational confirmation";
-        
+
         if (enhanced.Contains(oldToolPattern))
         {
             enhanced = enhanced.Replace(oldToolPattern, newToolPattern);
@@ -827,7 +827,7 @@ public class ProductionAITrainingSession : ITrainingSession
             // Already enhanced - strengthen existing content
             var oldMultiItemPattern = "Use separate add_item_to_transaction calls for each different item";
             var newMultiItemPattern = "Execute separate add_item_to_transaction calls for each different item, confirming each addition with natural response";
-            
+
             if (enhanced.Contains(oldMultiItemPattern))
             {
                 enhanced = enhanced.Replace(oldMultiItemPattern, newMultiItemPattern);
@@ -846,7 +846,7 @@ public class ProductionAITrainingSession : ITrainingSession
                     "- Extract quantities carefully - 'dua' at end applies to last item only\n" +
                     "- Execute separate tool calls for each different item\n" +
                     "- Confirm parsing with natural kopitiam language\n\n";
-                    
+
                 enhanced = enhanced.Replace(menuSection, complexOrderSection + menuSection);
                 changeTracker.RecordChange("Added complex order mastery section", "Inserted comprehensive multi-item order processing guidelines before menu section");
             }
@@ -868,7 +868,7 @@ public class ProductionAITrainingSession : ITrainingSession
             // Enhance existing cultural knowledge
             var oldCulturalPattern = "You understand ALL kopitiam language";
             var newCulturalPattern = "Master kopitiam language with regional confidence: Hokkien ('si', 'gao', 'poh'), Malay ('kosong', 'ais', 'panas'), respond to cultural terms immediately with authentic acknowledgment";
-            
+
             if (enhanced.Contains(oldCulturalPattern))
             {
                 enhanced = enhanced.Replace(oldCulturalPattern, newCulturalPattern);
@@ -879,7 +879,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Enhance confidence-based responses
         var oldConfidencePattern = "If not sure, ask";
         var newConfidencePattern = "Cultural confidence levels: HIGH (kopitiam terms) → execute immediately, MEDIUM (mixed language) → confirm in kopitiam terms, LOW (English only) → offer kopitiam alternatives";
-        
+
         if (enhanced.Contains(oldConfidencePattern))
         {
             enhanced = enhanced.Replace(oldConfidencePattern, newConfidencePattern);
@@ -890,7 +890,7 @@ public class ProductionAITrainingSession : ITrainingSession
     }
 
     /// <summary>
-    /// Enhances order modification sections within the existing prompt  
+    /// Enhances order modification sections within the existing prompt
     /// </summary>
     private string EnhanceModificationHandlingSections(string prompt, PromptChangeTracker changeTracker)
     {
@@ -902,7 +902,7 @@ public class ProductionAITrainingSession : ITrainingSession
             // Strengthen existing modification guidance
             var oldModificationPattern = "void_line_item for that item";
             var newModificationPattern = "void_line_item immediately for clear modification requests ('change the peanut butter toast to kaya toast'), confirm for ambiguous requests ('change to kaya')";
-            
+
             if (enhanced.Contains(oldModificationPattern))
             {
                 enhanced = enhanced.Replace(oldModificationPattern, newModificationPattern);
@@ -921,7 +921,7 @@ public class ProductionAITrainingSession : ITrainingSession
                     "- MEDIUM confidence: Confirm specifics before executing\n" +
                     "- Always continue taking orders after modifications\n" +
                     "- Confirm changes with natural kopitiam responses\n\n";
-                    
+
                 enhanced = enhanced.Replace(paymentSection, modificationSection + paymentSection);
                 changeTracker.RecordChange("Added order modification mastery section", "Inserted confidence-based modification handling before payment flow");
             }
@@ -940,7 +940,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Strengthen existing conversation patterns
         var oldWarmPattern = "Be warm and efficient";
         var newWarmPattern = "Maintain natural kopitiam conversation flow: greet warmly ('Uncle here! What you want today?'), confirm specifically ('Can lah! Added [item]'), continue naturally ('What else you want?'), close friendly ('Thank you boss!')";
-        
+
         if (enhanced.Contains(oldWarmPattern))
         {
             enhanced = enhanced.Replace(oldWarmPattern, newWarmPattern);
@@ -950,7 +950,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Enhance existing style guidance
         var oldStylePattern = "Use natural kopitiam expressions";
         var newStylePattern = "Master kopitiam conversation timing: immediate acknowledgment, tool + natural response, context awareness, proactive suggestions with cultural warmth";
-        
+
         if (enhanced.Contains(oldStylePattern))
         {
             enhanced = enhanced.Replace(oldStylePattern, newStylePattern);
@@ -970,7 +970,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Strengthen general guidance
         var oldThinkPattern = "Think step-by-step";
         var newThinkPattern = "Think step-by-step: analyze customer intent, assess confidence level, select appropriate tools, provide natural conversational response";
-        
+
         if (enhanced.Contains(oldThinkPattern))
         {
             enhanced = enhanced.Replace(oldThinkPattern, newThinkPattern);
@@ -992,7 +992,7 @@ public class ProductionAITrainingSession : ITrainingSession
         var fallbackEnhancements = new[]
         {
             "Focus: Improve tool selection accuracy and product identification precision.",
-            "Focus: Enhance conversational flow and customer interaction responsiveness.", 
+            "Focus: Enhance conversational flow and customer interaction responsiveness.",
             "Focus: Optimize order processing workflow and modification handling.",
             "Focus: Strengthen payment processing logic and error recovery.",
             "Focus: Improve context awareness and conversation continuity."
@@ -1018,7 +1018,7 @@ public class ProductionAITrainingSession : ITrainingSession
         return variationIndex switch
         {
             0 => "Multi-Item Order Processing",
-            1 => "Cultural Language Enhancement", 
+            1 => "Cultural Language Enhancement",
             2 => "Order Modification Handling",
             3 => "Conversational Responsiveness",
             4 => "Payment Flow Intelligence",
@@ -1035,12 +1035,12 @@ public class ProductionAITrainingSession : ITrainingSession
     private string EnhanceBaselinePrompt(string baselinePrompt, int generation)
     {
         var changeTracker = new PromptChangeTracker(baselinePrompt);
-        
+
         // ARCHITECTURAL PRINCIPLE: Apply progressive holistic improvements based on generation
         var enhanced = generation switch
         {
             2 => EnhanceToolSelectionAccuracy(baselinePrompt, changeTracker),
-            3 => EnhanceConversationalClarity(baselinePrompt, changeTracker), 
+            3 => EnhanceConversationalClarity(baselinePrompt, changeTracker),
             4 => EnhanceOrderProcessingWorkflow(baselinePrompt, changeTracker),
             5 => EnhancePaymentProcessingIntelligence(baselinePrompt, changeTracker),
             _ => EnhanceContextAwareness(baselinePrompt, changeTracker)
@@ -1060,7 +1060,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Strengthen existing tool usage instructions
         var oldToolPattern = "Use add_item_to_transaction";
         var newToolPattern = "Use add_item_to_transaction only when confident about product match (>0.8 confidence). Validate product exists and provide clear confirmation";
-        
+
         if (enhanced.Contains(oldToolPattern))
         {
             enhanced = enhanced.Replace(oldToolPattern, newToolPattern);
@@ -1069,7 +1069,7 @@ public class ProductionAITrainingSession : ITrainingSession
 
         var oldProcessPattern = "Process this request";
         var newProcessPattern = "Analyze request carefully, validate confidence levels, then execute appropriate tools with conversational confirmation";
-        
+
         if (enhanced.Contains(oldProcessPattern))
         {
             enhanced = enhanced.Replace(oldProcessPattern, newProcessPattern);
@@ -1089,7 +1089,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Improve existing conversation guidance
         var oldNaturalPattern = "respond naturally";
         var newNaturalPattern = "provide complete responses with context and ask specific clarifying questions when needed";
-        
+
         if (enhanced.Contains(oldNaturalPattern))
         {
             enhanced = enhanced.Replace(oldNaturalPattern, newNaturalPattern);
@@ -1098,7 +1098,7 @@ public class ProductionAITrainingSession : ITrainingSession
 
         var oldWarmPattern = "Be warm and efficient";
         var newWarmPattern = "Maintain clear communication: acknowledge requests specifically, provide complete context, guide customers through any confusion with patience";
-        
+
         if (enhanced.Contains(oldWarmPattern))
         {
             enhanced = enhanced.Replace(oldWarmPattern, newWarmPattern);
@@ -1118,7 +1118,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Strengthen existing order handling
         var oldOrderPattern = "Handle order changes";
         var newOrderPattern = "Process complex orders systematically: break down multi-item requests, handle modifications with proper tool sequences, confirm all changes before proceeding";
-        
+
         if (enhanced.Contains(oldOrderPattern))
         {
             enhanced = enhanced.Replace(oldOrderPattern, newOrderPattern);
@@ -1140,7 +1140,7 @@ public class ProductionAITrainingSession : ITrainingSession
         {
             var oldPaymentPattern = "Distinguish payment questions from payment processing";
             var newPaymentPattern = "Master payment context awareness: questions during ordering get method information, payment words after order completion trigger processing, handle errors gracefully with alternatives";
-            
+
             if (enhanced.Contains(oldPaymentPattern))
             {
                 enhanced = enhanced.Replace(oldPaymentPattern, newPaymentPattern);
@@ -1161,7 +1161,7 @@ public class ProductionAITrainingSession : ITrainingSession
         // Strengthen existing context handling
         var oldPersonalityPattern = "maintain consistent personality";
         var newPersonalityPattern = "maintain consistent personality while referencing previous interactions and building conversation continuity throughout the entire customer experience";
-        
+
         if (enhanced.Contains(oldPersonalityPattern))
         {
             enhanced = enhanced.Replace(oldPersonalityPattern, newPersonalityPattern);
@@ -1177,10 +1177,10 @@ public class ProductionAITrainingSession : ITrainingSession
     private string ApplyFallbackEnhancement(string baselinePrompt, TrainingEnhancement enhancement)
     {
         var changeTracker = new PromptChangeTracker(baselinePrompt);
-        
+
         // ARCHITECTURAL PRINCIPLE: Minimal enhancement without training artifacts
         var focusGuidance = $"Enhanced Focus: {enhancement.Focus}";
-        
+
         // Find appropriate insertion point or append minimally
         if (baselinePrompt.Contains("IMPORTANT: Before responding"))
         {
@@ -1210,13 +1210,13 @@ public class ProductionAITrainingSession : ITrainingSession
             var allProducts = await _restaurantClient.SearchProductsAsync("", 50);
             var popularProducts = allProducts.Take(10).ToList();
 
-            _logger.LogInformation("Generated {Count} REAL scenarios from PRODUCTION restaurant extension - {ProductCount} products", 
+            _logger.LogInformation("Generated {Count} REAL scenarios from PRODUCTION restaurant extension - {ProductCount} products",
                 scenarioCount, popularProducts.Count);
 
             for (int i = 0; i < scenarioCount; i++)
             {
                 var product = popularProducts[i % popularProducts.Count];
-                
+
                 // Generate realistic customer inputs (same as PosKernel.AI would receive)
                 var userInputs = new[]
                 {
@@ -1252,44 +1252,45 @@ public class ProductionAITrainingSession : ITrainingSession
     private async Task<ScenarioTestEventArgs> TestScenarioAgainstProductionAI(TrainingScenario scenario, int generation, int scenarioIndex)
     {
         var testStart = DateTime.UtcNow;
-        
+
         try
         {
-            _logger.LogDebug("Testing scenario {ScenarioIndex} against PRODUCTION ChatOrchestrator: '{Input}'", 
+            _logger.LogDebug("Testing scenario {ScenarioIndex} against PRODUCTION PosAiAgent: '{Input}'",
                 scenarioIndex, scenario.UserInput);
 
-            // ARCHITECTURAL FIX: Create fresh ChatOrchestrator for each scenario to ensure transaction isolation
+            // ARCHITECTURAL FIX: Create fresh AI Agent for each scenario to ensure transaction isolation
             // DESIGN DEFICIENCY FIX: Previous implementation reused same orchestrator, causing transaction contamination
-            var freshOrchestrator = _productionServices.GetRequiredService<ChatOrchestrator>();
-            
+            var freshAiAgent = _productionServices.GetRequiredService<PosAiAgent>();
+
             // ARCHITECTURAL FIX: Add timeout and completion detection
             var timeout = TimeSpan.FromSeconds(60); // Reasonable timeout for AI responses
             using var cancellationTokenSource = new CancellationTokenSource(timeout);
 
-            // Initialize fresh orchestrator (ensures new transaction)
-            await freshOrchestrator.InitializeAsync();
+            // Initialize fresh AI agent (ensures new transaction)
+            // AI-FIRST DESIGN: No InitializeAsync needed - AI handles greeting on first interaction
+            _logger.LogDebug("Fresh PosAiAgent ready for scenario {ScenarioIndex}", scenarioIndex);
 
             // ARCHITECTURAL FIX: Log scenario start with fresh transaction guarantee
-            _logger.LogInformation("STARTING Scenario {ScenarioIndex}/Generation {Generation}: Testing '{Input}' against FRESH production AI (new transaction)", 
+            _logger.LogInformation("STARTING Scenario {ScenarioIndex}/Generation {Generation}: Testing '{Input}' against FRESH production AI (new transaction)",
                 scenarioIndex, generation, scenario.UserInput);
 
-            // Test against FRESH production ChatOrchestrator (EXACT same call as PosKernel.AI but with new transaction)
-            var aiResponse = await freshOrchestrator.ProcessUserInputAsync(scenario.UserInput);
-            
+            // Test against FRESH production AI Agent (EXACT same call as PosKernel.AI but with new transaction)
+            var aiResponse = await freshAiAgent.ProcessCustomerInputAsync(scenario.UserInput);
+
             // TRAINING ENHANCEMENT: Attempt to complete the transaction for better training data
-            var completionAttempted = await AttemptTransactionCompletion(freshOrchestrator, scenario, scenarioIndex);
-            
+            var completionAttempted = await AttemptTransactionCompletion(freshAiAgent, scenario, scenarioIndex);
+
             var testDuration = DateTime.UtcNow - testStart;
 
             // ARCHITECTURAL FIX: Validate that we got a proper response
             if (aiResponse == null)
             {
-                throw new InvalidOperationException($"Production ChatOrchestrator returned null response for input: '{scenario.UserInput}'");
+                throw new InvalidOperationException($"Production AI Agent returned null response for input: '{scenario.UserInput}'");
             }
 
-            if (string.IsNullOrEmpty(aiResponse.Content))
+            if (string.IsNullOrEmpty(aiResponse))
             {
-                _logger.LogWarning("EMPTY RESPONSE from production AI for scenario {ScenarioIndex}: '{Input}'", 
+                _logger.LogWarning("EMPTY RESPONSE from production AI for scenario {ScenarioIndex}: '{Input}'",
                     scenarioIndex, scenario.UserInput);
             }
 
@@ -1300,27 +1301,27 @@ public class ProductionAITrainingSession : ITrainingSession
             // ARCHITECTURAL FIX: Enhanced completion logging with transaction completion status
             var statusEmoji = isSuccessful ? "SUCCESS" : "FAILED";
             var completionStatus = completionAttempted.Completed ? "COMPLETED" : "INCOMPLETE";
-            _logger.LogInformation("{CompletionStatus} Scenario {ScenarioIndex}/Generation {Generation}: '{Input}' -> {Status} Score: {Score:F3}, Duration: {Duration:F1}s (fresh transaction)", 
+            _logger.LogInformation("{CompletionStatus} Scenario {ScenarioIndex}/Generation {Generation}: '{Input}' -> {Status} Score: {Score:F3}, Duration: {Duration:F1}s (fresh transaction)",
                 completionStatus, scenarioIndex, generation, scenario.UserInput, statusEmoji, score, testDuration.TotalSeconds);
-            
+
             // ARCHITECTURAL FIX: Safe response preview for logging
-            var responsePreview = SafeTruncateString(aiResponse.Content, 200);
+            var responsePreview = SafeTruncateString(aiResponse, 200);
             _logger.LogInformation("AI RESPONSE: '{Response}'", responsePreview);
 
             if (completionAttempted.Completed)
             {
-                _logger.LogInformation("TRANSACTION COMPLETED: Total {Total}, Payment method: {PaymentMethod}", 
+                _logger.LogInformation("TRANSACTION COMPLETED: Total {Total}, Payment method: {PaymentMethod}",
                     completionAttempted.FinalTotal, completionAttempted.PaymentMethod ?? "Unknown");
             }
             else
             {
-                _logger.LogWarning("TRANSACTION INCOMPLETE: Training data may be suboptimal - {Reason}", 
+                _logger.LogWarning("TRANSACTION INCOMPLETE: Training data may be suboptimal - {Reason}",
                     completionAttempted.FailureReason ?? "Unknown reason");
             }
 
-            // ARCHITECTURAL FIX: Clean up the fresh orchestrator to ensure no transaction leakage
-            // The orchestrator will be disposed by DI container, ensuring clean transaction state
-            _logger.LogDebug("Scenario {ScenarioIndex} completed, fresh orchestrator will be disposed", scenarioIndex);
+            // ARCHITECTURAL FIX: Clean up the fresh AI Agent to ensure no transaction leakage
+            // The AI Agent will be disposed by DI container, ensuring clean transaction state
+            _logger.LogDebug("Scenario {ScenarioIndex} completed, fresh AI agent will be disposed", scenarioIndex);
 
             return new ScenarioTestEventArgs
             {
@@ -1328,7 +1329,7 @@ public class ProductionAITrainingSession : ITrainingSession
                 ScenarioIndex = scenarioIndex,
                 ScenarioDescription = scenario.Description,
                 UserInput = scenario.UserInput,
-                AIResponse = aiResponse.Content ?? "[No response]",
+                AIResponse = aiResponse ?? "[No response]",
                 Score = score,
                 QualityMetrics = GenerateProductionQualityMetrics(score, aiResponse, completionAttempted),
                 Duration = testDuration,
@@ -1338,7 +1339,7 @@ public class ProductionAITrainingSession : ITrainingSession
         catch (OperationCanceledException)
         {
             var testDuration = DateTime.UtcNow - testStart;
-            _logger.LogError("TIMEOUT in scenario {ScenarioIndex}/Generation {Generation} after {Duration:F1}s: '{Input}' (fresh transaction guaranteed)", 
+            _logger.LogError("TIMEOUT in scenario {ScenarioIndex}/Generation {Generation} after {Duration:F1}s: '{Input}' (fresh transaction guaranteed)",
                 scenarioIndex, generation, testDuration.TotalSeconds, scenario.UserInput);
 
             return new ScenarioTestEventArgs
@@ -1358,7 +1359,7 @@ public class ProductionAITrainingSession : ITrainingSession
         catch (Exception ex)
         {
             var testDuration = DateTime.UtcNow - testStart;
-            _logger.LogError(ex, "FAILED scenario {ScenarioIndex}/Generation {Generation} after {Duration:F1}s: '{Input}' - {Error} (fresh transaction guaranteed)", 
+            _logger.LogError(ex, "FAILED scenario {ScenarioIndex}/Generation {Generation} after {Duration:F1}s: '{Input}' - {Error} (fresh transaction guaranteed)",
                 scenarioIndex, generation, testDuration.TotalSeconds, scenario.UserInput, ex.Message);
 
             return new ScenarioTestEventArgs
@@ -1382,10 +1383,10 @@ public class ProductionAITrainingSession : ITrainingSession
     /// TRAINING PRINCIPLE: Complete transactions provide better learning signals than incomplete ones
     /// ARCHITECTURAL FIX: Enhanced completion detection and retry logic
     /// </summary>
-    private async Task<TransactionCompletionAttempt> AttemptTransactionCompletion(ChatOrchestrator orchestrator, TrainingScenario scenario, int scenarioIndex)
+    private async Task<TransactionCompletionAttempt> AttemptTransactionCompletion(PosAiAgent aiAgent, TrainingScenario scenario, int scenarioIndex)
     {
         var attempt = new TransactionCompletionAttempt();
-        
+
         try
         {
             _logger.LogDebug("TRAINING: Attempting to complete transaction for scenario {ScenarioIndex}", scenarioIndex);
@@ -1401,60 +1402,60 @@ public class ProductionAITrainingSession : ITrainingSession
                 new[] { "habis", "sudah", "selesai" }
             };
 
-            ChatMessage? completionResponse = null;
+            string? completionResponse = null;
             string? usedCompletionPrompt = null;
 
             // Try each strategy until we get a payment method request
             foreach (var strategy in completionStrategies)
             {
                 var completionPrompt = strategy[new Random().Next(strategy.Length)];
-                completionResponse = await orchestrator.ProcessUserInputAsync(completionPrompt);
+                completionResponse = await aiAgent.ProcessCustomerInputAsync(completionPrompt);
                 usedCompletionPrompt = completionPrompt;
-                
+
                 // ARCHITECTURAL FIX: Safe string truncation for logging
-                var responsePreview = SafeTruncateString(completionResponse?.Content, 100);
-                _logger.LogDebug("TRAINING: Completion prompt '{Prompt}' -> Response: '{Response}'", 
+                var responsePreview = SafeTruncateString(completionResponse, 100);
+                _logger.LogDebug("TRAINING: Completion prompt '{Prompt}' -> Response: '{Response}'",
                     completionPrompt, responsePreview);
 
                 // Check if this response indicates payment method request
-                if (IsPaymentMethodRequest(completionResponse?.Content))
+                if (IsPaymentMethodRequest(completionResponse))
                 {
                     _logger.LogDebug("TRAINING: Payment method request detected with strategy: {Strategy}", string.Join("/", strategy));
                     break;
                 }
-                
+
                 // ARCHITECTURAL FIX: Brief delay between attempts
                 await Task.Delay(200);
             }
 
             // If we got a payment method request, provide payment method
-            if (IsPaymentMethodRequest(completionResponse?.Content))
+            if (IsPaymentMethodRequest(completionResponse))
             {
                 var paymentMethods = new[] { "Cash", "PayNow", "Card", "NETS" };
                 var selectedPayment = paymentMethods[new Random().Next(paymentMethods.Length)];
-                
-                var paymentResponse = await orchestrator.ProcessUserInputAsync(selectedPayment);
-                
+
+                var paymentResponse = await aiAgent.ProcessCustomerInputAsync(selectedPayment);
+
                 // ARCHITECTURAL FIX: Safe string truncation for logging
-                var paymentResponsePreview = SafeTruncateString(paymentResponse?.Content, 100);
-                _logger.LogDebug("TRAINING: Payment method '{Method}' -> Response: '{Response}'", 
+                var paymentResponsePreview = SafeTruncateString(paymentResponse, 100);
+                _logger.LogDebug("TRAINING: Payment method '{Method}' -> Response: '{Response}'",
                     selectedPayment, paymentResponsePreview);
 
                 // Check if payment was processed successfully
-                if (IsPaymentProcessedSuccessfully(paymentResponse?.Content))
+                if (IsPaymentProcessedSuccessfully(paymentResponse))
                 {
                     attempt.Completed = true;
                     attempt.PaymentMethod = selectedPayment;
-                    
+
                     // Extract total if possible
-                    var content = paymentResponse.Content ?? "";
+                    var content = paymentResponse ?? "";
                     var totalMatch = System.Text.RegularExpressions.Regex.Match(content, @"[$]?(\d+\.?\d*)");
                     if (totalMatch.Success && double.TryParse(totalMatch.Groups[1].Value, out var total))
                     {
                         attempt.FinalTotal = total;
                     }
-                    
-                    _logger.LogInformation("TRAINING: Transaction completed successfully - {Method}, Total: {Total}", 
+
+                    _logger.LogInformation("TRAINING: Transaction completed successfully - {Method}, Total: {Total}",
                         selectedPayment, attempt.FinalTotal);
                 }
                 else
@@ -1493,13 +1494,13 @@ public class ProductionAITrainingSession : ITrainingSession
         }
 
         var lowerContent = content.ToLowerInvariant();
-        
+
         // Check for payment method request indicators
         var paymentIndicators = new[]
         {
             "how you want to pay",
             "payment method",
-            "how to pay", 
+            "how to pay",
             "cash or card",
             "paynow",
             "payment",
@@ -1522,7 +1523,7 @@ public class ProductionAITrainingSession : ITrainingSession
         }
 
         var lowerContent = content.ToLowerInvariant();
-        
+
         // Check for payment completion indicators
         var completionIndicators = new[]
         {
@@ -1563,10 +1564,10 @@ public class ProductionAITrainingSession : ITrainingSession
         return input.Substring(0, maxLength) + "...";
     }
 
-    private double ScoreProductionAIResponse(ChatMessage aiResponse, TrainingScenario scenario, TransactionCompletionAttempt completionAttempt)
+    private double ScoreProductionAIResponse(string aiResponse, TrainingScenario scenario, TransactionCompletionAttempt completionAttempt)
     {
         var score = 0.0;
-        var content = aiResponse.Content ?? "";
+        var content = aiResponse ?? "";
 
         // Basic response quality checks
         if (!string.IsNullOrEmpty(content))
@@ -1575,7 +1576,7 @@ public class ProductionAITrainingSession : ITrainingSession
         }
 
         // Check if expected product was mentioned or added
-        if (!string.IsNullOrEmpty(scenario.ExpectedProductName) && 
+        if (!string.IsNullOrEmpty(scenario.ExpectedProductName) &&
             content.Contains(scenario.ExpectedProductName, StringComparison.OrdinalIgnoreCase))
         {
             score += 0.3; // Mentioned expected product
@@ -1610,8 +1611,8 @@ public class ProductionAITrainingSession : ITrainingSession
         }
 
         var finalScore = Math.Max(0.0, Math.Min(1.0, score));
-        
-        _logger.LogDebug("TRAINING SCORE: Scenario response={ResponseScore:F3}, completion={CompletionBonus:F3}, final={FinalScore:F3}", 
+
+        _logger.LogDebug("TRAINING SCORE: Scenario response={ResponseScore:F3}, completion={CompletionBonus:F3}, final={FinalScore:F3}",
             score - (completionAttempt.Completed ? 0.4 : 0) + (completionAttempt.Failed ? 0.1 : 0),
             completionAttempt.Completed ? 0.4 : (completionAttempt.Failed ? -0.1 : 0),
             finalScore);
@@ -1619,10 +1620,10 @@ public class ProductionAITrainingSession : ITrainingSession
         return finalScore;
     }
 
-    private IReadOnlyDictionary<string, double> GenerateProductionQualityMetrics(double overallScore, ChatMessage response, TransactionCompletionAttempt completionAttempt)
+    private IReadOnlyDictionary<string, double> GenerateProductionQualityMetrics(double overallScore, string response, TransactionCompletionAttempt completionAttempt)
     {
-        var content = response.Content ?? "";
-        
+        var content = response ?? "";
+
         return new Dictionary<string, double>
         {
             { "ProductionResponseCompleteness", string.IsNullOrEmpty(content) ? 0.0 : Math.Min(1.0, content.Length / 100.0) },
@@ -1640,8 +1641,8 @@ public class ProductionAITrainingSession : ITrainingSession
         var elapsedTime = DateTime.UtcNow - _startTime - _pausedDuration;
         var estimatedTotalTime = config.MaxGenerations > 0 ? elapsedTime.Ticks * config.MaxGenerations / generation : TimeSpan.Zero.Ticks;
         var estimatedRemaining = TimeSpan.FromTicks(Math.Max(0, estimatedTotalTime - elapsedTime.Ticks));
-        
-        var overallProgress = (double)(generation - 1) / config.MaxGenerations + 
+
+        var overallProgress = (double)(generation - 1) / config.MaxGenerations +
                              ((double)currentScenario / config.ScenarioCount / config.MaxGenerations);
 
         lock (_stateLock)
@@ -1744,14 +1745,14 @@ public class ProductionAITrainingSession : ITrainingSession
         {
             // ARCHITECTURAL FIX: Force reload from disk to verify update
             AiPersonalityFactory.ClearPromptCache();
-            
+
             // ARCHITECTURAL FIX: Add delay to ensure file system operations complete
             await Task.Delay(100);
-            
+
             // Reload the prompt that the cashier system would actually use - AI handles time naturally
             var storeConfig = _productionServices.GetRequiredService<StoreConfig>();
-            var promptContext = new PromptContext 
-            { 
+            var promptContext = new PromptContext
+            {
                 Currency = storeConfig.Currency
             };
 
@@ -1762,7 +1763,7 @@ public class ProductionAITrainingSession : ITrainingSession
             // The BuildPrompt method adds context, so we need to compare the raw template
             var expectedTemplate = ExtractTemplateFromPrompt(expectedPrompt);
             var reloadedTemplate = ExtractTemplateFromPrompt(reloadedPrompt);
-            
+
             if (reloadedTemplate.Trim() == expectedTemplate.Trim())
             {
                 _logger.LogInformation("✅ VERIFICATION SUCCESS: Cashier system will use the optimized prompt");
@@ -1770,15 +1771,15 @@ public class ProductionAITrainingSession : ITrainingSession
             else
             {
                 _logger.LogError("❌ VERIFICATION FAILED: Cashier system prompt template does not match optimized version");
-                _logger.LogInformation("Expected template length: {ExpectedLength}, Actual template length: {ActualLength}", 
+                _logger.LogInformation("Expected template length: {ExpectedLength}, Actual template length: {ActualLength}",
                     expectedTemplate.Length, reloadedTemplate.Length);
-                
+
                 // ARCHITECTURAL FIX: More detailed comparison for debugging
-                _logger.LogDebug("Expected template (first 200 chars): {ExpectedTemplate}", 
+                _logger.LogDebug("Expected template (first 200 chars): {ExpectedTemplate}",
                     expectedTemplate.Length > 200 ? expectedTemplate.Substring(0, 200) : expectedTemplate);
-                _logger.LogDebug("Reloaded template (first 200 chars): {ReloadedTemplate}", 
+                _logger.LogDebug("Reloaded template (first 200 chars): {ReloadedTemplate}",
                     reloadedTemplate.Length > 200 ? reloadedTemplate.Substring(0, 200) : reloadedTemplate);
-                
+
                 // ARCHITECTURAL FIX: Check if it's just context differences
                 if (Math.Abs(expectedTemplate.Length - reloadedTemplate.Length) < 100)
                 {
@@ -1814,7 +1815,7 @@ public class ProductionAITrainingSession : ITrainingSession
         foreach (var line in lines)
         {
             // Skip context sections added by BuildPrompt
-            if (line.StartsWith("## CURRENT SESSION CONTEXT:") || 
+            if (line.StartsWith("## CURRENT SESSION CONTEXT:") ||
                 line.StartsWith("## CURRENT CONTEXT:") ||
                 line.StartsWith("### Recent Conversation:") ||
                 line.StartsWith("### Current Order Status:") ||
@@ -1831,7 +1832,7 @@ public class ProductionAITrainingSession : ITrainingSession
             }
 
             // Skip context lines
-            if (inContextSection || 
+            if (inContextSection ||
                 line.StartsWith("- Items in cart:") ||
                 line.StartsWith("- Current total:") ||
                 line.StartsWith("- Currency:") ||
@@ -1923,13 +1924,13 @@ public class PromptChangeTracker
 
         var changeCount = _changes.Count;
         var summary = $"{changeCount} enhancement{(changeCount == 1 ? "" : "s")} applied: {string.Join("; ", _changes)}";
-        
+
         // Keep summary reasonable length for display
         if (summary.Length > 300)
         {
             summary = summary.Substring(0, 297) + "...";
         }
-        
+
         return summary;
     }
 

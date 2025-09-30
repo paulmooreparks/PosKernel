@@ -17,24 +17,51 @@
 namespace PosKernel.Abstractions;
 
 /// <summary>
-/// Represents the current state of a transaction lifecycle.
+/// Represents the current state of a transaction lifecycle in the AI-first architecture.
+/// States drive AI behavior - no prompts or orchestration logic.
 /// </summary>
 public enum TransactionState
 {
     /// <summary>
-    /// Items and tenders are still being added.
+    /// Fresh transaction ready for customer interaction.
+    /// AI sees this state → provides natural greeting.
     /// </summary>
-    Building,
+    StartTransaction = 0,
 
     /// <summary>
-    /// The transaction has sufficient tender and is finalized.
+    /// Items added but transaction incomplete.
+    /// AI sees this state → offers suggestions and clarifications.
     /// </summary>
-    Completed,
+    ItemsPending = 1,
+
+    /// <summary>
+    /// Ready for payment processing.
+    /// AI sees this state → guides payment method selection.
+    /// </summary>
+    PaymentPending = 2,
+
+    /// <summary>
+    /// Transaction complete, ready for next customer.
+    /// AI sees this state → provides receipt and farewell, then auto-transitions to StartTransaction.
+    /// </summary>
+    EndOfTransaction = 3,
 
     /// <summary>
     /// The transaction was voided and should not be used further.
     /// </summary>
-    Voided
+    Voided = 4,
+
+    /// <summary>
+    /// Legacy state - maps to ItemsPending for backward compatibility.
+    /// </summary>
+    [Obsolete("Use ItemsPending instead")]
+    Building = 1,
+
+    /// <summary>
+    /// Legacy state - maps to EndOfTransaction for backward compatibility.
+    /// </summary>
+    [Obsolete("Use EndOfTransaction instead")]
+    Completed = 3
 }
 
 /// <summary>
@@ -81,7 +108,7 @@ public sealed class Transaction
     /// <summary>
     /// Gets or sets the current state of the transaction.
     /// </summary>
-    public TransactionState State { get; set; } = TransactionState.Building;
+    public TransactionState State { get; set; } = TransactionState.StartTransaction;
 
     /// <summary>
     /// Gets the ISO 4217 currency code for the transaction.
@@ -109,17 +136,23 @@ public sealed class Transaction
     public Money ChangeDue => Tendered.MinorUnits > Total.MinorUnits ? new(Tendered.MinorUnits - Total.MinorUnits, Currency) : Money.Zero(Currency);
 
     /// <summary>
-    /// Adds a line item to the transaction while in the <see cref="TransactionState.Building"/> state.
+    /// Adds a line item to the transaction while in the <see cref="TransactionState.ItemsPending"/> state.
     /// </summary>
     /// <param name="productId">The product identifier to add.</param>
     /// <param name="quantity">The quantity being purchased.</param>
     /// <param name="unitPrice">The unit price for the product.</param>
-    /// <exception cref="InvalidOperationException">Thrown if the transaction is not in the Building state.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if the transaction is not in the ItemsPending state.</exception>
     public void AddLine(ProductId productId, int quantity, Money unitPrice)
     {
-        if (State != TransactionState.Building)
+        if (State != TransactionState.ItemsPending && State != TransactionState.StartTransaction)
         {
-            throw new InvalidOperationException("Cannot add line when not building");
+            throw new InvalidOperationException("Cannot add line when not building or starting transaction");
+        }
+
+        // ARCHITECTURAL PRINCIPLE: Transition to ItemsPending when first item added
+        if (State == TransactionState.StartTransaction)
+        {
+            State = TransactionState.ItemsPending;
         }
 
         var line = new TransactionLine
@@ -132,21 +165,28 @@ public sealed class Transaction
     }
 
     /// <summary>
-    /// Adds a cash tender amount while in the <see cref="TransactionState.Building"/> state. Automatically
-    /// transitions the transaction to <see cref="TransactionState.Completed"/> when total tendered meets or exceeds the total.
+    /// Adds a cash tender amount while in the <see cref="TransactionState.ItemsPending"/> or <see cref="TransactionState.PaymentPending"/> state. 
+    /// Automatically transitions the transaction to <see cref="TransactionState.EndOfTransaction"/> when total tendered meets or exceeds the total.
     /// </summary>
     /// <param name="amount">The cash amount tendered.</param>
-    /// <exception cref="InvalidOperationException">Thrown if the transaction is not in the Building state.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if the transaction is not in the correct state for payment.</exception>
     public void AddCashTender(Money amount)
     {
-        if (State != TransactionState.Building)
+        if (State != TransactionState.ItemsPending && State != TransactionState.PaymentPending)
         {
-            throw new InvalidOperationException("Cannot tender when not building");
+            throw new InvalidOperationException("Cannot tender when not in items pending or payment pending state");
         }
+
+        // ARCHITECTURAL PRINCIPLE: Transition to PaymentPending when payment starts
+        if (State == TransactionState.ItemsPending)
+        {
+            State = TransactionState.PaymentPending;
+        }
+
         Tendered = new Money(Tendered.MinorUnits + amount.MinorUnits, amount.Currency);
         if (Tendered.MinorUnits >= Total.MinorUnits)
         {
-            State = TransactionState.Completed;
+            State = TransactionState.EndOfTransaction;  // AI will see this and auto-cycle to StartTransaction
         }
     }
 }

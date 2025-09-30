@@ -15,7 +15,6 @@
 //
 
 using System.Text;
-using System.Text.RegularExpressions;
 using PosKernel.AI.Models;
 using PosKernel.AI.Services;
 using PosKernel.Configuration;
@@ -25,7 +24,8 @@ namespace PosKernel.AI.Demo.UI.Terminal;
 
 /// <summary>
 /// Structured receipt formatter with proper alignment, hierarchical modifications, and currency service integration.
-/// ARCHITECTURAL PRINCIPLE: Service-based currency formatting, no hardcoded assumptions.
+/// ARCHITECTURAL PRINCIPLE: Pure infrastructure - no cultural assumptions or business logic.
+/// AI owns all cultural intelligence; formatter simply displays data as provided.
 /// </summary>
 public class StructuredReceiptFormatter
 {
@@ -148,8 +148,8 @@ public class StructuredReceiptFormatter
 
     /// <summary>
     /// Parses preparation notes into structured modifications.
-    /// Handles set customizations like "with Teh Si Kosong" -> drink choice + sugar modification.
-    /// ARCHITECTURAL PRINCIPLE: Parse set customizations into hierarchical structure.
+    /// ARCHITECTURAL PRINCIPLE: No cultural parsing - AI handles all cultural intelligence.
+    /// Simply structure the data as provided without interpretation.
     /// </summary>
     private List<ReceiptModification> ParseModifications(string preparationNotes)
     {
@@ -160,7 +160,7 @@ public class StructuredReceiptFormatter
             return modifications;
         }
 
-        // Handle set customizations (e.g., "with Teh Si Kosong")
+        // Handle set customizations (e.g., "with Custom Drink")
         if (preparationNotes.StartsWith("with ", StringComparison.OrdinalIgnoreCase))
         {
             var setCustomization = preparationNotes.Substring(5).Trim(); // Remove "with "
@@ -186,106 +186,33 @@ public class StructuredReceiptFormatter
     }
 
     /// <summary>
-    /// Parses set customizations into hierarchical structure.
-    /// Example: "Teh Si Kosong" -> "Teh C" with "No sugar" sub-modification
-    /// ARCHITECTURAL PRINCIPLE: Parse kopitiam terminology into proper receipt format.
+    /// ARCHITECTURAL FIX: No longer parse cultural terminology - AI handles all cultural intelligence.
+    /// Simply return customization as-provided by AI without cultural assumptions.
     /// </summary>
     private List<ReceiptModification> ParseSetCustomization(string customization)
     {
         var modifications = new List<ReceiptModification>();
 
-        // Parse drink customizations with kopitiam terminology
-        if (customization.Contains("kosong", StringComparison.OrdinalIgnoreCase))
+        // ARCHITECTURAL PRINCIPLE: No cultural hardcoding - AI owns cultural intelligence
+        // Simply display customization as provided without parsing cultural terms
+        modifications.Add(new ReceiptModification
         {
-            // "Teh Si Kosong" -> "Teh C" with "No sugar"
-            var drinkName = customization.Replace("kosong", "", StringComparison.OrdinalIgnoreCase).Trim();
-            drinkName = NormalizeDrinkName(drinkName);
-
-            var drink = new ReceiptModification
-            {
-                Name = drinkName,
-                Cost = 0,
-                SubModifications = new List<ReceiptModification>
-                {
-                    new ReceiptModification { Name = "No sugar", Cost = 0, SubModifications = new List<ReceiptModification>() }
-                }
-            };
-            modifications.Add(drink);
-        }
-        else if (customization.Contains("siew dai", StringComparison.OrdinalIgnoreCase))
-        {
-            // "Teh C Siew Dai" -> "Teh C" with "Less sugar"
-            var drinkName = customization.Replace("siew dai", "", StringComparison.OrdinalIgnoreCase).Trim();
-            drinkName = NormalizeDrinkName(drinkName);
-
-            var drink = new ReceiptModification
-            {
-                Name = drinkName,
-                Cost = 0,
-                SubModifications = new List<ReceiptModification>
-                {
-                    new ReceiptModification { Name = "Less sugar", Cost = 0, SubModifications = new List<ReceiptModification>() }
-                }
-            };
-            modifications.Add(drink);
-        }
-        else if (customization.Contains("gah dai", StringComparison.OrdinalIgnoreCase))
-        {
-            // "Teh C Gah Dai" -> "Teh C" with "Extra sugar"
-            var drinkName = customization.Replace("gah dai", "", StringComparison.OrdinalIgnoreCase).Trim();
-            drinkName = NormalizeDrinkName(drinkName);
-
-            var drink = new ReceiptModification
-            {
-                Name = drinkName,
-                Cost = 0,
-                SubModifications = new List<ReceiptModification>
-                {
-                    new ReceiptModification { Name = "Extra sugar", Cost = 0, SubModifications = new List<ReceiptModification>() }
-                }
-            };
-            modifications.Add(drink);
-        }
-        else
-        {
-            // Simple drink customization without sugar modifications
-            var drinkName = NormalizeDrinkName(customization);
-            modifications.Add(new ReceiptModification
-            {
-                Name = drinkName,
-                Cost = 0,
-                SubModifications = new List<ReceiptModification>()
-            });
-        }
+            Name = customization.Trim(),
+            Cost = 0,
+            SubModifications = new List<ReceiptModification>()
+        });
 
         return modifications;
     }
 
     /// <summary>
-    /// Normalizes kopitiam drink names for receipt display.
-    /// Converts "Teh Si" or "Teh si" to "Teh C" for proper receipt formatting.
+    /// ARCHITECTURAL FIX: No cultural normalization - AI handles all language intelligence.
+    /// Simply return the name as provided without cultural assumptions.
     /// </summary>
     private string NormalizeDrinkName(string drinkName)
     {
-        if (string.IsNullOrEmpty(drinkName))
-        {
-            return drinkName;
-        }
-
-        // Handle "Si" -> "C" conversion (evaporated milk)
-        drinkName = Regex.Replace(drinkName, @"\bsi\b", "C", RegexOptions.IgnoreCase);
-
-        // Standardize capitalization
-        var words = drinkName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        for (int i = 0; i < words.Length; i++)
-        {
-            if (words[i].Length > 0)
-            {
-                words[i] = char.ToUpper(words[i][0]) + words[i].Substring(1).ToLower();
-            }
-        }
-
-        return string.Join(" ", words);
+        // ARCHITECTURAL PRINCIPLE: No cultural hardcoding - return name as-is
+        return drinkName?.Trim() ?? "";
     }
 
     /// <summary>

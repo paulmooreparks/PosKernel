@@ -378,12 +378,12 @@ public class Transaction : IDisposable
     /// <summary>
     /// Gets whether this transaction is completed (sufficient tender provided).
     /// </summary>
-    public bool IsCompleted => Totals.State == TransactionState.Completed;
+    public bool IsCompleted => Totals.State == TransactionState.EndOfTransaction;
 
     /// <summary>
     /// Gets whether this transaction is still building (insufficient tender).
     /// </summary>
-    public bool IsBuilding => Totals.State == TransactionState.Building;
+    public bool IsBuilding => Totals.State == TransactionState.ItemsPending;
 
     private void ThrowIfDisposed()
     {
@@ -454,7 +454,7 @@ public class TransactionTotals
     /// <summary>
     /// Gets whether sufficient tender has been provided.
     /// </summary>
-    public bool IsPaid => State == TransactionState.Completed;
+    public bool IsPaid => State == TransactionState.EndOfTransaction;
 
     /// <summary>
     /// Gets the remaining balance due (negative if overpaid).
@@ -463,19 +463,46 @@ public class TransactionTotals
 }
 
 /// <summary>
-/// Represents the state of a POS transaction.
+/// Represents the state of a POS transaction in the AI-first architecture.
+/// States drive AI behavior - no prompts or orchestration logic.
 /// </summary>
 public enum TransactionState
 {
     /// <summary>
-    /// Transaction is still being built (items being added).
+    /// Fresh transaction ready for customer interaction.
+    /// AI sees this state → provides natural greeting.
     /// </summary>
-    Building = 0,
+    StartTransaction = 0,
 
     /// <summary>
-    /// Transaction is completed (sufficient tender provided).
+    /// Items added but transaction incomplete.
+    /// AI sees this state → offers suggestions and clarifications.
     /// </summary>
-    Completed = 1
+    ItemsPending = 1,
+
+    /// <summary>
+    /// Ready for payment processing.
+    /// AI sees this state → guides payment method selection.
+    /// </summary>
+    PaymentPending = 2,
+
+    /// <summary>
+    /// Transaction complete, ready for next customer.
+    /// AI sees this state → provides receipt and farewell, then auto-transitions to StartTransaction.
+    /// </summary>
+    EndOfTransaction = 3,
+
+    /// <summary>
+    /// Legacy state - maps to ItemsPending for backward compatibility.
+    /// </summary>
+    [Obsolete("Use ItemsPending instead")]
+    Building = 1,
+
+    /// <summary>
+    /// Legacy state - maps to EndOfTransaction for backward compatibility.
+    /// </summary>
+    [Obsolete("Use EndOfTransaction instead")]
+    Completed = 3
 }
 
 /// <summary>

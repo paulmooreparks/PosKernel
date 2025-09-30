@@ -401,7 +401,7 @@ public void Should_Preserve_NRF_Hierarchy()
 public void Should_Never_Parse_Text()
 {
     // Verify no regex patterns exist in receipt sync
-    var receiptSync = typeof(ChatOrchestrator).GetMethod("SyncReceiptWithKernelAsync", BindingFlags.NonPublic | BindingFlags.Instance);
+    var receiptSync = typeof(PosAiAgent).GetMethod("SyncReceiptWithKernelAsync", BindingFlags.NonPublic | BindingFlags.Instance);
     var methodBody = receiptSync.GetMethodBody();
     // Assert: No Regex.Match calls in method
 }

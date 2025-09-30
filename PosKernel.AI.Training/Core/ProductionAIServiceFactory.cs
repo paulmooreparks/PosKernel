@@ -20,9 +20,11 @@ using Microsoft.Extensions.Configuration;
 using PosKernel.AI.Core;
 using PosKernel.AI.Services;
 using PosKernel.AI.Tools;
+using PosKernel.AI.Models;
 using PosKernel.Extensions.Restaurant.Client;
 using PosKernel.Configuration;
 using PosKernel.Configuration.Services;
+using PosKernel.Abstractions;
 using PosKernel.Abstractions.Services;
 using PosKernel.AI.Common.Abstractions;
 using PosKernel.AI.Common.Factories;
@@ -30,7 +32,7 @@ using PosKernel.AI.Common.Factories;
 namespace PosKernel.AI.Training.Core;
 
 /// <summary>
-/// Factory that creates production ChatOrchestrator instances using the EXACT same setup as PosKernel.AI demo
+/// Factory that creates production PosAiAgent instances using the EXACT same setup as PosKernel.AI demo
 /// ARCHITECTURAL PRINCIPLE: No duplication - reuse the proven service configuration pattern
 /// ARCHITECTURAL PRINCIPLE: FAIL FAST - no hardcoded defaults, no silent fallbacks
 /// </summary>
@@ -82,27 +84,27 @@ public static class ProductionAIServiceFactory
 
         // Initialize configuration system (same as PosKernel.AI)
         var config = PosKernelConfiguration.Initialize();
-        
+
         // ARCHITECTURAL FIX: Training uses TRAINING_AI_* configuration, not STORE_AI_*
         // This allows training to use Ollama (unlimited) while store uses OpenAI (quality)
-        var provider = config.GetValue<string>("TRAINING_AI_PROVIDER") ?? 
+        var provider = config.GetValue<string>("TRAINING_AI_PROVIDER") ??
             throw new InvalidOperationException(
                 "DESIGN DEFICIENCY: Training requires Training AI provider configuration. " +
                 "Set TRAINING_AI_PROVIDER in ~/.poskernel/.env (e.g., TRAINING_AI_PROVIDER=Ollama). " +
                 $"Config directory: {PosKernelConfiguration.ConfigDirectory}");
-                
-        var model = config.GetValue<string>("TRAINING_AI_MODEL") ?? 
+
+        var model = config.GetValue<string>("TRAINING_AI_MODEL") ??
             throw new InvalidOperationException(
                 "DESIGN DEFICIENCY: Training requires Training AI model configuration. " +
                 "Set TRAINING_AI_MODEL in ~/.poskernel/.env (e.g., TRAINING_AI_MODEL=llama3.1:8b). " +
                 $"Config directory: {PosKernelConfiguration.ConfigDirectory}");
-                
-        var baseUrl = config.GetValue<string>("TRAINING_AI_BASE_URL") ?? 
+
+        var baseUrl = config.GetValue<string>("TRAINING_AI_BASE_URL") ??
             throw new InvalidOperationException(
                 "DESIGN DEFICIENCY: Training requires Training AI base URL configuration. " +
                 "Set TRAINING_AI_BASE_URL in ~/.poskernel/.env (e.g., TRAINING_AI_BASE_URL=http://localhost:11434). " +
                 $"Config directory: {PosKernelConfiguration.ConfigDirectory}");
-        
+
         // API key handling - different for different providers
         string? apiKey = null;
         if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
@@ -169,7 +171,7 @@ public static class ProductionAIServiceFactory
                 ["max_tokens"] = 1000
             }
         };
-        
+
         services.AddSingleton(mcpConfig);
         services.AddSingleton<McpClient>();
 
@@ -184,10 +186,10 @@ public static class ProductionAIServiceFactory
             using var tempServiceProvider = services.BuildServiceProvider();
             var tempLogger = tempServiceProvider.GetRequiredService<ILogger<RestaurantExtensionClient>>();
             var restaurantClient = new RestaurantExtensionClient(tempLogger);
-            
+
             // Test connection (same test as PosKernel.AI) - FAIL FAST if not available
             var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
-            
+
             // Register real services (EXACT same registrations as PosKernel.AI)
             services.AddSingleton<RestaurantExtensionClient>(_ => restaurantClient);
             services.AddSingleton<KernelPosToolsProvider>(provider =>
@@ -198,16 +200,16 @@ public static class ProductionAIServiceFactory
                     PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
                     configuration,
                     provider.GetRequiredService<ICurrencyFormattingService>()));
-            
-            // Register ChatOrchestrator for real kernel mode (EXACT same as PosKernel.AI)
-            services.AddSingleton<ChatOrchestrator>(provider => new ChatOrchestrator(
+
+            // Register PosAiAgent for real kernel mode (EXACT same as PosKernel.AI)
+            services.AddSingleton<PosAiAgent>(provider => new PosAiAgent(
                 provider.GetRequiredService<McpClient>(),
-                provider.GetRequiredService<AiPersonalityConfig>(),
+                provider.GetRequiredService<ILogger<PosAiAgent>>(),
                 provider.GetRequiredService<StoreConfig>(),
-                provider.GetRequiredService<ILogger<ChatOrchestrator>>(),
+                new Receipt(),
+                new Transaction(),
                 kernelToolsProvider: provider.GetRequiredService<KernelPosToolsProvider>(),
-                mockToolsProvider: null,
-                currencyFormatter: provider.GetRequiredService<ICurrencyFormattingService>()));
+                mockToolsProvider: null));
         }
         catch (Exception ex)
         {
@@ -224,20 +226,20 @@ public static class ProductionAIServiceFactory
         }
 
         var serviceProvider = services.BuildServiceProvider();
-        
-        // Validate ChatOrchestrator creation (same validation as PosKernel.AI) - FAIL FAST if not working
+
+        // Validate PosAiAgent creation (same validation as PosKernel.AI) - FAIL FAST if not working
         try
         {
-            var orchestrator = serviceProvider.GetRequiredService<ChatOrchestrator>();
+            var aiAgent = serviceProvider.GetRequiredService<PosAiAgent>();
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException(
-                "DESIGN DEFICIENCY: Failed to create production ChatOrchestrator for training. " +
+                "DESIGN DEFICIENCY: Failed to create production PosAiAgent for training. " +
                 "Training requires functional production AI infrastructure. " +
                 $"Error: {ex.Message}");
         }
-        
+
         return serviceProvider;
     }
 }

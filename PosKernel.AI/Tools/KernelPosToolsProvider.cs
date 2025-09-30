@@ -216,8 +216,8 @@ namespace PosKernel.AI.Tools
                 CreateGetSetConfigurationTool(),
                 CreateUpdateSetConfigurationTool(),
                 CreateModifyLineItemTool(),
-                CreateApplyModificationsToLineTool(),
-                CreateInterpretOrderPhraseTool()
+                CreateApplyModificationsToLineTool()
+                // ARCHITECTURAL PRINCIPLE: Removed interpret_order_phrase - AI handles cultural understanding directly
             };
         }
 
@@ -249,8 +249,7 @@ namespace PosKernel.AI.Tools
                     return await ExecuteLoadPaymentMethodsContextAsync(toolCall, cancellationToken);
                 case "process_payment":
                     return await ExecuteProcessPaymentAsync(toolCall, cancellationToken);
-                case "interpret_order_phrase":
-                    return await ExecuteInterpretOrderPhraseAsync(toolCall, cancellationToken);
+                // ARCHITECTURAL PRINCIPLE: Removed interpret_order_phrase - AI handles cultural understanding directly
                 default:
                     return $"Unknown tool: {toolCall.FunctionName}";
             }
@@ -434,22 +433,6 @@ namespace PosKernel.AI.Tools
             Parameters = new { type = "object", properties = new { }, required = new string[] { } }
         };
 
-        private McpTool CreateInterpretOrderPhraseTool() => new()
-        {
-            Name = "interpret_order_phrase",
-            Description = "Interprets a natural-language order phrase into a base SKU, quantity, and structured NRF modifications using store-configured cultural rules.",
-            Parameters = new
-            {
-                type = "object",
-                properties = new
-                {
-                    phrase = new { type = "string", description = "User's verbatim phrase, e.g., 'kopi c kosong'" },
-                    default_quantity = new { type = "integer", description = "Default quantity when unspecified", @default = 1 }
-                },
-                required = new[] { "phrase" }
-            }
-        };
-
         // Execute get_set_configuration - fail fast if not properly implemented
         private Task<string> ExecuteGetSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
@@ -468,51 +451,6 @@ namespace PosKernel.AI.Tools
             return Task.FromResult($"DESIGN_DEFICIENCY: Set configuration for {sku} requires database integration. " +
                                  "The restaurant extension must implement GetSetDefinitionAsync, GetSetAvailableDrinksAsync, and GetSetAvailableSidesAsync methods " +
                                  "to query the actual set_definitions, set_available_drinks, and set_available_sides tables.");
-        }
-
-        private async Task<string> ExecuteInterpretOrderPhraseAsync(McpToolCall toolCall, CancellationToken cancellationToken)
-        {
-            if (!toolCall.Arguments.TryGetValue("phrase", out var phraseEl))
-            {
-                return "ERROR: phrase parameter is required";
-            }
-
-            var phrase = phraseEl.GetString() ?? string.Empty;
-            var qty = toolCall.Arguments.TryGetValue("default_quantity", out var qtyEl) ? Math.Max(1, qtyEl.GetInt32()) : 1;
-
-            if (string.IsNullOrWhiteSpace(phrase))
-            {
-                return "ERROR: phrase parameter is empty";
-            }
-
-            var inferredMods = InferStructuredModsFromCulturalTerms(phrase);
-            var basePart = StripCulturalModTerms(phrase);
-            basePart = NormalizeKopitiamDrinkName(basePart);
-            if (string.IsNullOrWhiteSpace(basePart))
-            {
-                basePart = phrase.Trim();
-            }
-
-            // Look up product using restaurant extension
-            var products = await _restaurantClient.SearchProductsAsync(basePart, 3, cancellationToken);
-            if (products.Count == 0)
-            {
-                return $"INTERPRETATION_FAILED: No base match for '{phrase}' (normalized='{basePart}')";
-            }
-
-            // ARCHITECTURAL FIX: Use first product for now - should use AI semantic matching
-            // TODO: Replace with ISemanticMatchingService for intelligent product selection
-            var product = products.First();
-
-            var sb = new StringBuilder();
-            sb.Append("INTERPRETED: ");
-            sb.Append($"sku={product.Sku}; name={product.Name}; quantity={qty}");
-            if (!string.IsNullOrWhiteSpace(inferredMods))
-            {
-                sb.Append($"; mods={inferredMods}");
-            }
-
-            return sb.ToString();
         }
 
         private async Task<string> ExecuteAddItemAsync(McpToolCall toolCall, CancellationToken cancellationToken)
@@ -647,15 +585,9 @@ namespace PosKernel.AI.Tools
                     {
                         try
                         {
-                            var inferredMods = InferStructuredModsFromCulturalTerms(compositeTail);
-                            var cleanedDrink = StripCulturalModTerms(compositeTail);
-                            cleanedDrink = NormalizeKopitiamDrinkName(cleanedDrink);
-                            if (string.IsNullOrWhiteSpace(cleanedDrink))
-                            {
-                                cleanedDrink = compositeTail.Trim();
-                            }
-
-                            var drinkProducts = await _restaurantClient.SearchProductsAsync(cleanedDrink, 1, cancellationToken);
+                            // ARCHITECTURAL PRINCIPLE: AI handles ALL cultural understanding
+                            // Use the raw input - AI will understand cultural context naturally
+                            var drinkProducts = await _restaurantClient.SearchProductsAsync(compositeTail, 1, cancellationToken);
                             if (drinkProducts.Count == 0)
                             {
                                 _logger.LogWarning("Could not find drink product for composite order tail: {Tail}", compositeTail);
@@ -684,29 +616,8 @@ namespace PosKernel.AI.Tools
                             string? drinkChildId = drinkChild?.LineItemId;
                             int drinkChildNumber = drinkChild?.LineNumber ?? 0;
 
-                            if (!string.IsNullOrWhiteSpace(inferredMods) && !string.IsNullOrEmpty(drinkChildId))
-                            {
-                                var structuredMods = ParseStructuredModifications(inferredMods);
-                                foreach (var (modSku, desc) in structuredMods)
-                                {
-                                    var duplicate = txnAfterDrink.LineItems?.Any(li => li.ParentLineNumber == drinkChildNumber && li.ProductId.Equals(modSku, StringComparison.OrdinalIgnoreCase)) == true;
-                                    if (duplicate)
-                                    {
-                                        _logger.LogInformation("⏭️  SKIP_DUPLICATE_MODIFICATION: {ModSku} already exists under drink line {DrinkLine}", modSku, drinkChildNumber);
-                                        continue;
-                                    }
-
-                                    var modAdd = await _kernelClient.AddModificationByLineItemIdAsync(_sessionId!, transactionId, drinkChildId!, modSku, 1, 0.0m, cancellationToken);
-                                    if (!modAdd.Success)
-                                    {
-                                        _logger.LogError("❌ Failed to add drink modification {ModSku}: {Error}", modSku, modAdd.Error);
-                                    }
-                                    else
-                                    {
-                                        txnAfterDrink = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
-                                    }
-                                }
-                            }
+                            // ARCHITECTURAL PRINCIPLE: AI handles ALL cultural modifications through direct tool calls
+                            // No interpretation logic - AI uses modify_line_item tool directly for cultural variants
 
                             return $"SET_UPDATED: {product.Sku} drink updated to {drinkProduct.Name}{(string.IsNullOrEmpty(drinkChildId) ? string.Empty : $". DRINK_LINE_ID={drinkChildId}, DRINK_LINE_NUMBER={drinkChildNumber}")}";
                         }
@@ -933,10 +844,8 @@ namespace PosKernel.AI.Tools
                         string? embeddedMods = null;
                         var value = customizationValue ?? string.Empty;
 
-                        // NEW: Infer structured mods from cultural terms if MOD_ not provided
-                        var inferredMods = InferStructuredModsFromCulturalTerms(value);
-                        var cleanedValue = StripCulturalModTerms(value);
-                        cleanedValue = NormalizeKopitiamDrinkName(cleanedValue);
+                        // ARCHITECTURAL PRINCIPLE: AI handles ALL cultural understanding
+                        // Use raw input - AI will provide structured format when needed
 
                         var modStart = value.IndexOf("MOD_", StringComparison.OrdinalIgnoreCase);
                         if (modStart > 0)
@@ -946,12 +855,8 @@ namespace PosKernel.AI.Tools
                         }
                         else
                         {
-                            baseDrink = string.IsNullOrWhiteSpace(cleanedValue) ? value.Trim() : cleanedValue.Trim();
-                            if (!string.IsNullOrWhiteSpace(inferredMods))
-                            {
-                                embeddedMods = inferredMods;
-                                _logger.LogWarning("⚠️  UNSTRUCTURED_SET_DRINK_MODS: AI provided cultural terms in set drink selection ('{OriginalValue}'). Auto-converted to structured mods: '{Mods}'.", value, embeddedMods);
-                            }
+                            baseDrink = value.Trim();
+                            // AI provides proper structured format - no interpretation needed
                         }
 
                         var drinkProducts = await _restaurantClient.SearchProductsAsync(baseDrink, 1, cancellationToken);
@@ -1244,13 +1149,17 @@ namespace PosKernel.AI.Tools
                 foreach (var category in categories)
                 {
                     results.AppendLine($"**{category.ToUpper()}**");
-                    var categoryProducts = allProducts.Where(p => p.Sku.Contains(category, StringComparison.OrdinalIgnoreCase));
+                    var categoryProducts = allProducts.Where(p => p.CategoryName?.Equals(category, StringComparison.OrdinalIgnoreCase) == true);
 
                     foreach (var product in categoryProducts)
                     {
-                        results.AppendLine($"- {product.Sku}");
-                        // Additional product details would come from ProductInfo properties when available
+                        // ARCHITECTURAL PRINCIPLE: Provide complete product context for AI decisions
+                        var price = product.BasePriceCents > 0 ? $" (${product.BasePriceCents / 100.0m:F2})" : "";
+                        var description = !string.IsNullOrEmpty(product.Description) ? $" - {product.Description}" : "";
+
+                        results.AppendLine($"- **{product.Sku}**: {product.Name}{price}{description}");
                     }
+                    results.AppendLine(); // Empty line between categories
                 }
 
                 return results.ToString();
@@ -1479,32 +1388,6 @@ namespace PosKernel.AI.Tools
             _disposed = true;
         }
 
-        // --- Helpers for cultural-to-structured mod inference in AI layer (not kernel) ---
-        private static string NormalizeKopitiamDrinkName(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return name;
-            }
-
-            var s = name.Trim();
-
-            // Normalize common variants
-            s = Regex.Replace(s, @"\bsi\b", "C", RegexOptions.IgnoreCase); // 'si' -> 'C'
-
-            // Standardize capitalization of first letters
-            var parts = s.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            for (int i = 0; i < parts.Length; i++)
-            {
-                var p = parts[i];
-                if (p.Length > 0)
-                {
-                    parts[i] = char.ToUpperInvariant(p[0]) + (p.Length > 1 ? p.Substring(1).ToLowerInvariant() : string.Empty);
-                }
-            }
-            return string.Join(" ", parts);
-        }
-
         /// <summary>
         /// Resolves a human-friendly display name for a SKU using the restaurant extension as the source of truth.
         /// Falls back to standardized formatting for MOD_* SKUs when the catalog does not expose a record.
@@ -1564,57 +1447,6 @@ namespace PosKernel.AI.Tools
             }
 
             return null;
-        }
-
-        private static string? InferStructuredModsFromCulturalTerms(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return null;
-            }
-
-            var mods = new List<string>();
-            var v = value.ToLowerInvariant();
-
-            if (v.Contains("kosong"))
-            {
-                mods.Add("MOD_NO_SUGAR:No Sugar");
-            }
-            if (v.Contains("siew dai") || v.Contains("siewdai"))
-            {
-                mods.Add("MOD_LESS_SUGAR:Less Sugar");
-            }
-            if (v.Contains("gah dai") || v.Contains("gahdai") || v.Contains("ga dai") || v.Contains("gaj dai"))
-            {
-                mods.Add("MOD_EXTRA_SUGAR:Extra Sugar");
-            }
-            if (v.Contains("peng"))
-            {
-                mods.Add("MOD_ICED:Iced");
-            }
-            if (v.Contains("hot"))
-            {
-                mods.Add("MOD_HOT:Hot");
-            }
-
-            return mods.Count == 0 ? null : string.Join('|', mods);
-        }
-
-        private static string StripCulturalModTerms(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-
-            // Remove known cultural modifier keywords to improve drink search matching
-            var s = value;
-            s = Regex.Replace(s, @"\bkosong\b", "", RegexOptions.IgnoreCase);
-            s = Regex.Replace(s, @"\bsiew\s*dai\b", "", RegexOptions.IgnoreCase);
-            s = Regex.Replace(s, @"\bgah\s*dai\b", "", RegexOptions.IgnoreCase);
-            s = Regex.Replace(s, @"\bpeng\b", "", RegexOptions.IgnoreCase);
-            s = Regex.Replace(s, @"\bhot\b", "", RegexOptions.IgnoreCase);
-            return Regex.Replace(s, @"\s+", " ").Trim();
         }
 
         private async Task<string> ExecuteApplyModificationsToLineAsync(McpToolCall toolCall, CancellationToken cancellationToken)

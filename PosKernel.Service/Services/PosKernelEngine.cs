@@ -88,7 +88,7 @@ namespace PosKernel.Service.Services
                 var transaction = new Transaction
                 {
                     Id = TransactionId.New(),
-                    State = TransactionState.Building
+                    State = TransactionState.StartTransaction  // AI-first: fresh transaction ready for customer interaction
                 };
 
                 // Store transaction

@@ -85,7 +85,7 @@ if (culturalService == null) {
 - `discovery-results.md` - Search result presentation format
 
 **Benefits**:
-- Eliminates hardcoded prompts in `ChatOrchestrator.cs`
+- Eliminates hardcoded prompts in orchestration code
 - Prevents cultural assumptions from sneaking into C# code
 - Enables per-store customization of AI behavior
 - Provides clear separation between technical and cultural concerns
@@ -183,7 +183,7 @@ var prompt = AiPersonalityFactory.BuildPrompt(_personality.Type, "ordering", con
 
 ### 2. Prevents Template Overrides
 
-**Problem**: `ChatOrchestrator.cs` was adding hardcoded prompt text that overrode well-designed templates.
+**Problem**: Previous orchestration code was adding hardcoded prompt text that overrode well-designed templates.
 
 **Solution**: Template-first architecture with minimal C# prompt building:
 

@@ -151,7 +151,7 @@ PosKernel/
 │   ├── src/lib.rs               # Core FFI interface
 │   └── src/bin/service.rs       # HTTP service wrapper
 ├── PosKernel.AI/               # AI personality system
-│   ├── Core/ChatOrchestrator.cs # Main conversation logic
+│   ├── PosAiAgent.cs           # AI-first interaction layer (pure agency)
 │   └── Tools/                   # MCP tool implementations  
 ├── PosKernel.Client/           # Kernel client libraries
 │   └── RustKernelClient.cs     # HTTP client for Rust service

@@ -165,9 +165,9 @@ public class TerminalChatDisplay : IChatDisplay
                 currentView = currentView.SuperView;
             }
 
-            var orchestrator = terminalUI?.GetOrchestrator();
+            var aiAgent = terminalUI?.GetAiAgent();
 
-            if (orchestrator != null)
+            if (aiAgent != null)
             {
                 ShowMessage(new ChatMessage
                 {
@@ -180,22 +180,28 @@ public class TerminalChatDisplay : IChatDisplay
                 {
                     try
                     {
-                        var previousReceiptStatus = orchestrator.CurrentReceipt.Status;
+                        var previousReceiptStatus = aiAgent.Receipt.Status;
                         terminalUI?.LogDisplay?.AddLog($"DEBUG: Previous receipt status: {previousReceiptStatus}");
 
-                        var response = await orchestrator.ProcessUserInputAsync(input);
+                        var response = await aiAgent.ProcessCustomerInputAsync(input);
 
-                        var newReceiptStatus = orchestrator.CurrentReceipt.Status;
+                        var newReceiptStatus = aiAgent.Receipt.Status;
                         terminalUI?.LogDisplay?.AddLog($"DEBUG: New receipt status: {newReceiptStatus}");
 
                         Application.Invoke(() =>
                         {
-                            ShowMessage(response);
+                            ShowMessage(new ChatMessage
+                            {
+                                Sender = "AI Cashier",
+                                Content = response,
+                                IsSystem = false,
+                                ShowInCleanMode = true
+                            });
                             // ❌ REMOVED THIS LINE - violates event-driven architecture:
-                            // terminalUI?.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
+                            // terminalUI?.Receipt.UpdateReceipt(aiAgent.Receipt);
 
                             // ✅ Events will handle receipt updates automatically now
-                            terminalUI?.LogDisplay?.AddLog($"DEBUG: Receipt updates now handled by events. Items: {orchestrator.CurrentReceipt.Items.Count}, Status: {orchestrator.CurrentReceipt.Status}");
+                            terminalUI?.LogDisplay?.AddLog($"DEBUG: Receipt updates now handled by events. Items: {aiAgent.Receipt.Items.Count}, Status: {aiAgent.Receipt.Status}");
 
                             // Update prompt display with the last prompt sent to AI
                             terminalUI?.UpdatePromptDisplay();
@@ -204,7 +210,7 @@ public class TerminalChatDisplay : IChatDisplay
                         });
 
                         // ARCHITECTURAL FIX: Remove UI-layer business logic for payment completion detection
-                        // Payment completion should be handled entirely within ChatOrchestrator
+                        // Payment completion should be handled entirely within PosAiAgent
                         // This prevents duplicate post-payment messages
                         terminalUI?.LogDisplay?.AddLog($"DEBUG: No payment completion detection in UI layer - Previous: {previousReceiptStatus}, New: {newReceiptStatus}");
                     }
@@ -243,8 +249,8 @@ public class TerminalChatDisplay : IChatDisplay
 
                 terminalUI?.LogDisplay?.AddLog($"DEBUG: terminalUI = {(terminalUI != null ? "found" : "NULL")}");
 
-                terminalUI?.LogDisplay?.AddLog($"DEBUG: orchestrator = {(orchestrator != null ? "found" : "NULL")}");
-                terminalUI?.LogDisplay?.AddLog("INFO: User tried to input but orchestrator not ready yet");
+                terminalUI?.LogDisplay?.AddLog($"DEBUG: aiAgent = {(aiAgent != null ? "found" : "NULL")}");
+                terminalUI?.LogDisplay?.AddLog("INFO: User tried to input but AI agent not ready yet");
             }
         }
 
@@ -605,7 +611,7 @@ public class TerminalUserInterface : IUserInterface
     private TerminalChatDisplay? _terminalChat;
     private TerminalLogDisplay? _logDisplay;
     private TerminalPromptDisplay? _promptDisplay;
-    private ChatOrchestrator? _orchestrator;
+    private PosAiAgent? _aiAgent;
     private ConsoleOutputRedirector? _consoleRedirector;
     private LogFileManager? _logFiles;
 
@@ -614,9 +620,9 @@ public class TerminalUserInterface : IUserInterface
     }
 
     /// <summary>
-    /// Gets the orchestrator instance.
+    /// Gets the AI agent instance.
     /// </summary>
-    public ChatOrchestrator? GetOrchestrator() => _orchestrator;
+    public PosAiAgent? GetAiAgent() => _aiAgent;
 
     /// <summary>
     /// Gets the log display instance.
@@ -634,32 +640,23 @@ public class TerminalUserInterface : IUserInterface
     /// </summary>
     public void UpdatePromptDisplay()
     {
-        _logDisplay?.AddLog($"DEBUG: UpdatePromptDisplay called - orchestrator: {(_orchestrator != null ? "YES" : "NO")}, promptDisplay: {(_promptDisplay != null ? "YES" : "NO")}");
+        _logDisplay?.AddLog($"DEBUG: UpdatePromptDisplay called - aiAgent: {(_aiAgent != null ? "YES" : "NO")}, promptDisplay: {(_promptDisplay != null ? "YES" : "NO")}");
 
-        if (_orchestrator?.LastPrompt != null && _promptDisplay != null)
-        {
-            _logDisplay?.AddLog($"DEBUG: Showing prompt with length: {_orchestrator.LastPrompt.Length}");
-            _promptDisplay.ShowPrompt(_orchestrator.LastPrompt);
-            _logDisplay?.AddLog("DEBUG: ShowPrompt called successfully");
-        }
-        else
-        {
-            _logDisplay?.AddLog($"DEBUG: Cannot show prompt - LastPrompt: {(_orchestrator?.LastPrompt != null ? "available" : "null")}, PromptDisplay: {(_promptDisplay != null ? "available" : "null")}");
-        }
+        // AI-FIRST DESIGN: No LastPrompt - AI builds context internally and makes all decisions
+        _logDisplay?.AddLog("DEBUG: AI-First design - AI handles all prompting internally");
     }
 
-    public void SetOrchestrator(ChatOrchestrator orchestrator)
+    public void SetAiAgent(PosAiAgent aiAgent)
     {
-        _orchestrator = orchestrator;
+        _aiAgent = aiAgent;
 
         // ARCHITECTURAL FIX: Subscribe to receipt change events
-        _orchestrator.ReceiptChanged += OnReceiptChanged;
+        _aiAgent.ReceiptChanged += OnReceiptChanged;
 
-        // Enable thought logging with the UI log display
+        // AI-FIRST DESIGN: No SetLogDisplay - AI handles all decisions directly
         if (_logDisplay != null)
         {
-            _orchestrator.SetLogDisplay(_logDisplay);
-            _logDisplay.AddLog("INFO: Thought logging enabled");
+            _logDisplay.AddLog("INFO: AI-Direct Orchestrator ready - AI owns ALL business logic");
         }
 
         // When orchestrator is set, show a ready message to let user know they can type
@@ -675,7 +672,7 @@ public class TerminalUserInterface : IUserInterface
         }
 
         _logDisplay?.AddLog("INFO: Orchestrator set and system is now ready for input");
-        _logDisplay?.AddLog($"DEBUG: LastPrompt available: {(_orchestrator?.LastPrompt != null ? "YES" : "NO")}");
+        _logDisplay?.AddLog("DEBUG: AI-First design - AI handles prompting internally");
         _logDisplay?.AddLog($"DEBUG: PromptDisplay available: {(_promptDisplay != null ? "YES" : "NO")}");
 
         // Display the initial prompt that was used during initialization
@@ -718,10 +715,10 @@ public class TerminalUserInterface : IUserInterface
             var receiptView = GetReceiptViewFromReceipt(currentReceipt);
             var receiptScrollBar = GetReceiptScrollBarFromReceipt(currentReceipt);
 
-            if (receiptView != null && receiptScrollBar != null)
+            if (receiptView != null && receiptScrollBar != null && _logDisplay != null)
             {
                 Receipt = new TerminalReceiptDisplay(receiptView, receiptScrollBar, statusBar, _logDisplay, currencyFormatter, storeConfig, _logFiles);
-                _logDisplay?.AddLog("SUCCESS: Receipt display updated with currency formatting services");
+                _logDisplay.AddLog("SUCCESS: Receipt display updated with currency formatting services");
             }
         }
     }

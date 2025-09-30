@@ -18,6 +18,7 @@ using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using PosKernel.Abstractions;
 using PosKernel.Abstractions.Services;
 using PosKernel.AI.Services;
 using PosKernel.AI.Tools;
@@ -65,7 +66,7 @@ class Program
             var model = storeAiConfig.Model;
             var baseUrl = storeAiConfig.BaseUrl;
             var apiKey = storeAiConfig.ApiKey;
-            
+
             if (string.IsNullOrWhiteSpace(provider))
             {
                 Console.WriteLine("❌ Store AI provider not configured!");
@@ -73,7 +74,7 @@ class Program
                 Console.WriteLine($"Config directory: {PosKernelConfiguration.ConfigDirectory}");
                 return 1;
             }
-            
+
             if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(apiKey))
             {
                 Console.WriteLine("❌ OpenAI API key required when STORE_AI_PROVIDER=OpenAI");
@@ -145,7 +146,7 @@ class Program
 
             // Create personality for store
             var personality = CreatePersonalityForStore(storeSelectionResult);
-            
+
             // CRITICAL DEBUG: Verify personality creation
             ui.Log.AddLog($"🔍 PERSONALITY_DEBUG: Created personality Type={personality.Type}, StaffTitle={personality.StaffTitle} for StoreType={storeSelectionResult.StoreType}");
             ui.Log.AddLog($"🔍 STORE_DEBUG: Selected store PersonalityType={storeSelectionResult.PersonalityType}, StoreType={storeSelectionResult.StoreType}");
@@ -154,7 +155,7 @@ class Program
             if (useRealKernel)
             {
                 ui.Log.AddLog("Setting up real kernel integration...");
-                
+
                 try
                 {
                     // ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks to mock
@@ -162,13 +163,13 @@ class Program
                     using var tempServiceProvider = services.BuildServiceProvider();
                     var tempLogger = tempServiceProvider.GetRequiredService<ILogger<RestaurantExtensionClient>>();
                     var restaurantClient = new RestaurantExtensionClient(tempLogger);
-                    
+
                     ui.Log.AddLog("INFO: Testing Restaurant Extension Service connection...");
-                    
+
                     // Test the connection by attempting to search for products
                     var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
                     ui.Log.ShowStatus($"✅ Connected to Restaurant Extension ({testProducts.Count} test products found)");
-                    
+
                     // Add real kernel tools to DI with the correct constructor signature
                     services.AddSingleton<RestaurantExtensionClient>(_ => restaurantClient);
                     services.AddSingleton<KernelPosToolsProvider>(provider =>
@@ -179,21 +180,21 @@ class Program
                             PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
                             configuration,
                             provider.GetRequiredService<ICurrencyFormattingService>()));
-                    
-                    // Register ChatOrchestrator for real kernel mode
-                    services.AddSingleton<ChatOrchestrator>(provider => new ChatOrchestrator(
+
+                    // Register PosAiAgent for real kernel mode
+                    services.AddSingleton<PosAiAgent>(provider => new PosAiAgent(
                         provider.GetRequiredService<McpClient>(),
-                        provider.GetRequiredService<AiPersonalityConfig>(),
+                        provider.GetRequiredService<ILogger<PosAiAgent>>(),
                         provider.GetRequiredService<StoreConfig>(),
-                        provider.GetRequiredService<ILogger<ChatOrchestrator>>(),
+                        new Receipt(),
+                        new Transaction(),
                         kernelToolsProvider: provider.GetRequiredService<KernelPosToolsProvider>(),
-                        mockToolsProvider: null,
-                        currencyFormatter: provider.GetRequiredService<ICurrencyFormattingService>()));
+                        mockToolsProvider: null));
                 }
                 catch (Exception ex)
                 {
                     // ARCHITECTURAL PRINCIPLE: FAIL FAST - Don't hide service unavailability
-                    var errorMessage = 
+                    var errorMessage =
                         $"DESIGN DEFICIENCY: Real kernel mode requested but Restaurant Extension Service is not available.\n" +
                         $"Error: {ex.Message}\n\n" +
                         $"To use real kernel mode:\n" +
@@ -201,7 +202,7 @@ class Program
                         $"2. Ensure Restaurant Extension Service is running and accessible\n" +
                         $"3. Verify SQLite database exists: data/catalog/restaurant_catalog.db\n\n" +
                         $"To use development mode instead: PosKernel.AI.Demo --mock";
-                    
+
                     ui.Log.ShowError(errorMessage);
                     ui.Chat.ShowMessage(new ChatMessage
                     {
@@ -210,7 +211,7 @@ class Program
                         IsSystem = true,
                         ShowInCleanMode = true
                     });
-                    
+
                     // FAIL FAST - Exit immediately instead of falling back to mock
                     await ui.ShutdownAsync();
                     return 1;
@@ -225,16 +226,16 @@ class Program
                         new KopitiamProductCatalogService(),
                         provider.GetRequiredService<ILogger<PosToolsProvider>>(),
                         storeSelectionResult));
-                
-                // Register ChatOrchestrator for mock mode
-                services.AddSingleton<ChatOrchestrator>(provider => new ChatOrchestrator(
+
+                // Register PosAiAgent for mock mode
+                services.AddSingleton<PosAiAgent>(provider => new PosAiAgent(
                     provider.GetRequiredService<McpClient>(),
-                    provider.GetRequiredService<AiPersonalityConfig>(),
+                    provider.GetRequiredService<ILogger<PosAiAgent>>(),
                     provider.GetRequiredService<StoreConfig>(),
-                    provider.GetRequiredService<ILogger<ChatOrchestrator>>(),
+                    new Receipt(),
+                    new Transaction(),
                     kernelToolsProvider: null,
-                    mockToolsProvider: provider.GetRequiredService<PosToolsProvider>(),
-                    currencyFormatter: provider.GetRequiredService<ICurrencyFormattingService>()));
+                    mockToolsProvider: provider.GetRequiredService<PosToolsProvider>()));
             }
 
             // Add store configuration and orchestrator to services
@@ -246,13 +247,13 @@ class Program
 
             try
             {
-                // ARCHITECTURAL FIX: Get orchestrator from DI container to ensure all dependencies are injected
-                var orchestrator = updatedServiceProvider.GetRequiredService<ChatOrchestrator>();
+                // ARCHITECTURAL FIX: Get AI agent from DI container to ensure all dependencies are injected
+                var aiAgent = updatedServiceProvider.GetRequiredService<PosAiAgent>();
                 ui.Log.AddLog($"✅ {(useRealKernel ? "Real kernel" : "Mock")} orchestrator created successfully");
 
                 // Set orchestrator - UI now handles the case where it's not available gracefully
                 var terminalGuiUI = (TerminalUserInterface)ui;
-                terminalGuiUI.SetOrchestrator(orchestrator);
+                terminalGuiUI.SetAiAgent(aiAgent);
 
                 // Set up currency services for receipt display
                 var currencyFormatter = updatedServiceProvider.GetRequiredService<ICurrencyFormattingService>();
@@ -273,10 +274,9 @@ class Program
                 ui.Log.AddLog($"💰 Payment methods: {string.Join(", ", storeSelectionResult.PaymentMethods.AcceptedMethods.Select(m => m.DisplayName))}");
                 ui.Log.AddLog("💡 PAYMENT METHODS ARCHITECTURE: AI validates customer payment methods against store configuration");
 
-                // Initialize and get AI greeting
-                var greetingMessage = await orchestrator.InitializeAsync();
-                ui.Chat.ShowMessage(greetingMessage);
-                ui.Receipt.UpdateReceipt(orchestrator.CurrentReceipt);
+                // AI-FIRST DESIGN: No InitializeAsync needed - AI handles greeting on first interaction
+                ui.Log.AddLog("AI-Direct Orchestrator ready - AI will greet customer on first input");
+                ui.Receipt.UpdateReceipt(aiAgent.Receipt);
 
                 // Now run the UI with orchestrator already set
                 await terminalGuiUI.RunAsync();
@@ -285,7 +285,7 @@ class Program
             {
                 ui.Log.ShowError($"Failed to initialize orchestrator: {ex.Message}");
                 ui.Log.AddLog($"ERROR: {ex.StackTrace}");
-                
+
                 ui.Chat.ShowMessage(new ChatMessage
                 {
                     Sender = "System",
@@ -396,7 +396,7 @@ class Program
             IsDefault = true
         };
 
-        // Create Cancel button  
+        // Create Cancel button
         var cancelButton = new Terminal.Gui.Button()
         {
             Text = " Cancel ",
@@ -460,7 +460,7 @@ class Program
         dialog.Add(instructionLabel, radioGroup, okButton, cancelButton);
 
         ui.Log.AddLog("Running store selection dialog...");
-        
+
         // Use the correct pattern: Run the dialog directly without Application.Invoke
         Terminal.Gui.Application.Run(dialog);
 

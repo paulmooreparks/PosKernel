@@ -184,7 +184,8 @@ namespace PosKernel.AI.Tools
 
             try
             {
-                // Search for products using available service
+                // ARCHITECTURAL PRINCIPLE: AI handles ALL product matching and disambiguation decisions
+                // Pure data delivery - no business logic in tools
                 var searchResults = await SearchProductsAsync(itemDescription, 10);
 
                 if (!searchResults.Any())
@@ -198,40 +199,22 @@ namespace PosKernel.AI.Tools
                     searchResults = broadSearchResults;
                 }
 
-                // Apply confidence-based disambiguation logic
-                var exactMatches = searchResults.Where(p => IsExactMatch(itemDescription, p)).ToList();
-                var specificMatches = searchResults.Where(p => IsSpecificProductMatch(itemDescription, p)).ToList();
-
-                // FIXED DECISION LOGIC - Proper confidence handling
-                if (context == "clarification_response")
+                // AI-FIRST: Let AI decide which product to add based on all available options
+                // No hardcoded confidence thresholds or matching rules
+                if (searchResults.Count == 1)
                 {
-                    // Customer is clarifying after disambiguation - use best match
-                    var bestMatch = exactMatches.FirstOrDefault() ?? specificMatches.FirstOrDefault() ?? searchResults.First();
-                    return AddProductToTransaction(bestMatch, quantity, transaction);
+                    // Only one option - add it directly
+                    return AddProductToTransaction(searchResults.First(), quantity, transaction);
                 }
-                else if (exactMatches.Count == 1 && searchResults.Count == 1)
+                else if (searchResults.Count > 1)
                 {
-                    // Single exact match AND only one search result - always auto-add regardless of confidence
-                    return AddProductToTransaction(exactMatches.First(), quantity, transaction);
-                }
-                else if (exactMatches.Count == 1 && confidence >= GetThreshold("product_disambiguation", "auto_add", 0.8))
-                {
-                    // Single exact match with HIGH confidence - auto-add even if other results exist
-                    return AddProductToTransaction(exactMatches.First(), quantity, transaction);
-                }
-                else if (confidence >= GetThreshold("product_matching", "exact_match", 0.9))
-                {
-                    // Very high confidence - pick best available match even with multiple options
-                    var bestMatch = exactMatches.FirstOrDefault() ?? specificMatches.FirstOrDefault() ?? searchResults.First();
-                    return AddProductToTransaction(bestMatch, quantity, transaction);
+                    // Multiple options - provide structured data for AI to decide
+                    var optionsList = string.Join(", ", searchResults.Take(5).Select(p => $"{p.Name} ({FormatCurrency(GetProductPrice(p))})"));
+                    return $"DISAMBIGUATION_NEEDED: Found {searchResults.Count} options for '{itemDescription}': {optionsList}. Please specify which one you'd like.";
                 }
                 else
                 {
-                    // Low/Medium confidence OR multiple valid options - require disambiguation
-                    var disambiguationOptions = searchResults.Take(3).ToList(); // Limit to 3 options
-                    var optionsList = string.Join(", ", disambiguationOptions.Select(p => $"{p.Name} ({FormatCurrency(GetProductPrice(p))})"));
-
-                    return $"DISAMBIGUATION_NEEDED: Found {disambiguationOptions.Count} options for '{itemDescription}': {optionsList}";
+                    return $"PRODUCT_NOT_FOUND: No products found matching '{itemDescription}'";
                 }
             }
             catch (Exception ex)
@@ -435,7 +418,7 @@ namespace PosKernel.AI.Tools
             return new McpTool
             {
                 Name = "load_menu_context",
-                Description = "Loads the complete menu from the restaurant extension for Uncle's cultural intelligence",
+                Description = "Loads the complete menu from the restaurant extension for AI context intelligence",
                 Parameters = new
                 {
                     type = "object",
@@ -638,7 +621,7 @@ namespace PosKernel.AI.Tools
                     var categories = includeCategories ? await _productCatalog.GetCategoriesAsync() : new List<string>();
 
                     var menuContext = new StringBuilder();
-                    menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
+                    menuContext.AppendLine("KOPITIAM MENU CONTEXT - Complete Product Knowledge:");
                     menuContext.AppendLine("=============================================================");
 
                     if (categories.Any())
@@ -669,7 +652,7 @@ namespace PosKernel.AI.Tools
                         }
                     }
 
-                    menuContext.AppendLine("\nUncle now has complete menu knowledge for intelligent order processing!");
+                    menuContext.AppendLine("\nAI now has complete menu knowledge for intelligent order processing!");
 
                     return menuContext.ToString();
                 }
@@ -686,7 +669,7 @@ namespace PosKernel.AI.Tools
                     }
 
                     var menuContext = new StringBuilder();
-                    menuContext.AppendLine("KOPITIAM MENU CONTEXT - Uncle's Complete Product Knowledge:");
+                    menuContext.AppendLine("KOPITIAM MENU CONTEXT - Complete Product Knowledge:");
                     menuContext.AppendLine("=============================================================");
 
                     if (categories.Any())
@@ -715,7 +698,7 @@ namespace PosKernel.AI.Tools
                         }
                     }
 
-                    menuContext.AppendLine("\nUncle now has complete menu knowledge for intelligent order processing!");
+                    menuContext.AppendLine("\nAI now has complete menu knowledge for intelligent order processing!");
                     return menuContext.ToString();
                 }
                 else
@@ -814,36 +797,11 @@ namespace PosKernel.AI.Tools
             }
         }
 
-        private async Task<IReadOnlyList<IProductInfo>> TrySemanticFallbackAsync(string vagueTerm)
+        private Task<IReadOnlyList<IProductInfo>> TrySemanticFallbackAsync(string vagueTerm)
         {
-            // Simplified semantic mapping for very basic fallbacks only
-            // Complex language/cultural patterns are now handled by AI layer
-            var semanticMappings = new Dictionary<string, string[]>
-            {
-                { "bite to eat", new[] { "croissant", "muffin", "sandwich", "pastry" } },
-                { "snack", new[] { "croissant", "muffin", "cookie", "pastry" } },
-                { "something sweet", new[] { "muffin", "cookie", "pastry", "dessert" } },
-                { "food", new[] { "sandwich", "croissant", "muffin" } },
-                { "pastry", new[] { "croissant", "muffin", "danish" } }
-            };
-
-            var normalizedTerm = vagueTerm.ToLowerInvariant();
-
-            if (semanticMappings.TryGetValue(normalizedTerm, out var searchTerms) && _productCatalog != null)
-            {
-                var results = new List<IProductInfo>();
-                foreach (var term in searchTerms)
-                {
-                    var matches = await _productCatalog.SearchProductsAsync(term, 3);
-                    results.AddRange(matches);
-                }
-                return results.Where(p => !string.IsNullOrEmpty(p.Sku))
-                              .GroupBy(p => p.Sku!)
-                              .Select(g => g.First())
-                              .ToList();
-            }
-
-            return Array.Empty<IProductInfo>();
+            // ARCHITECTURAL PRINCIPLE: AI handles semantic understanding, not hardcoded mappings
+            // Pure infrastructure - no business logic in tools
+            return Task.FromResult<IReadOnlyList<IProductInfo>>(Array.Empty<IProductInfo>());
         }
 
         private async Task<List<IProductInfo>> GetBroaderSearchResults(string searchTerm)
@@ -866,149 +824,25 @@ namespace PosKernel.AI.Tools
             return new List<IProductInfo>();
         }
 
-        private bool IsSpecificProductMatch(string searchTerm, IProductInfo product)
-        {
-            var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
-            var normalizedProductName = (product.Name ?? string.Empty).ToLowerInvariant().Trim();
-
-            // CRITICAL FIX: When customer clarifies with specific terms, auto-match them
-
-            // Exact matches - always specific
-            if (normalizedSearch == normalizedProductName || normalizedSearch == (product.Sku ?? string.Empty).ToLowerInvariant())
-            {
-                return true;
-            }
-
-            // KOPITIAM INTELLIGENCE: Handle customer clarifications
-            // When customer says "kaya toast" after disambiguation, they mean the basic one
-            if (normalizedSearch == "kaya toast" && normalizedProductName == "kaya toast")
-            {
-                return true; // Customer clarified - choose basic kaya toast
-            }
-
-            // When customer says "teh c kosong", they're being specific
-            if (normalizedSearch == "teh c kosong" && normalizedProductName == "teh c kosong")
-            {
-                return true; // Customer was specific - choose teh C kosong
-            }
-
-            // Handle other specific kopitiam terms
-            var specificKopitiamTerms = new Dictionary<string, string[]>
-            {
-                { "kaya toast", new[] { "kaya toast" } },
-                { "teh c kosong", new[] { "teh c kosong" } },
-                { "teh kosong", new[] { "teh kosong" } },
-                { "kopi c", new[] { "kopi c" } },
-                { "kopi", new[] { "kopi" } },
-                { "teh c", new[] { "teh c" } }
-            };
-
-            if (specificKopitiamTerms.TryGetValue(normalizedSearch, out var matches))
-            {
-                return matches.Any(match => normalizedProductName.Contains(match));
-            }
-
-            // Only force disambiguation for very generic terms
-            var veryGenericTerms = new[] { "coffee", "drink", "food", "snack", "pastry", "muffin", "sandwich" };
-            if (veryGenericTerms.Contains(normalizedSearch))
-            {
-                return false; // These need disambiguation
-            }
-
-            // Size/specificity qualifiers make it more specific
-            var specificityIndicators = new[] { "large", "small", "medium", "hot", "iced", "decaf", "regular", "kosong", "siew dai", "gao", "poh", "peng" };
-            var hasSpecificity = specificityIndicators.Any(indicator => normalizedSearch.Contains(indicator));
-
-            if (hasSpecificity && normalizedProductName.Contains(normalizedSearch.Replace(" kosong", "").Replace(" peng", "")))
-            {
-                return true; // Specific enough with modifiers
-            }
-
-            return false; // When in doubt, require disambiguation
-        }
-
         private BusinessContext AnalyzeBusinessContext(IProductInfo product, Transaction transaction)
         {
-            // "Crusty Sales Manager" logic - configurable business rules
-            var name = product.Name ?? string.Empty;
-            var hasHotDrink = transaction.Lines.Any(l => l.ProductId.ToString().Contains("COFFEE") || l.ProductId.ToString().Contains("KOPI") || l.ProductId.ToString().Contains("TEH"));
-            var hasFood = transaction.Lines.Any(l => l.ProductId.ToString().Contains("CROISSANT") || l.ProductId.ToString().Contains("MUFFIN") || l.ProductId.ToString().Contains("TOAST") || l.ProductId.ToString().Contains("KUEH"));
-
-            var context = new BusinessContext();
-
-            // Business Rule 1: Suggest food with drinks
-            if ((name.ToLower().Contains("coffee") || name.ToLower().Contains("kopi") || name.ToLower().Contains("teh")) && !hasFood)
-            {
-                context.SuggestUpsell = true;
-                context.UpsellCategory = name.ToLower().Contains("kopi") || name.ToLower().Contains("teh") ? "kueh" : "pastry";
-            }
-
-            // Business Rule 2: Suggest drinks with food
-            if ((name.ToLower().Contains("croissant") || name.ToLower().Contains("muffin") || name.ToLower().Contains("toast") || name.ToLower().Contains("kueh")) && !hasHotDrink)
-            {
-                context.SuggestUpsell = true;
-                context.UpsellCategory = "drink";
-            }
-
-            // Business Rule 3: Time-based recommendations (could be configurable)
-            var currentHour = DateTime.Now.Hour;
-            if (currentHour < 10 && (name.ToLower().Contains("coffee") || name.ToLower().Contains("kopi")))
-            {
-                context.PriorityBoost = true; // Morning coffee rush priority
-            }
-
-            return context;
+            // ARCHITECTURAL PRINCIPLE: Business rules removed - AI handles all business intelligence
+            // Pure data context only - no hardcoded business decisions
+            return new BusinessContext();
         }
 
         private IReadOnlyList<IProductInfo> ApplyBusinessIntelligence(IReadOnlyList<IProductInfo> products, Transaction transaction, string originalTerm)
         {
-            // "Sales Manager" prioritization logic
-            var prioritizedProducts = products.ToList();
-
-            // Business Intelligence Rule 1: Prioritize items that create upsell opportunities
-            prioritizedProducts.Sort((a, b) =>
-            {
-                var aContext = AnalyzeBusinessContext(a, transaction);
-                var bContext = AnalyzeBusinessContext(b, transaction);
-
-                // Prioritize items that enable upselling
-                if (aContext.SuggestUpsell && !bContext.SuggestUpsell)
-                {
-                    return -1;
-                }
-                if (!aContext.SuggestUpsell && bContext.SuggestUpsell)
-                {
-                    return 1;
-                }
-
-                // Then prioritize by time-based rules
-                if (aContext.PriorityBoost && !bContext.PriorityBoost)
-                {
-                    return -1;
-                }
-                if (!aContext.PriorityBoost && bContext.PriorityBoost)
-                {
-                    return 1;
-                }
-
-                // Finally, sort by price (configurable strategy)
-                return a.BasePriceCents.CompareTo(b.BasePriceCents);
-            });
-
-            // Limit results based on business rules (avoid overwhelming customers)
-            return prioritizedProducts.Take(GetMaxOptionsForTerm(originalTerm)).ToList();
+            // ARCHITECTURAL PRINCIPLE: Business intelligence removed - AI handles all prioritization
+            // Pure data delivery - no hardcoded business decisions
+            return products.Take(GetMaxOptionsForTerm(originalTerm)).ToList();
         }
 
         private int GetMaxOptionsForTerm(string term)
         {
-            // Configurable business rule: limit options to avoid decision paralysis
-            return term.ToLower() switch
-            {
-                var t when t.Contains("coffee") || t.Contains("kopi") => 3, // Coffee has many options, limit to 3
-                var t when t.Contains("bite to eat") => 4, // Food can have more variety
-                var t when t.Contains("teh") => 3, // Tea options
-                _ => 5 // Default max
-            };
+            // ARCHITECTURAL PRINCIPLE: Business rules removed - AI handles result limiting
+            // Pure infrastructure - consistent data delivery
+            return 10; // Fixed reasonable limit - AI will handle intelligent filtering
         }
 
         /// <summary>
@@ -1074,30 +908,7 @@ namespace PosKernel.AI.Tools
             return 2.50m;
         }
 
-        private bool IsExactMatch(string searchTerm, IProductInfo product)
-        {
-            var normalizedSearch = searchTerm.ToLowerInvariant().Trim();
-            var normalizedProductName = (product.Name ?? string.Empty).ToLowerInvariant().Trim();
-
-            // Direct exact matches (SKU or full name match)
-            if (normalizedSearch == normalizedProductName || normalizedSearch == (product.Sku ?? string.Empty).ToLowerInvariant())
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Gets confidence threshold from service, with fallback to hardcoded value.
-        /// ARCHITECTURAL FIX: Replace magic numbers with configurable thresholds.
-        /// </summary>
-        private double GetThreshold(string context, string operation, double fallback)
-        {
-            return _thresholdService?.GetConfidenceThreshold(context, operation) ?? fallback;
-        }
-
-        // Simple business context data structure
+        // Simple business context data structure (kept for backwards compatibility)
         private class BusinessContext
         {
             public bool SuggestUpsell { get; set; }

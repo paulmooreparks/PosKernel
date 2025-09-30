@@ -18,6 +18,16 @@ You are a senior-level software developer who knows that warnings are build fail
 ### KEEP THE DESIGN IN MIND
 The goal of this project is captured in the many .md files under the docs directory. Keep them in mind.
 
+**CRITICAL: AI-FIRST ARCHITECTURE**
+The current architectural strategy is defined in **[docs/ai-redesign-2025-09-29.md](../docs/ai-redesign-2025-09-29.md)**:
+- Pure AI agency model - AI is the cashier, POS is the register
+- No orchestration logic in code - AI makes ALL business decisions
+- Transaction state-driven behavior - No prompts or scripts
+- MCP layer isolation - AI ↔ MCP ↔ POS (no direct AI-POS access)
+- Cultural intelligence through context, not code
+
+This document provides the foundational constraints. The AI redesign document provides the strategic architecture.
+
 ### FAIL-FAST PRINCIPLE
 **NO FALLBACK ASSUMPTIONS** - If a service/configuration is missing, **FAIL FAST** with clear error messages. DO NOT provide "helpful" defaults or fallbacks.
 
@@ -89,7 +99,7 @@ These violations **sneak in during every code edit** - check for them specifical
 ```csharp
 // ❌ NEVER DO THESE:
 DateTime.Now.ToString("HH:mm")           // Hardcoded time format
-amount.ToString("F2")                    // Hardcoded decimal places  
+amount.ToString("F2")                    // Hardcoded decimal places
 DateTime.Now.Hour < 12 ? "morning"      // Hardcoded cultural time mapping
 TimeSpan.FromMinutes(5)                 // Hardcoded timeout (inline)
 "Payment methods: Cash, Card"           // Hardcoded payment list
@@ -106,7 +116,7 @@ GetPaymentMethods()                     // Service call
 
 ### CLIENT RESPONSIBILITY BOUNDARIES
 - **Clients MUST NOT decide currency defaults**
-- **Clients MUST NOT decide session parameters** 
+- **Clients MUST NOT decide session parameters**
 - **Clients MUST NOT decide payment method validation**
 - **All business rules come from services/configuration**
 
@@ -135,7 +145,7 @@ private string FormatCurrency(decimal amount)
     {
         return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreName);
     }
-    
+
     // FAIL FAST - No fallback formatting
     throw new InvalidOperationException(
         $"DESIGN DEFICIENCY: Currency formatting service not available. " +
@@ -194,7 +204,7 @@ The goal is to **reveal design problems**, not hide them with convenient default
 ```csharp
 if (condition) {
     // code
-} 
+}
 else {
     // code
 }

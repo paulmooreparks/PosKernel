@@ -13,15 +13,15 @@ The foundation of the live training system is running experimental prompts in pa
 ```csharp
 public class DualPromptOrchestrator
 {
-    private readonly ChatOrchestrator _productionOrchestrator;  // Customer-facing
-    private readonly ChatOrchestrator _shadowOrchestrator;      // Learning system
+    private readonly PosAiAgent _productionAgent;  // Customer-facing
+    private readonly PosAiAgent _shadowAgent;      // Learning system
     private readonly PerformanceAnalyzer _analyzer;
     private readonly PromptEvolutionEngine _evolution;
     
     public async Task<ChatMessage> ProcessUserInputAsync(string input)
     {
         // Production response (customer sees this)
-        var productionResponse = await _productionOrchestrator.ProcessUserInputAsync(input);
+        var productionResponse = await _productionAgent.ProcessCustomerInputAsync(input);
         
         // Shadow response (for learning, customer never sees)
         _ = Task.Run(async () => {

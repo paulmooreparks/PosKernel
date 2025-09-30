@@ -19,6 +19,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using PosKernel.Configuration;
 using PosKernel.AI.Common.Abstractions;
+using PosKernel.Abstractions;
 
 namespace PosKernel.AI.Services
 {
@@ -44,22 +45,23 @@ namespace PosKernel.AI.Services
         }
 
         /// <summary>
-        /// Sends an MCP completion request with tool calling capabilities.
-        /// ARCHITECTURAL FIX: Implements text-based tool calling for local providers like Ollama
+        /// Pure tool completion with minimal infrastructure - no prompt building.
+        /// ARCHITECTURAL PRINCIPLE: AI knows how to use tools naturally.
         /// </summary>
         public async Task<McpResponse> CompleteWithToolsAsync(string prompt, IReadOnlyList<McpTool> availableTools, CancellationToken cancellationToken = default)
         {
             try
             {
-                // Build the prompt with tool descriptions for local providers
-                var enhancedPrompt = BuildToolAwarePrompt(prompt, availableTools);
+                // ARCHITECTURAL PRINCIPLE: Pure context injection - AI has native tool understanding
+                var toolsData = availableTools.Any() ? JsonSerializer.Serialize(availableTools, new JsonSerializerOptions { WriteIndented = true }) : "";
+                var enhancedInput = $"TOOLS: {toolsData}\nUSER: {prompt}";
 
                 // ARCHITECTURAL FIX: Use shared LLM interface for all providers
-                var textResponse = await _llm.GenerateAsync(enhancedPrompt, cancellationToken);
-                
+                var textResponse = await _llm.GenerateAsync(enhancedInput, cancellationToken);
+
                 _logger.LogDebug("LLM response received: {Length} characters from {Provider}", textResponse.Length, _llm.ProviderInfo.Name);
 
-                // ARCHITECTURAL FIX: Parse tool calls from text for local providers, structured for others
+                // ARCHITECTURAL FIX: Pure tool extraction - no interpretation logic
                 var toolCalls = ExtractToolCallsFromText(textResponse, availableTools);
 
                 if (toolCalls.Any())
@@ -71,7 +73,7 @@ namespace PosKernel.AI.Services
                     }
                 }
 
-                // SIDE CHANNEL: Remove tool-call lines from content before returning to orchestrator
+                // Pure text cleaning - remove infrastructure markers only
                 var sanitizedContent = SanitizeAssistantContent(textResponse);
 
                 return new McpResponse
@@ -92,46 +94,57 @@ namespace PosKernel.AI.Services
         }
 
         /// <summary>
-        /// ARCHITECTURAL FIX: Build tool-aware prompt that instructs the LLM how to call tools via text
+        /// AI AGENT VERSION: Pure context injection without prompt building.
+        /// ARCHITECTURAL REDESIGN: AI has persistent knowledge and natural tool access.
         /// </summary>
-        private string BuildToolAwarePrompt(string prompt, IReadOnlyList<McpTool> availableTools)
+        public async Task<McpResponse> CompleteWithContextAsync(string userInput, IReadOnlyList<McpTool> availableTools, object? persistentContext = null, CancellationToken cancellationToken = default)
         {
-            if (!availableTools.Any())
+            try
             {
-                return prompt;
+                // ARCHITECTURAL PRINCIPLE: Minimal context injection - AI has native tool understanding
+                var contextData = persistentContext != null ? JsonSerializer.Serialize(persistentContext, new JsonSerializerOptions { WriteIndented = true }) : "";
+
+                // ARCHITECTURAL PRINCIPLE: Simple tool definitions - AI knows how to use tools
+                var toolsData = availableTools.Any() ? JsonSerializer.Serialize(availableTools, new JsonSerializerOptions { WriteIndented = true }) : "";
+
+                // ARCHITECTURAL PRINCIPLE: Pure user input with minimal infrastructure context
+                var enhancedInput = $"CONTEXT: {contextData}\nTOOLS: {toolsData}\nUSER: {userInput}";
+
+                // ARCHITECTURAL FIX: Use shared LLM interface for all providers
+                var textResponse = await _llm.GenerateAsync(enhancedInput, cancellationToken);
+
+                _logger.LogDebug("LLM response received: {Length} characters from {Provider}", textResponse.Length, _llm.ProviderInfo.Name);
+
+                // ARCHITECTURAL PRINCIPLE: Pure tool extraction - no interpretation logic
+                var toolCalls = ExtractToolCallsFromText(textResponse, availableTools);
+
+                if (toolCalls.Any())
+                {
+                    _logger.LogInformation("AI requested {ToolCount} tool calls", toolCalls.Count);
+                }
+
+                // Return clean response - tool calls execute separately
+                var sanitizedContent = SanitizeAssistantContent(textResponse);
+
+                return new McpResponse
+                {
+                    Content = sanitizedContent,
+                    ToolCalls = toolCalls
+                };
             }
-
-            var toolDescriptions = string.Join("\n", availableTools.Select(tool => 
-                $"- {tool.Name}: {tool.Description}"));
-
-            return $@"You are an AI assistant for a Point-of-Sale system. You have access to these tools:
-
-{toolDescriptions}
-
-CRITICAL TOOL CALLING INSTRUCTIONS:
-When you need to use a tool, include a line that starts with ""TOOL_CALL:"" followed by the tool name and JSON arguments.
-Format: TOOL_CALL: tool_name {{""parameter"": ""value""}}
-
-For example:
-- To add an item: TOOL_CALL: add_item_to_transaction {{""item_description"": ""Kopi C"", ""quantity"": 1}}
-- To search products: TOOL_CALL: search_products {{""search_term"": ""coffee""}}
-- To process payment: TOOL_CALL: process_payment {{""payment_method"": ""cash""}}
-
-CRITICAL: Use exact parameter names from tool definitions:
-- add_item_to_transaction requires ""item_description"" (NOT ""product_name"")
-- search_products requires ""search_term""
-- process_payment requires ""payment_method""
-
-IMPORTANT:
-- Keep tool-call lines separate from any conversational text.
-- Do NOT echo tool-call lines to the customer; they will be executed out-of-band.
-- If unsure, prefer calling a discovery tool and then asking a concise clarifying question.
-
-User request: {prompt}";
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Critical error in AI agent completion");
+                throw new InvalidOperationException(
+                    "DESIGN DEFICIENCY: AI agent completion failed. " +
+                    $"Error: {ex.Message}. " +
+                    "Check LLM provider configuration and service availability.", ex);
+            }
         }
 
         /// <summary>
-        /// Remove internal tool/diagnostic markers from assistant text content.
+        /// ARCHITECTURAL PRINCIPLE: Pure text sanitization - remove infrastructure markers only.
+        /// No business logic or interpretation - just clean output for customer.
         /// </summary>
         private static string SanitizeAssistantContent(string response)
         {
@@ -146,9 +159,11 @@ User request: {prompt}";
             while ((line = reader.ReadLine()) != null)
             {
                 var trim = line.TrimStart();
+                // Remove only infrastructure markers - no business logic
                 if (trim.StartsWith("TOOL_CALL:", StringComparison.OrdinalIgnoreCase)) { continue; }
                 if (trim.StartsWith("TOOL_RESULT:", StringComparison.OrdinalIgnoreCase)) { continue; }
-                if (trim.StartsWith("THOUGHT", StringComparison.OrdinalIgnoreCase)) { continue; }
+                if (trim.StartsWith("CONTEXT:", StringComparison.OrdinalIgnoreCase)) { continue; }
+                if (trim.StartsWith("TOOLS:", StringComparison.OrdinalIgnoreCase)) { continue; }
                 sb.AppendLine(line);
             }
             return sb.ToString().Trim();
@@ -167,7 +182,7 @@ User request: {prompt}";
             }
 
             var lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            
+
             foreach (var line in lines)
             {
                 var trimmed = line.Trim();
@@ -181,11 +196,11 @@ User request: {prompt}";
                     // Parse: "TOOL_CALL: tool_name {"param": "value"}"
                     var toolCallText = trimmed.Substring("TOOL_CALL:".Length).Trim();
                     var spaceIndex = toolCallText.IndexOf(' ');
-                    
+
                     string toolName;
                     string jsonArgs;
-                    
-                    if (spaceIndex == -1) 
+
+                    if (spaceIndex == -1)
                     {
                         // Handle case where there's only a tool name, no arguments
                         toolName = toolCallText;

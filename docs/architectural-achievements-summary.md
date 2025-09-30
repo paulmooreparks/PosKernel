@@ -96,7 +96,7 @@ public class StoreConfig
 if (!storeConfig.DisambiguationTimeoutMinutes.HasValue)
 {
     throw new InvalidOperationException(
-        "DESIGN DEFICIENCY: ChatOrchestrator requires DisambiguationTimeoutMinutes. " +
+        "DESIGN DEFICIENCY: AI agent requires DisambiguationTimeoutMinutes. " +
         "Client cannot decide timeout defaults. Set in store configuration.");
 }
 ```
