@@ -219,8 +219,8 @@ namespace PosKernel.Client
         public Task<object> GetStoreConfigAsync(CancellationToken cancellationToken = default)
             => EnsureConnected().GetStoreConfigAsync(cancellationToken);
 
-        public Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default)
-            => EnsureConnected().AddChildLineItemAsync(sessionId, transactionId, productId, quantity, unitPrice, parentLineNumber, cancellationToken);
+        public Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default)
+            => EnsureConnected().AddChildLineItemAsync(sessionId, transactionId, productId, quantity, unitPrice, parentLineNumber, productName, productDescription, cancellationToken);
 
         private IPosKernelClient EnsureConnected()
         {
@@ -244,8 +244,8 @@ namespace PosKernel.Client
         public Task<TransactionClientResult> StartTransactionAsync(string sessionId, string currency, CancellationToken cancellationToken = default)
             => EnsureConnected().StartTransactionAsync(sessionId, currency, cancellationToken);
 
-        public Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
-            => EnsureConnected().AddLineItemAsync(sessionId, transactionId, productId, quantity, unitPrice, cancellationToken);
+        public Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default)
+            => EnsureConnected().AddLineItemAsync(sessionId, transactionId, productId, quantity, unitPrice, productName, productDescription, cancellationToken);
 
         public Task<TransactionClientResult> AddModificationAsync(string sessionId, string transactionId, int parentLineNumber, string modificationId, int quantity, decimal unitPrice, LineItemType itemType = LineItemType.Modification, CancellationToken cancellationToken = default)
             => EnsureConnected().AddModificationAsync(sessionId, transactionId, parentLineNumber, modificationId, quantity, unitPrice, itemType, cancellationToken);

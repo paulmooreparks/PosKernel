@@ -42,11 +42,11 @@ namespace PosKernel.Extensions.Restaurant
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _config = config ?? throw new ArgumentNullException(nameof(config));
-            
+
             // Initialize SQLite database connection
             _database = new SqliteConnection($"Data Source={_config.DatabasePath}");
             _database.Open();
-            
+
             _logger.LogInformation("Restaurant extension initialized with database: {DatabasePath}", _config.DatabasePath);
         }
 
@@ -61,14 +61,14 @@ namespace PosKernel.Extensions.Restaurant
 
                 using var command = _database.CreateCommand();
                 command.CommandText = @"
-                    SELECT p.sku, p.name, p.description, p.category_id, p.base_price_cents, 
+                    SELECT p.sku, p.name, p.description, p.category_id, p.base_price,
                            p.is_active, p.requires_preparation, p.preparation_time_minutes, p.popularity_rank,
                            c.name as category_name, c.tax_category, c.requires_preparation as category_prep
                     FROM products p
                     JOIN categories c ON p.category_id = c.id
-                    WHERE p.sku = @productId 
-                       OR EXISTS (SELECT 1 FROM product_identifiers pi 
-                                 WHERE pi.product_sku = p.sku 
+                    WHERE p.sku = @productId
+                       OR EXISTS (SELECT 1 FROM product_identifiers pi
+                                 WHERE pi.product_sku = p.sku
                                    AND pi.identifier_value = @productId)";
                 command.Parameters.AddWithValue("@productId", productId);
 
@@ -85,11 +85,11 @@ namespace PosKernel.Extensions.Restaurant
                 var product = new ProductInfo
                 {
                     Sku = reader.GetString(0), // "sku"
-                    Name = reader.GetString(1), // "name" 
+                    Name = reader.GetString(1), // "name"
                     Description = reader.GetString(2), // "description"
                     CategoryId = reader.GetString(3), // "category_id"
                     CategoryName = reader.GetString(9), // "category_name"
-                    BasePriceCents = reader.GetInt64(4), // "base_price_cents"
+                    BasePrice = reader.GetDecimal(4), // "base_price" as decimal
                     IsActive = reader.GetBoolean(5), // "is_active"
                     RequiresPreparation = reader.GetBoolean(6), // "requires_preparation"
                     PreparationTimeMinutes = reader.GetInt32(7), // "preparation_time_minutes"
@@ -135,7 +135,7 @@ namespace PosKernel.Extensions.Restaurant
                 }
 
                 validationResult.ProductInfo = product;
-                validationResult.EffectivePriceCents = CalculateEffectivePrice(product, context);
+                validationResult.EffectivePrice = CalculateEffectivePrice(product, context);
 
                 _logger.LogDebug("Product validation successful: {ProductId} -> {Name}", productId, product.Name);
                 return validationResult;
@@ -163,7 +163,7 @@ namespace PosKernel.Extensions.Restaurant
 
             using var reader = command.ExecuteReader();
             var allergens = new List<AllergenInfo>();
-            
+
             while (reader.Read())
             {
                 allergens.Add(new AllergenInfo
@@ -174,7 +174,7 @@ namespace PosKernel.Extensions.Restaurant
                     ContaminationRisk = reader.GetString(3) // "contamination_risk"
                 });
             }
-            
+
             product.Allergens = allergens;
         }
 
@@ -189,7 +189,7 @@ namespace PosKernel.Extensions.Restaurant
 
             using var reader = command.ExecuteReader();
             var specifications = new Dictionary<string, object>();
-            
+
             while (reader.Read())
             {
                 var key = reader.GetString(0); // "spec_key"
@@ -203,7 +203,7 @@ namespace PosKernel.Extensions.Restaurant
                     _ => value
                 };
             }
-            
+
             product.Specifications = specifications;
         }
 
@@ -219,14 +219,14 @@ namespace PosKernel.Extensions.Restaurant
 
             using var reader = command.ExecuteReader();
             var customizations = new Dictionary<string, List<CustomizationOption>>();
-            
+
             while (reader.Read())
             {
                 var type = reader.GetString(0); // "customization_type"
                 var option = new CustomizationOption
                 {
                     Value = reader.GetString(1), // "option_value"
-                    PriceModifierCents = reader.GetInt64(2), // "price_modifier_cents" 
+                    PriceModifierCents = reader.GetInt64(2), // "price_modifier_cents"
                     IsDefault = reader.GetBoolean(3), // "is_default"
                     DisplayOrder = reader.GetInt32(4) // "display_order"
                 };
@@ -237,7 +237,7 @@ namespace PosKernel.Extensions.Restaurant
                 }
                 customizations[type].Add(option);
             }
-            
+
             product.Customizations = customizations;
         }
 
@@ -245,7 +245,7 @@ namespace PosKernel.Extensions.Restaurant
         {
             using var command = _database.CreateCommand();
             command.CommandText = @"
-                SELECT u.suggested_sku, u.suggestion_type, u.priority, p.name, p.base_price_cents
+                SELECT u.suggested_sku, u.suggestion_type, u.priority, p.name, p.base_price
                 FROM product_upsells u
                 JOIN products p ON u.suggested_sku = p.sku
                 WHERE u.product_sku = @sku AND p.is_active = 1
@@ -254,7 +254,7 @@ namespace PosKernel.Extensions.Restaurant
 
             using var reader = command.ExecuteReader();
             var upsells = new List<UpsellSuggestion>();
-            
+
             while (reader.Read())
             {
                 upsells.Add(new UpsellSuggestion
@@ -263,10 +263,10 @@ namespace PosKernel.Extensions.Restaurant
                     SuggestionType = reader.GetString(1), // "suggestion_type"
                     Priority = reader.GetInt32(2), // "priority"
                     Name = reader.GetString(3), // "name"
-                    PriceCents = reader.GetInt64(4) // "base_price_cents"
+                    PriceCents = (long)(reader.GetDecimal(4) * 100) // Convert decimal base_price to cents for display
                 });
             }
-            
+
             product.UpsellSuggestions = upsells;
         }
 
@@ -315,9 +315,9 @@ namespace PosKernel.Extensions.Restaurant
             return new MenuValidationResult { IsValid = true };
         }
 
-        private long CalculateEffectivePrice(ProductInfo product, ValidationContext context)
+        private decimal CalculateEffectivePrice(ProductInfo product, ValidationContext context)
         {
-            var effectivePrice = product.BasePriceCents;
+            var effectivePrice = product.BasePrice;
 
             // Apply time-based pricing rules
             effectivePrice = ApplyPricingRules(product, effectivePrice, context);
@@ -325,14 +325,14 @@ namespace PosKernel.Extensions.Restaurant
             return effectivePrice;
         }
 
-        private long ApplyPricingRules(ProductInfo product, long basePrice, ValidationContext context)
+        private decimal ApplyPricingRules(ProductInfo product, decimal basePrice, ValidationContext context)
         {
             using var command = _database.CreateCommand();
             command.CommandText = @"
                 SELECT pr.discount_type, pr.discount_value, pr.conditions
                 FROM pricing_rules pr
                 JOIN pricing_rule_products prp ON pr.id = prp.rule_id
-                WHERE prp.product_sku = @sku 
+                WHERE prp.product_sku = @sku
                   AND pr.is_active = 1
                   AND (pr.start_date IS NULL OR date('now') >= pr.start_date)
                   AND (pr.end_date IS NULL OR date('now') <= pr.end_date)";
@@ -340,11 +340,11 @@ namespace PosKernel.Extensions.Restaurant
 
             using var reader = command.ExecuteReader();
             var appliedPrice = basePrice;
-            
+
             while (reader.Read())
             {
                 var discountType = reader.GetString(0); // "discount_type"
-                var discountValue = reader.GetDouble(1); // "discount_value"
+                var discountValue = (decimal)reader.GetDouble(1); // "discount_value"
                 var conditionsJson = reader.IsDBNull(2) ? null : reader.GetString(2); // "conditions"
 
                 // Check if conditions are met
@@ -356,8 +356,8 @@ namespace PosKernel.Extensions.Restaurant
                 // Apply discount
                 appliedPrice = discountType switch
                 {
-                    "percentage" => (long)(appliedPrice * (1.0 - discountValue / 100.0)),
-                    "fixed_amount" => Math.Max(0, appliedPrice - (long)(discountValue * 100)), // discountValue in dollars
+                    "percentage" => appliedPrice * (1.0m - discountValue / 100.0m),
+                    "fixed_amount" => Math.Max(0, appliedPrice - discountValue), // discountValue is in currency units
                     _ => appliedPrice
                 };
             }
@@ -370,7 +370,7 @@ namespace PosKernel.Extensions.Restaurant
             try
             {
                 var conditions = JsonSerializer.Deserialize<PricingConditions>(conditionsJson);
-                if (conditions == null) 
+                if (conditions == null)
                 {
                     return true;
                 }
@@ -389,7 +389,7 @@ namespace PosKernel.Extensions.Restaurant
 
                 if (!string.IsNullOrEmpty(conditions.StartTime) && !string.IsNullOrEmpty(conditions.EndTime))
                 {
-                    if (TimeSpan.TryParse(conditions.StartTime, out var startTime) && 
+                    if (TimeSpan.TryParse(conditions.StartTime, out var startTime) &&
                         TimeSpan.TryParse(conditions.EndTime, out var endTime))
                     {
                         var currentTime = now.TimeOfDay;
@@ -428,27 +428,27 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets or sets the path to the SQLite database file.
         /// </summary>
         public string DatabasePath { get; set; } = "data/catalog/restaurant_catalog.db";
-        
+
         /// <summary>
         /// Gets or sets whether allergen validation is enabled.
         /// </summary>
         public bool AllergenValidation { get; set; } = true;
-        
+
         /// <summary>
         /// Gets or sets whether preparation time tracking is enabled.
         /// </summary>
         public bool PreparationTimeTracking { get; set; } = true;
-        
+
         /// <summary>
         /// Gets or sets whether menu scheduling is enabled.
         /// </summary>
         public bool MenuSchedulingEnabled { get; set; } = true;
-        
+
         /// <summary>
         /// Gets or sets whether seasonal availability checking is enabled.
         /// </summary>
         public bool SeasonalAvailability { get; set; } = true;
-        
+
         /// <summary>
         /// Gets or sets the maximum allowed preparation time in minutes.
         /// </summary>
@@ -517,9 +517,18 @@ namespace PosKernel.Extensions.Restaurant
         public string CategoryName { get; set; } = "";
 
         /// <summary>
-        /// Gets or sets the base price in cents.
+        /// Gets or sets the base price.
         /// </summary>
-        public long BasePriceCents { get; set; }
+        public decimal BasePrice { get; set; }
+
+        /// <summary>
+        /// Gets or sets the base price in cents (legacy support).
+        /// </summary>
+        public long BasePriceCents
+        {
+            get => (long)(BasePrice * 100);
+            set => BasePrice = value / 100m;
+        }
 
         /// <summary>
         /// Gets or sets a value indicating whether the product is active.
@@ -671,9 +680,18 @@ namespace PosKernel.Extensions.Restaurant
         public ProductInfo? ProductInfo { get; set; }
 
         /// <summary>
-        /// Gets or sets the effective price in cents.
+        /// Gets or sets the effective price.
         /// </summary>
-        public long EffectivePriceCents { get; set; }
+        public decimal EffectivePrice { get; set; }
+
+        /// <summary>
+        /// Gets or sets the effective price in cents (legacy support).
+        /// </summary>
+        public long EffectivePriceCents
+        {
+            get => (long)(EffectivePrice * 100);
+            set => EffectivePrice = value / 100m;
+        }
     }
 
     /// <summary>

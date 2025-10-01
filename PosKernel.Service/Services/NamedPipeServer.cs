@@ -276,7 +276,21 @@ namespace PosKernel.Service.Services {
             var quantity = parameters?.GetProperty("quantity").GetInt32() ?? 1;
             var unitPrice = parameters?.GetProperty("unit_price").GetDecimal() ?? throw new ArgumentException("unit_price required");
 
-            var result = await _kernelEngine.AddLineItemAsync(sessionId, transactionId, productId, quantity, unitPrice, cancellationToken);
+            // Optional product metadata from store extension
+            string? productName = null;
+            string? productDescription = null;
+            if (parameters?.TryGetProperty("product_name", out var nameElement) == true && nameElement.ValueKind == JsonValueKind.String)
+            {
+                productName = nameElement.GetString();
+            }
+            if (parameters?.TryGetProperty("product_description", out var descElement) == true && descElement.ValueKind == JsonValueKind.String)
+            {
+                productDescription = descElement.GetString();
+            }
+
+            _logger.LogDebug("AddLineItem metadata: ProductName='{ProductName}', ProductDescription='{ProductDescription}'", productName, productDescription);
+
+            var result = await _kernelEngine.AddLineItemAsync(sessionId, transactionId, productId, quantity, unitPrice, productName, productDescription, cancellationToken);
             return result;
         }
 

@@ -219,7 +219,7 @@ namespace PosKernel.Client.Rust
         }
 
         /// <inheritdoc/>
-        public async Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
+        public async Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default)
         {
             EnsureConnected();
 
@@ -234,7 +234,9 @@ namespace PosKernel.Client.Rust
                     transaction_id = transactionId,
                     product_id = productId,
                     quantity = quantity,
-                    unit_price = (double)unitPrice
+                    unit_price = (double)unitPrice,
+                    product_name = productName,
+                    product_description = productDescription
                 };
 
                 var json = JsonSerializer.Serialize(request);
@@ -274,7 +276,7 @@ namespace PosKernel.Client.Rust
         }
 
         /// <inheritdoc/>
-        public async Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default)
+        public async Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default)
         {
             EnsureConnected();
 
@@ -290,7 +292,9 @@ namespace PosKernel.Client.Rust
                     product_id = productId,
                     quantity = quantity,
                     unit_price = (double)unitPrice,
-                    parent_line_number = parentLineNumber
+                    parent_line_number = parentLineNumber,
+                    product_name = productName,
+                    product_description = productDescription
                 };
 
                 var json = JsonSerializer.Serialize(request);
@@ -624,6 +628,8 @@ namespace PosKernel.Client.Rust
                         LineNumber = item.LineNumber,
                         ParentLineNumber = (int)(item.ParentLineNumber ?? 0), // NRF COMPLIANCE: Read parent ID from JSON
                         ProductId = item.ProductId,
+                        ProductName = item.ProductName, // ARCHITECTURAL FIX: Copy product metadata
+                        ProductDescription = item.ProductDescription, // ARCHITECTURAL FIX: Copy product metadata
                         ItemType = DetermineLineItemType(item.ParentLineNumber), // Determine type based on parent relationship
                         Quantity = item.Quantity,
                         UnitPrice = (decimal)item.UnitPrice,
@@ -729,6 +735,8 @@ namespace PosKernel.Client.Rust
                     {
                         _logger.LogInformation("RUST_SERVICE_LINEITEM: Line {LineNumber}, ProductId: {ProductId}, Qty: {Quantity}, UnitPrice: {UnitPrice}",
                             item.LineNumber, item.ProductId, item.Quantity, item.UnitPrice);
+                        _logger.LogInformation("🔍 RUST_SERVICE_METADATA: Line {LineNumber}, ProductName: '{ProductName}', ProductDescription: '{ProductDescription}'",
+                            item.LineNumber, item.ProductName ?? "(null)", item.ProductDescription ?? "(null)");
                     }
                 }
 
@@ -766,26 +774,37 @@ namespace PosKernel.Client.Rust
             if (responseData.TryGetProperty("line_items", out var lineItemsArray) && lineItemsArray.ValueKind == JsonValueKind.Array)
             {
                 result.LineItems = lineItemsArray.EnumerateArray()
-                    .Select(item => new TransactionLineItem
-                    {
-                        LineItemId = item.TryGetProperty("line_item_id", out var lineItemIdProp) ? lineItemIdProp.GetString() ?? "" : "", // ARCHITECTURAL FIX: Map stable ID
-                        LineNumber = item.TryGetProperty("line_number", out var lineNumProp) ? lineNumProp.GetInt32() : 0,
-                        ParentLineNumber = item.TryGetProperty("parent_line_number", out var parentProp) && parentProp.ValueKind != JsonValueKind.Null
-                            ? parentProp.GetInt32()
-                            : 0, // NRF COMPLIANCE: Read parent relationship from JSON
-                        ProductId = item.TryGetProperty("product_id", out var prodProp) ? prodProp.GetString() ?? "" : "",
-                        ItemType = DetermineLineItemType(item.TryGetProperty("parent_line_number", out var parentTypeProp) && parentTypeProp.ValueKind != JsonValueKind.Null
-                            ? (uint)parentTypeProp.GetInt32()
-                            : null),
-                        Quantity = item.TryGetProperty("quantity", out var qtyProp) ? qtyProp.GetInt32() : 0,
-                        UnitPrice = item.TryGetProperty("unit_price", out var unitProp) ? (decimal)unitProp.GetDouble() : 0,
-                        ExtendedPrice = item.TryGetProperty("extended_price", out var extProp) ? (decimal)extProp.GetDouble() : 0,
-                        DisplayIndentLevel = DetermineIndentLevel(item.TryGetProperty("parent_line_number", out var parentIndentProp) && parentIndentProp.ValueKind != JsonValueKind.Null
-                            ? (uint)parentIndentProp.GetInt32()
-                            : null),
-                        IsVoided = false, // TODO: Add void status from service when available
-                        VoidReason = null,
-                        Metadata = new Dictionary<string, string>()
+                    .Select(item => {
+                        var productId = item.TryGetProperty("product_id", out var prodProp) ? prodProp.GetString() ?? "" : "";
+                        var productName = item.TryGetProperty("product_name", out var nameProp) ? nameProp.GetString() ?? "" : "";
+                        var productDescription = item.TryGetProperty("product_description", out var descProp) ? descProp.GetString() ?? "" : "";
+
+                        _logger.LogInformation("🔍 PARSE_DEBUG: ProductId='{ProductId}', ProductName='{ProductName}', ProductDescription='{ProductDescription}'",
+                            productId, productName, productDescription);
+
+                        return new TransactionLineItem
+                        {
+                            LineItemId = item.TryGetProperty("line_item_id", out var lineItemIdProp) ? lineItemIdProp.GetString() ?? "" : "", // ARCHITECTURAL FIX: Map stable ID
+                            LineNumber = item.TryGetProperty("line_number", out var lineNumProp) ? lineNumProp.GetInt32() : 0,
+                            ParentLineNumber = item.TryGetProperty("parent_line_number", out var parentProp) && parentProp.ValueKind != JsonValueKind.Null
+                                ? parentProp.GetInt32()
+                                : 0, // NRF COMPLIANCE: Read parent relationship from JSON
+                            ProductId = productId,
+                            ProductName = productName,
+                            ProductDescription = productDescription,
+                            ItemType = DetermineLineItemType(item.TryGetProperty("parent_line_number", out var parentTypeProp) && parentTypeProp.ValueKind != JsonValueKind.Null
+                                ? (uint)parentTypeProp.GetInt32()
+                                : null),
+                            Quantity = item.TryGetProperty("quantity", out var qtyProp) ? qtyProp.GetInt32() : 0,
+                            UnitPrice = item.TryGetProperty("unit_price", out var unitProp) ? (decimal)unitProp.GetDouble() : 0,
+                            ExtendedPrice = item.TryGetProperty("extended_price", out var extProp) ? (decimal)extProp.GetDouble() : 0,
+                            DisplayIndentLevel = DetermineIndentLevel(item.TryGetProperty("parent_line_number", out var parentIndentProp) && parentIndentProp.ValueKind != JsonValueKind.Null
+                                ? (uint)parentIndentProp.GetInt32()
+                                : null),
+                            IsVoided = false, // TODO: Add void status from service when available
+                            VoidReason = null,
+                            Metadata = new Dictionary<string, string>()
+                        };
                     }).ToList();
             }
             else
@@ -811,7 +830,10 @@ namespace PosKernel.Client.Rust
         {
             public bool Success { get; set; }
             public string Error { get; set; } = "";
+            
+            [System.Text.Json.Serialization.JsonPropertyName("transaction_id")]
             public string TransactionId { get; set; } = "";
+            
             public double Total { get; set; }
             public double Tendered { get; set; }
             public double Change { get; set; }
@@ -844,6 +866,13 @@ namespace PosKernel.Client.Rust
 
             [System.Text.Json.Serialization.JsonPropertyName("parent_line_number")]
             public uint? ParentLineNumber { get; set; } // NRF COMPLIANCE: Use parent_line_number field from Rust
+
+            // ARCHITECTURAL FIX: Add product metadata fields for AI display
+            [System.Text.Json.Serialization.JsonPropertyName("product_name")]
+            public string ProductName { get; set; } = "";
+
+            [System.Text.Json.Serialization.JsonPropertyName("product_description")]
+            public string ProductDescription { get; set; } = "";
         }
 
         private void EnsureConnected()

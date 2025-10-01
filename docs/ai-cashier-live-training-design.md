@@ -17,18 +17,18 @@ public class DualPromptOrchestrator
     private readonly PosAiAgent _shadowAgent;      // Learning system
     private readonly PerformanceAnalyzer _analyzer;
     private readonly PromptEvolutionEngine _evolution;
-    
+
     public async Task<ChatMessage> ProcessUserInputAsync(string input)
     {
         // Production response (customer sees this)
         var productionResponse = await _productionAgent.ProcessCustomerInputAsync(input);
-        
+
         // Shadow response (for learning, customer never sees)
         _ = Task.Run(async () => {
             var shadowResponse = await _shadowOrchestrator.ProcessUserInputAsync(input);
             await _analyzer.CompareResponses(productionResponse, shadowResponse, input);
         });
-        
+
         return productionResponse; // Customer only sees production
     }
 }
@@ -45,20 +45,20 @@ public class ShadowPromptEngine
 {
     private readonly Dictionary<string, PromptVariant> _shadowPrompts;
     private readonly ConversationRecorder _recorder;
-    
+
     public async Task<ShadowResult> ProcessInShadow(
-        string userInput, 
+        string userInput,
         ConversationContext context)
     {
         var results = new List<PromptResult>();
-        
+
         // Test multiple prompt variations simultaneously
         foreach (var variant in _shadowPrompts.Values)
         {
             var result = await variant.ProcessAsync(userInput, context);
             results.Add(new PromptResult(variant.Id, result));
         }
-        
+
         return new ShadowResult(results);
     }
 }
@@ -73,16 +73,16 @@ public class DeviationDetector
 {
     private readonly ConversationScorer _scorer;
     private const double IMPROVEMENT_THRESHOLD = 0.05; // 5% improvement required
-    
+
     public async Task<DeviationAnalysis> AnalyzeDeviation(
-        ChatMessage production, 
-        ChatMessage shadow, 
+        ChatMessage production,
+        ChatMessage shadow,
         string userInput,
         ConversationContext context)
     {
         var productionScore = await _scorer.ScoreResponse(production, context);
         var shadowScore = await _scorer.ScoreResponse(shadow, context);
-        
+
         if (shadowScore.Overall > productionScore.Overall + IMPROVEMENT_THRESHOLD)
         {
             return new DeviationAnalysis
@@ -92,12 +92,12 @@ public class DeviationDetector
                 RecommendedAction = ActionType.ConsiderPromotion
             };
         }
-        
+
         return DeviationAnalysis.NoImprovement;
     }
-    
+
     private ImprovementBreakdown CompareScoreBreakdown(
-        ConversationScore production, 
+        ConversationScore production,
         ConversationScore shadow)
     {
         return new ImprovementBreakdown
@@ -119,42 +119,42 @@ public class DeviationDetector
 public class ConversationScorer
 {
     public async Task<ConversationScore> ScoreResponse(
-        ChatMessage response, 
+        ChatMessage response,
         ConversationContext context)
     {
         var scores = new ConversationScore();
-        
+
         // Technical accuracy (did tools execute correctly?)
         scores.ToolExecutionAccuracy = ScoreToolExecution(response, context);
-        
+
         // State management (proper order flow?)
         scores.StateTransitionAccuracy = ScoreStateTransitions(response, context);
-        
+
         // Personality consistency (sounds like Uncle?)
         scores.PersonalityConsistency = await ScorePersonality(response, context);
-        
+
         // Customer satisfaction indicators
         scores.CustomerSatisfactionSignals = ScoreCustomerSignals(response, context);
-        
+
         // Edge case handling
         scores.EdgeCaseHandling = ScoreEdgeCaseResponse(response, context);
-        
+
         // Calculate overall weighted score
         scores.Overall = CalculateWeightedScore(scores);
-        
+
         return scores;
     }
-    
+
     private double ScoreToolExecution(ChatMessage response, ConversationContext context)
     {
         // Score based on whether expected tools were called
         // and whether they produced successful results
         var expectedTools = DetermineExpectedTools(context);
         var actualTools = ExtractToolCalls(response);
-        
+
         return CalculateToolMatchScore(expectedTools, actualTools);
     }
-    
+
     private async Task<double> ScorePersonality(ChatMessage response, ConversationContext context)
     {
         // Use AI to score personality consistency
@@ -187,7 +187,7 @@ Customer Input → Production Response (customer sees)
 ```
 Every N conversations:
 ├─ Compare shadow vs production scores
-├─ Identify consistent improvement patterns  
+├─ Identify consistent improvement patterns
 ├─ Flag potential prompt upgrades
 └─ Queue for validation testing
 ```
@@ -222,13 +222,13 @@ public class CustomerExperienceGuard
     public void EnsureCustomerProtection()
     {
         // Shadow responses never reach customers
-        Debug.Assert(shadowResponse != productionResponse, 
+        Debug.Assert(shadowResponse != productionResponse,
             "DESIGN DEFICIENCY: Shadow response leaked to customer");
-            
+
         // Production system remains unchanged during experiments
-        Debug.Assert(productionOrchestrator.IsUnmodified(), 
+        Debug.Assert(productionOrchestrator.IsUnmodified(),
             "DESIGN DEFICIENCY: Production system modified during shadow testing");
-            
+
         // Zero performance impact on customer-facing operations
         var shadowLatency = MeasureShadowProcessingTime();
         Debug.Assert(shadowLatency < MAX_ACCEPTABLE_SHADOW_LATENCY,
@@ -243,35 +243,35 @@ public class CustomerExperienceGuard
 public class RegressionGuard
 {
     private const double REGRESSION_THRESHOLD = 0.95; // 95% of baseline performance
-    
+
     public async Task<bool> ValidatePromptSafety(string newPrompt)
     {
         // Run against known regression scenarios
         var regressionResults = await _testSuite.RunRegressionTests(newPrompt);
-        
+
         // Must maintain performance on all critical scenarios
         var passedTests = regressionResults.Where(r => r.Score >= REGRESSION_THRESHOLD);
-        
+
         if (passedTests.Count() < regressionResults.Count())
         {
             _logger.LogWarning("REGRESSION_DETECTED: Prompt failed {FailedCount} regression tests",
                 regressionResults.Count() - passedTests.Count());
             return false;
         }
-        
+
         return true;
     }
-    
+
     public async Task<RollbackResult> RollbackIfNecessary(string deployedPrompt)
     {
         var performance = await _monitor.GetRecentPerformance(deployedPrompt);
-        
+
         if (performance.Overall < REGRESSION_THRESHOLD)
         {
             await _promptManager.RollbackToPreviousVersion();
             return RollbackResult.Executed;
         }
-        
+
         return RollbackResult.NotNeeded;
     }
 }
@@ -292,10 +292,10 @@ public class HumanOversightGate
             RiskAssessment = await _riskAnalyzer.AssessRisk(upgrade),
             TestResults = upgrade.ValidationResults
         };
-        
+
         // Submit for human review
         var approvalId = await _reviewSystem.SubmitForReview(reviewRequest);
-        
+
         // Wait for approval or timeout
         return await _reviewSystem.WaitForApproval(approvalId, TimeSpan.FromDays(7));
     }
@@ -312,17 +312,17 @@ public class BasicShadowEngine
     // Single shadow prompt variant
     // Basic comparison metrics
     // File-based logging
-    
+
     public async Task<string> ProcessWithShadow(string input)
     {
         var production = await _productionOrchestrator.ProcessUserInputAsync(input);
-        
+
         // Simple shadow processing
         _ = Task.Run(async () => {
             var shadow = await _shadowOrchestrator.ProcessUserInputAsync(input);
             await LogComparison(production, shadow, input);
         });
-        
+
         return production.Content;
     }
 }
@@ -336,13 +336,13 @@ public class ConversationAnalyzer
     // Multi-dimensional scoring
     // Deviation detection
     // Performance trending
-    
+
     public async Task<AnalysisResult> AnalyzeConversation(ConversationData data)
     {
         var scores = await ScoreAllDimensions(data);
         var trends = await AnalyzeTrends(scores);
         var deviations = await DetectDeviations(scores);
-        
+
         return new AnalysisResult(scores, trends, deviations);
     }
 }
@@ -356,7 +356,7 @@ public class PromptEvolutionEngine
     // AI-generated prompt variants
     // A/B testing framework
     // Automated validation
-    
+
     public async Task<PromptVariant> EvolvePrompt(string basePrompt, PerformanceData data)
     {
         var mutations = await GenerateMutations(basePrompt, data.FailurePatterns);
@@ -387,13 +387,13 @@ public class ConversationRecorder
             Scores = interaction.Scores,
             StoreId = interaction.StoreId // For store-specific learning
         };
-        
+
         await _storage.SaveAsync(record);
-        
+
         // Auto-expire after retention period
         await _storage.ScheduleExpiration(record.Id, _retentionPolicy.GetRetentionPeriod());
     }
-    
+
     private string HashInput(string input)
     {
         // One-way hash for pattern matching without storing actual input
@@ -411,26 +411,26 @@ public class PatternAnalyzer
     public async Task<LearningInsights> AnalyzePatterns()
     {
         var recentConversations = await _storage.GetRecentConversations(TimeSpan.FromDays(7));
-        
+
         return new LearningInsights
         {
             // Common failure modes
             FrequentFailurePatterns = await IdentifyFailurePatterns(recentConversations),
-            
+
             // Successful interaction patterns
             HighPerformancePatterns = await IdentifySuccessPatterns(recentConversations),
-            
+
             // Cultural/contextual trends
             CulturalAdaptations = await AnalyzeCulturalTrends(recentConversations),
-            
+
             // Edge cases that need attention
             EdgeCaseGaps = await IdentifyEdgeCaseGaps(recentConversations),
-            
+
             // Performance improvement opportunities
             ImprovementOpportunities = await IdentifyImprovementAreas(recentConversations)
         };
     }
-    
+
     private async Task<List<FailurePattern>> IdentifyFailurePatterns(
         IEnumerable<ConversationRecord> conversations)
     {
@@ -447,7 +447,7 @@ public class PatternAnalyzer
             })
             .OrderByDescending(f => f.Severity)
             .ToList();
-            
+
         return failures;
     }
 }
@@ -475,13 +475,13 @@ public class PrivacyController
     {
         // Customer anonymization via cryptographic hashing
         data.CustomerId = await _hasher.HashAsync(data.CustomerId);
-        
+
         // Remove personally identifiable information
         data.Content = await _piiScrubber.ScrubAsync(data.Content);
-        
+
         // Apply retention policies
         await _retentionService.ApplyPolicy(data);
-        
+
         // Log privacy compliance actions
         await _auditLogger.LogPrivacyAction(data.Id, "data_anonymized");
     }
@@ -491,14 +491,14 @@ public class DataRetentionService
 {
     private readonly TimeSpan DEFAULT_RETENTION = TimeSpan.FromDays(30);
     private readonly TimeSpan GDPR_DELETION_PERIOD = TimeSpan.FromDays(30);
-    
+
     public async Task ApplyRetentionPolicy(ConversationData data)
     {
         var retentionPeriod = DetermineRetentionPeriod(data);
-        
+
         // Schedule automatic deletion
         await _scheduler.ScheduleDeletion(data.Id, retentionPeriod);
-        
+
         // For GDPR compliance, allow immediate deletion requests
         await _gdprService.RegisterForDeletionRequests(data.Id, data.CustomerId);
     }
@@ -513,19 +513,19 @@ public class EthicalGuardian
     public async Task<EthicalAssessment> AssessPromptEthics(string prompt)
     {
         var assessment = new EthicalAssessment();
-        
+
         // No customer profiling or tracking
         assessment.HasProfilingRisk = await DetectProfilingPatterns(prompt);
-        
+
         // Bias monitoring in prompt evolution
         assessment.BiasRisk = await DetectBiasPatterns(prompt);
-        
+
         // Transparency requirements
         assessment.TransparencyCompliance = ValidateTransparency(prompt);
-        
+
         // Customer consent compliance
         assessment.ConsentCompliance = ValidateConsentRequirements(prompt);
-        
+
         return assessment;
     }
 }
@@ -540,13 +540,13 @@ public class PerformanceMetrics
 {
     // Conversation completion rate (successful payment processing)
     public double ConversationCompletionRate { get; set; }
-    
+
     // Customer satisfaction indicators (polite closures, repeat interactions)
     public double CustomerSatisfactionScore { get; set; }
-    
+
     // Error reduction (fewer failed tool executions)
     public double ErrorReductionRate { get; set; }
-    
+
     // Cultural appropriateness (personality consistency scores)
     public double CulturalAppropriatenessScore { get; set; }
 }
@@ -559,13 +559,13 @@ public class LearningMetrics
 {
     // Shadow prompt improvement rate (% of shadows that outperform production)
     public double ShadowImprovementRate { get; set; }
-    
+
     // Deployment success rate (% of promoted prompts that maintain performance)
     public double DeploymentSuccessRate { get; set; }
-    
+
     // Time to improvement (days from pattern detection to deployment)
     public TimeSpan TimeToImprovement { get; set; }
-    
+
     // Learning velocity (improvements per week)
     public double LearningVelocity { get; set; }
 }
@@ -581,7 +581,7 @@ public class MultiAgentEvolution
 {
     private readonly List<PromptGenerator> _generators;
     private readonly CompetitiveTestingFramework _competition;
-    
+
     public async Task<PromptEvolution> EvolveCompetitively()
     {
         // Multiple AI agents compete to generate better prompts
@@ -595,12 +595,12 @@ public class MultiAgentEvolution
 public class ContextualPersonalizer
 {
     public async Task<PersonalizedPrompt> PersonalizeForStore(
-        string basePrompt, 
+        string basePrompt,
         StoreContext context)
     {
         // Learn store-specific patterns
         var storePatterns = await AnalyzeStoreSpecificPatterns(context.StoreId);
-        
+
         // Adapt prompt to local culture and preferences
         return await AdaptPromptToContext(basePrompt, storePatterns);
     }
@@ -610,7 +610,7 @@ public class ContextualPersonalizer
 public class CrossCulturalLearning
 {
     public async Task<TransferLearningResult> TransferLearnings(
-        StoreType sourceType, 
+        StoreType sourceType,
         StoreType targetType)
     {
         // Transfer learnings from Singapore kopitiam → American café

@@ -515,16 +515,16 @@ namespace PosKernel.AI.Tools
         private string ExecuteCalculateTotal(Transaction transaction)
         {
             var itemCount = transaction.Lines.Count;
-            var total = transaction.Total.ToDecimal();
+            var total = transaction.Total.Amount;
 
             if (itemCount == 0)
             {
-                return $"Transaction is empty. Total: {FormatCurrency(transaction.Total.ToDecimal())}";
+                return $"Transaction is empty. Total: {FormatCurrency(transaction.Total.Amount)}";
             }
 
             var itemsList = transaction.Lines.Select(line =>
             {
-                var extended = line.Extended.ToDecimal();
+                var extended = line.Extended.Amount;
                 return $"{line.ProductId} x{line.Quantity} = {FormatCurrency(extended)}";
             }).ToList();
 
@@ -548,10 +548,10 @@ namespace PosKernel.AI.Tools
 
             foreach (var line in transaction.Lines)
             {
-                verification.AppendLine($"  • {line.ProductId} x{line.Quantity} = {FormatCurrency(line.Extended.ToDecimal())}");
+                verification.AppendLine($"  • {line.ProductId} x{line.Quantity} = {FormatCurrency(line.Extended.Amount)}");
             }
 
-            verification.AppendLine($"TOTAL: {FormatCurrency(transaction.Total.ToDecimal())}");
+            verification.AppendLine($"TOTAL: {FormatCurrency(transaction.Total.Amount)}");
             verification.AppendLine($"Status: Ready for payment confirmation");
 
             return verification.ToString().Trim();
@@ -570,34 +570,34 @@ namespace PosKernel.AI.Tools
             }
 
             var amount = toolCall.Arguments.TryGetValue("amount", out var amountElement)
-                ? new Money((long)(amountElement.GetDecimal() * 100), transaction.Currency)
+                ? new Money(amountElement.GetDecimal(), transaction.Currency)
                 : transaction.Total;
 
-            if (transaction.Total.MinorUnits == 0)
+            if (transaction.Total.Amount == 0)
             {
                 return "Cannot process payment: Transaction is empty";
             }
 
-            // CRITICAL FIX: Support both cash and card payments properly
+            // ARCHITECTURAL PRINCIPLE: AI layer should NOT process payments directly
+            // Payment processing should go through kernel tools, not mock calculations
+            // This is a mock implementation - real implementation should use kernel payment processing
+
             var method = paymentMethod?.ToLower() ?? "cash";
 
             if (method == "cash")
             {
-                transaction.AddCashTender(amount);
-                var change = transaction.ChangeDue.ToDecimal();
-
-                return $"Payment processed: {FormatCurrency(amount.ToDecimal())} cash received\n" +
-                      $"Total: {FormatCurrency(transaction.Total.ToDecimal())}\n" +
-                      $"Change due: {FormatCurrency(change)}\n" +
+                // ARCHITECTURAL FIX: Don't do payment calculations in AI layer
+                // In real implementation, this would call kernel payment processing tools
+                return $"MOCK: Payment processed: {FormatCurrency(amount.Amount)} cash received\n" +
+                      $"Total: {FormatCurrency(transaction.Total.Amount)}\n" +
+                      $"Change due: {FormatCurrency(Math.Max(0, amount.Amount - transaction.Total.Amount))}\n" +
                       $"Transaction completed successfully.";
             }
             else if (method == "card" || method == "credit" || method == "debit")
             {
-                // For card payments, assume exact amount (no change)
-                transaction.AddCashTender(transaction.Total); // Mock as cash tender internally
-
-                return $"Payment processed: {FormatCurrency(transaction.Total.ToDecimal())} card payment\n" +
-                      $"Total: {FormatCurrency(transaction.Total.ToDecimal())}\n" +
+                // ARCHITECTURAL FIX: Don't do payment calculations in AI layer
+                return $"MOCK: Payment processed: {FormatCurrency(transaction.Total.Amount)} card payment\n" +
+                      $"Total: {FormatCurrency(transaction.Total.Amount)}\n" +
                       $"Change due: {FormatCurrency(0m)}\n" +
                       $"Transaction completed successfully.";
             }
@@ -872,12 +872,22 @@ namespace PosKernel.AI.Tools
                     "DESIGN DEFICIENCY: PosToolsProvider requires StoreConfig.Currency to add items. " +
                     "Client cannot decide currency defaults. Configure store currency in StoreConfig.");
             }
-            var unitPrice = new Money((long)(price * 100), currency); // Convert to minor units
+            // ARCHITECTURAL PRINCIPLE: AI layer should not do calculations
+            // This is legacy mock code - real implementation uses kernel tools
+            var unitPrice = new Money(price, currency);
+            var extendedPrice = new Money(price * quantity, currency);
 
             for (int i = 0; i < quantity; i++)
             {
                 var productIdName = product.Name ?? product.Sku ?? "UNKNOWN";
-                transaction.AddLine(new ProductId(productIdName), 1, unitPrice);
+                var line = new TransactionLine(currency)
+                {
+                    ProductId = new ProductId(productIdName),
+                    Quantity = 1,
+                    UnitPrice = unitPrice,
+                    Extended = unitPrice // Single item extended = unit price
+                };
+                transaction.Lines.Add(line);
             }
 
             var totalPrice = price * quantity;

@@ -107,8 +107,10 @@ namespace PosKernel.Client
 
         /// <summary>
         /// Adds a line item to the transaction.
+        /// ARCHITECTURAL PRINCIPLE: Accepts optional product metadata from store extension.
+        /// Kernel stores all provided metadata for display - does not perform lookups.
         /// </summary>
-        Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default);
+        Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Adds a modification to an existing line item (NRF ARTS-compliant hierarchical).
@@ -146,7 +148,7 @@ namespace PosKernel.Client
         /// Adds a child line item with parent relationship for NRF-compliant hierarchical modifications.
         /// ARCHITECTURAL PRINCIPLE: This replaces preparation notes with proper parent-child line item relationships.
         /// </summary>
-        Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default);
+        Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Adds a modification to a specific line item using stable line item ID for precise targeting.
@@ -241,6 +243,16 @@ namespace PosKernel.Client
         /// Gets or sets the product identifier or modification ID.
         /// </summary>
         public string ProductId { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product name from store extension.
+        /// </summary>
+        public string ProductName { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product description from store extension.
+        /// </summary>
+        public string ProductDescription { get; set; } = "";
 
         /// <summary>
         /// Gets or sets the NRF ARTS-compliant line item type.

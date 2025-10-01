@@ -457,7 +457,7 @@ public class ProductionAITrainingSession : ITrainingSession
 
             // ARCHITECTURAL FIX: Each scenario gets fresh transaction - no contamination between tests
             // Test against REAL production AI system with guaranteed transaction isolation
-            var scenarioResult = await TestScenarioAgainstProductionAI(scenario, generation, scenariosEvaluated + 1);
+            var scenarioResult = await TestScenarioAgainstProductionAI(scenario, generation, scenariosEvaluated + 1, config);
             totalScore += scenarioResult.Score;
             scenariosEvaluated++;
 
@@ -1249,7 +1249,7 @@ public class ProductionAITrainingSession : ITrainingSession
         return scenarios;
     }
 
-    private async Task<ScenarioTestEventArgs> TestScenarioAgainstProductionAI(TrainingScenario scenario, int generation, int scenarioIndex)
+    private async Task<ScenarioTestEventArgs> TestScenarioAgainstProductionAI(TrainingScenario scenario, int generation, int scenarioIndex, TrainingConfiguration config)
     {
         var testStart = DateTime.UtcNow;
 
@@ -1262,8 +1262,8 @@ public class ProductionAITrainingSession : ITrainingSession
             // DESIGN DEFICIENCY FIX: Previous implementation reused same orchestrator, causing transaction contamination
             var freshAiAgent = _productionServices.GetRequiredService<PosAiAgent>();
 
-            // ARCHITECTURAL FIX: Add timeout and completion detection
-            var timeout = TimeSpan.FromSeconds(60); // Reasonable timeout for AI responses
+            // ARCHITECTURAL PRINCIPLE: Configurable timeout instead of hardcoded value
+            var timeout = TimeSpan.FromSeconds(config.ScenarioTimeoutSeconds);
             using var cancellationTokenSource = new CancellationTokenSource(timeout);
 
             // Initialize fresh AI agent (ensures new transaction)

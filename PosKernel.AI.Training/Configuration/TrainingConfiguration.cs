@@ -36,6 +36,10 @@ public class TrainingConfiguration
     [Range(1, 1000, ErrorMessage = "ValidationScenarios must be between 1 and 1,000")]
     public int ValidationScenarios { get; set; } = 5; // TESTING: Reduced from 200 to 5 for initial validation
 
+    // ARCHITECTURAL PRINCIPLE: Configurable timeouts instead of hardcoded values
+    [Range(10, 300, ErrorMessage = "ScenarioTimeoutSeconds must be between 10 and 300 seconds")]
+    public int ScenarioTimeoutSeconds { get; set; } = 60; // AI response timeout per scenario
+
     // Scenario Generation Mix (must sum to 1.0)
     public ScenarioDistribution ScenarioMix { get; set; } = new()
     {
@@ -134,7 +138,7 @@ public class ScenarioDistribution
     /// </summary>
     public void Validate()
     {
-        var total = BasicOrdering + EdgeCases + CulturalVariations + 
+        var total = BasicOrdering + EdgeCases + CulturalVariations +
                    AmbiguousRequests + PaymentScenarios;
 
         // ARCHITECTURAL PRINCIPLE: Fail fast with clear error message

@@ -85,7 +85,7 @@ namespace PosKernel.Service.Services
                 }
 
                 // Create new transaction using existing kernel contracts
-                var transaction = new Transaction
+                var transaction = new Transaction(currency)
                 {
                     Id = TransactionId.New(),
                     State = TransactionState.StartTransaction  // AI-first: fresh transaction ready for customer interaction
@@ -105,7 +105,7 @@ namespace PosKernel.Service.Services
                     Success = true,
                     TransactionId = transactionId,
                     SessionId = sessionId,
-                    Total = transaction.Total.ToDecimal(),
+                    Total = transaction.Total.Amount,
                     State = transaction.State.ToString()
                 };
             }
@@ -121,16 +121,19 @@ namespace PosKernel.Service.Services
         }
 
         /// <summary>
-        /// Adds a line item to an existing transaction.
+        /// Adds a line item to the current transaction.
+        /// ARCHITECTURAL PRINCIPLE: Kernel stores product metadata from store extension, does not perform lookups.
         /// </summary>
-        /// <param name="sessionId">The session identifier.</param>
-        /// <param name="transactionId">The transaction identifier.</param>
+        /// <param name="sessionId">The session ID.</param>
+        /// <param name="transactionId">The transaction ID.</param>
         /// <param name="productId">The product identifier.</param>
-        /// <param name="quantity">The quantity of the product.</param>
+        /// <param name="quantity">The quantity to add.</param>
         /// <param name="unitPrice">The unit price of the product.</param>
+        /// <param name="productName">Optional product name from store extension.</param>
+        /// <param name="productDescription">Optional product description from store extension.</param>
         /// <param name="cancellationToken">Token to cancel the operation.</param>
         /// <returns>The updated transaction result.</returns>
-        public async Task<TransactionResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
+        public async Task<TransactionResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -158,11 +161,27 @@ namespace PosKernel.Service.Services
                     };
                 }
 
-                // Add line item using kernel contracts
+                // Add line item using kernel contracts - direct line management since no business logic in Transaction
                 var productIdObj = new ProductId(productId);
-                var unitPriceMoney = new Money((long)(unitPrice * 100), transaction.Currency);
+                var unitPriceMoney = new Money(unitPrice, transaction.Currency);
+                var extendedPriceMoney = new Money(unitPrice * quantity, transaction.Currency);
 
-                transaction.AddLine(productIdObj, quantity, unitPriceMoney);
+                var line = new TransactionLine(transaction.Currency)
+                {
+                    ProductId = productIdObj,
+                    ProductIdString = productId,
+                    Quantity = quantity,
+                    UnitPrice = unitPriceMoney,
+                    Extended = extendedPriceMoney, // Calculated by kernel, not AI layer
+                    ProductName = productName ?? productId, // Use name if provided, fallback to SKU
+                    ProductDescription = productDescription ?? ""
+                };
+                transaction.Lines.Add(line);
+
+                // Update transaction total - kernel calculates totals
+                transaction.Total = transaction.Lines
+                    .Where(l => !l.IsVoided)
+                    .Aggregate(Money.Zero(transaction.Currency), (acc, l) => acc.Add(l.Extended));
 
                 // Update session activity
                 await _sessionManager.UpdateSessionActivityAsync(sessionId, cancellationToken);
@@ -175,7 +194,7 @@ namespace PosKernel.Service.Services
                     Success = true,
                     TransactionId = transactionId,
                     SessionId = sessionId,
-                    Total = transaction.Total.ToDecimal(),
+                    Total = transaction.Total.Amount,
                     State = transaction.State.ToString(),
                     Data = new
                     {
@@ -234,12 +253,15 @@ namespace PosKernel.Service.Services
                     };
                 }
 
-                // Process payment using kernel contracts
-                var paymentAmount = new Money((long)(amount * 100), transaction.Currency);
+                // Process payment using kernel contracts - direct state management
+                var paymentAmount = new Money(amount, transaction.Currency);
 
-                // For now, we'll use cash tender - in a full implementation,
-                // we'd have different tender types
-                transaction.AddCashTender(paymentAmount);
+                // Update payment state directly - no business logic in Transaction object
+                transaction.Tendered = paymentAmount;
+                transaction.ChangeDue = paymentAmount.Amount > transaction.Total.Amount
+                    ? new Money(paymentAmount.Amount - transaction.Total.Amount, transaction.Currency)
+                    : Money.Zero(transaction.Currency);
+                transaction.State = TransactionState.EndOfTransaction;
 
                 // Update session activity
                 await _sessionManager.UpdateSessionActivityAsync(sessionId, cancellationToken);
@@ -252,14 +274,14 @@ namespace PosKernel.Service.Services
                     Success = true,
                     TransactionId = transactionId,
                     SessionId = sessionId,
-                    Total = transaction.Total.ToDecimal(),
+                    Total = transaction.Total.Amount,
                     State = transaction.State.ToString(),
                     Data = new
                     {
                         PaymentAmount = amount,
                         PaymentType = paymentType,
-                        TenderedAmount = transaction.Tendered.ToDecimal(),
-                        ChangeAmount = Math.Max(0, transaction.Tendered.ToDecimal() - transaction.Total.ToDecimal())
+                        TenderedAmount = transaction.Tendered.Amount,
+                        ChangeAmount = Math.Max(0, transaction.Tendered.Amount - transaction.Total.Amount)
                     }
                 };
             }
@@ -311,18 +333,20 @@ namespace PosKernel.Service.Services
                     Success = true,
                     TransactionId = transactionId,
                     SessionId = sessionId,
-                    Total = transaction.Total.ToDecimal(),
+                    Total = transaction.Total.Amount,
                     State = transaction.State.ToString(),
                     Data = new
                     {
                         LineItems = transaction.Lines.Select(l => new
                         {
                             ProductId = l.ProductId.ToString(),
+                            ProductName = l.ProductName,
+                            ProductDescription = l.ProductDescription,
                             Quantity = l.Quantity,
-                            UnitPrice = l.UnitPrice.ToDecimal(),
-                            Extended = l.Extended.ToDecimal()
+                            UnitPrice = l.UnitPrice.Amount,
+                            Extended = l.Extended.Amount
                         }).ToArray(),
-                        TenderedAmount = transaction.Tendered.ToDecimal(),
+                        TenderedAmount = transaction.Tendered.Amount,
                         Currency = transaction.Currency
                     }
                 };

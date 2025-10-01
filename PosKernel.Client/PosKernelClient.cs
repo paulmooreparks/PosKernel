@@ -198,9 +198,11 @@ namespace PosKernel.Client
         /// <param name="productId">The product identifier or SKU.</param>
         /// <param name="quantity">The quantity of items to add.</param>
         /// <param name="unitPrice">The unit price of the item.</param>
+        /// <param name="productName">Optional product name from store extension.</param>
+        /// <param name="productDescription">Optional product description from store extension.</param>
         /// <param name="cancellationToken">Token to cancel the operation.</param>
         /// <returns>The result of the add line item operation.</returns>
-        public async Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default)
+        public async Task<TransactionClientResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default)
         {
             var request = new
             {
@@ -212,7 +214,9 @@ namespace PosKernel.Client
                     transaction_id = transactionId,
                     product_id = productId,
                     quantity = quantity,
-                    unit_price = unitPrice
+                    unit_price = unitPrice,
+                    product_name = productName,
+                    product_description = productDescription
                 },
                 id = GetNextRequestId()
             };
@@ -417,9 +421,11 @@ namespace PosKernel.Client
         /// <param name="quantity">The quantity of items to add.</param>
         /// <param name="unitPrice">The unit price of the item.</param>
         /// <param name="parentLineNumber">The parent line number this item modifies.</param>
+        /// <param name="productName">Optional product name for display.</param>
+        /// <param name="productDescription">Optional product description for display.</param>
         /// <param name="cancellationToken">Token to cancel the operation.</param>
         /// <returns>The result of the add child line item operation.</returns>
-        public async Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, CancellationToken cancellationToken = default)
+        public async Task<TransactionClientResult> AddChildLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, int parentLineNumber, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default)
         {
             var request = new
             {
@@ -432,7 +438,9 @@ namespace PosKernel.Client
                     product_id = productId,
                     quantity = quantity,
                     unit_price = unitPrice,
-                    parent_line_number = parentLineNumber
+                    parent_line_number = parentLineNumber,
+                    product_name = productName,
+                    product_description = productDescription
                 },
                 id = GetNextRequestId()
             };
@@ -524,7 +532,7 @@ namespace PosKernel.Client
 
             // Serialize and send request
             var requestJson = JsonSerializer.Serialize(request);
-            _logger.LogDebug("Sending request: {Request}", requestJson);
+            _logger.LogDebug("Sending add_line_item request: {Request}", requestJson);
 
             await _writer!.WriteLineAsync(requestJson.AsMemory(), combinedCts.Token);
 

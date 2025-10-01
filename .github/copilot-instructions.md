@@ -1,8 +1,14 @@
 # PosKernel Architecture Instructions
 
-Ackowledge that you have read this file.
-
 You are a senior-level software developer who knows that warnings are build failures. You always fix all warnings before calling a build successful.
+
+### ANTI-PATTERN: NEVER HARDCODE CULTURAL CONTENT IN CODE
+- ❌ NEVER add business rules, cultural assumptions, or prompts to PosAiAgent
+- ❌ NEVER hardcode coffee terminology, language patterns, or cultural behavior
+- ❌ NEVER add "You are an experienced Uncle" or similar roleplay instructions
+- ✅ ALWAYS: PosAiAgent = PURE INFRASTRUCTURE ONLY
+- ✅ Cultural intelligence comes from AI's training, not code
+- ✅ Store context = data loading only, no business logic
 
 ## CRITICAL ARCHITECTURAL PRINCIPLES - READ EVERY TIME
 
@@ -59,6 +65,14 @@ if (currencyService == null) {
 - Ignore all historical logs. Only the latest rebuild output is authoritative.
 - Don't run things that will require me to stop them later.
 - Don't use Console.ReadKey() for things that you might legitimately want to run unattended.
+
+### NEVER RUN TUI APPLICATIONS
+- **NEVER run dotnet run --project PosKernel.AI.Demo or similar TUI applications**
+- **NEVER launch interactive console applications during code analysis or development**
+- **FOCUS on code analysis, file reading, and static analysis instead of running applications**
+- When debugging is needed, read log files from `~/.poskernel/logs` instead of running the application
+- If the user specifically requests to run an application, ask for explicit confirmation first
+- Running TUI applications disrupts the development workflow and should be avoided
 
 ### LOGS AND DIAGNOSTICS
 - When asked to "read the logs", read files in `~/.poskernel/logs` (use `PosKernelConfiguration.ConfigDirectory + "/logs"`).

@@ -70,7 +70,7 @@ namespace PosKernel.Extensions.Restaurant
 
             using var command = connection.CreateCommand();
             command.CommandText = @"
-                SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
+                SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price, p.is_active
                 FROM products p
                 JOIN categories c ON p.category_id = c.id
                 WHERE p.sku = @productId OR p.name LIKE '%' || @productId || '%'
@@ -86,7 +86,7 @@ namespace PosKernel.Extensions.Restaurant
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     CategoryName = reader.GetString(3),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePrice = reader.GetDecimal(4), // Direct decimal from base_price column
                     IsActive = reader.GetBoolean(5)
                 };
 
@@ -94,7 +94,7 @@ namespace PosKernel.Extensions.Restaurant
                 {
                     IsValid = true,
                     ProductInfo = productInfo,
-                    EffectivePriceCents = productInfo.BasePriceCents
+                    EffectivePrice = productInfo.BasePrice
                 };
             }
 
@@ -122,7 +122,7 @@ namespace PosKernel.Extensions.Restaurant
             {
                 // Return all products
                 command.CommandText = @"
-                    SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
+                    SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price, p.is_active
                     FROM products p
                     JOIN categories c ON p.category_id = c.id
                     WHERE p.is_active = 1
@@ -133,7 +133,7 @@ namespace PosKernel.Extensions.Restaurant
             {
                 // Search by term
                 command.CommandText = @"
-                    SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
+                    SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price, p.is_active
                     FROM products p
                     JOIN categories c ON p.category_id = c.id
                     WHERE p.is_active = 1
@@ -166,7 +166,7 @@ namespace PosKernel.Extensions.Restaurant
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     CategoryName = reader.GetString(3),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePrice = reader.GetInt64(4) / 100.0m, // Convert from cents to decimal
                     IsActive = reader.GetBoolean(5)
                 });
             }
@@ -184,7 +184,7 @@ namespace PosKernel.Extensions.Restaurant
 
             using var command = connection.CreateCommand();
             command.CommandText = @"
-                SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
+                SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price, p.is_active
                 FROM products p
                 JOIN categories c ON p.category_id = c.id
                 WHERE p.is_active = 1
@@ -202,7 +202,7 @@ namespace PosKernel.Extensions.Restaurant
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     CategoryName = reader.GetString(3),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePrice = reader.GetDecimal(4), // Direct decimal from base_price column
                     IsActive = reader.GetBoolean(5)
                 });
             }
@@ -222,7 +222,7 @@ namespace PosKernel.Extensions.Restaurant
 
             using var command = connection.CreateCommand();
             command.CommandText = @"
-                SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
+                SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price, p.is_active
                 FROM products p
                 JOIN categories c ON p.category_id = c.id
                 WHERE p.is_active = 1 AND (c.name = @category OR c.id = @category)
@@ -240,7 +240,7 @@ namespace PosKernel.Extensions.Restaurant
                     Name = reader.GetString(1),
                     Description = reader.GetString(2),
                     CategoryName = reader.GetString(3),
-                    BasePriceCents = reader.GetInt64(4),
+                    BasePrice = reader.GetDecimal(4), // Direct decimal from base_price column
                     IsActive = reader.GetBoolean(5)
                 });
             }

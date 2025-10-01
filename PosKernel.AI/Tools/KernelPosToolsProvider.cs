@@ -540,9 +540,10 @@ namespace PosKernel.AI.Tools
                 // Add with correct price
                 var productPrice = product.BasePriceCents / 100.0m;
                 _logger.LogInformation("Adding item {ProductSku} with price: {PriceCents} cents ({Decimal})", product.Sku, product.BasePriceCents, productPrice);
+                _logger.LogInformation("Product metadata: Name='{ProductName}', Description='{ProductDescription}'", product.Name, product.Description);
 
                 var result = await _kernelClient.AddLineItemAsync(
-                    _sessionId!, transactionId, product.Sku, quantity, productPrice, cancellationToken);
+                    _sessionId!, transactionId, product.Sku, quantity, productPrice, product.Name, product.Description, cancellationToken);
 
                 if (!result.Success)
                 {
@@ -595,7 +596,7 @@ namespace PosKernel.AI.Tools
                             }
 
                             var drinkProduct = drinkProducts[0];
-                            var addDrink = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, drinkProduct.Sku, 1, 0.0m, parentLineNumber, cancellationToken);
+                            var addDrink = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, drinkProduct.Sku, 1, 0.0m, parentLineNumber, drinkProduct.Name, drinkProduct.Description, cancellationToken);
                             if (!addDrink.Success)
                             {
                                 _logger.LogError("❌ Failed to add drink to set: {Error}", addDrink.Error);
@@ -902,7 +903,7 @@ namespace PosKernel.AI.Tools
 
                             var setPrice = setProduct.BasePriceCents / 100.0m;
                             var addSet = await _kernelClient.AddLineItemAsync(
-                                _sessionId!, transactionId, setProduct.Sku, 1, setPrice, cancellationToken);
+                                _sessionId!, transactionId, setProduct.Sku, 1, setPrice, setProduct.Name, setProduct.Description, cancellationToken);
                             if (!addSet.Success)
                             {
                                 return $"ERROR: Failed to add set '{setProduct.Sku}' to transaction: {addSet.Error}";
@@ -927,7 +928,7 @@ namespace PosKernel.AI.Tools
                             return $"ERROR: Expected parent SKU '{expectedParentSku}', found '{parent.ProductId}'";
                         }
 
-                        var addDrink = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, drinkProduct.Sku, 1, 0.0m, parent.LineNumber, cancellationToken);
+                        var addDrink = await _kernelClient.AddChildLineItemAsync(_sessionId!, transactionId, drinkProduct.Sku, 1, 0.0m, parent.LineNumber, drinkProduct.Name, drinkProduct.Description, cancellationToken);
                         if (!addDrink.Success)
                         {
                             return $"ERROR: Failed to add drink to set: {addDrink.Error}";
@@ -1281,7 +1282,35 @@ namespace PosKernel.AI.Tools
             }
         }
 
-        private async Task<object> ExecuteGetTransactionAsync(CancellationToken cancellationToken)
+        /// <summary>
+        /// ARCHITECTURAL PRINCIPLE: Gets structured transaction data directly from kernel (no string parsing)
+        /// This method returns the raw kernel transaction for AI layer synchronization.
+        /// </summary>
+        public async Task<TransactionClientResult?> GetStructuredTransactionAsync()
+        {
+            try
+            {
+                await EnsureSessionAsync();
+                var transactionId = await EnsureTransactionAsync();
+
+                var result = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId);
+
+                if (!result.Success)
+                {
+                    _logger.LogWarning("Failed to get structured transaction: {Error}", result.Error);
+                    return null;
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get structured transaction from kernel");
+                return null;
+            }
+        }
+
+        private async Task<string> ExecuteGetTransactionAsync(CancellationToken cancellationToken)
         {
             try
             {
@@ -1300,12 +1329,13 @@ namespace PosKernel.AI.Tools
                     return $"Error getting transaction: {result.Error}";
                 }
 
-                return result;
+                // ARCHITECTURAL PRINCIPLE: Return comprehensive LLM-optimized transaction data
+                return await FormatTransactionForAI(result, cancellationToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get transaction");
-                return $"DESIGN DEFICIENCY: Cannot get transaction without functional kernel service. Error: {ex.Message}";
+                return $"DESIGN_DEFICIENCY: Cannot get transaction without functional kernel service. Error: {ex.Message}";
             }
         }
 
@@ -1514,6 +1544,170 @@ namespace PosKernel.AI.Tools
             }
 
             return $"LINE_UPDATED: {target.LineItemId} {applied} modifications applied";
+        }
+
+        /// <summary>
+        /// ARCHITECTURAL PRINCIPLE: Format complete transaction data for LLM consumption
+        /// Includes ALL properties from kernel + restaurant extension product data
+        /// </summary>
+        private async Task<string> FormatTransactionForAI(TransactionClientResult transaction, CancellationToken cancellationToken)
+        {
+            var result = new StringBuilder();
+
+            // Transaction-level properties (use reflection to get ALL properties)
+            result.AppendLine("=== TRANSACTION DATA ===");
+            result.AppendLine($"Transaction_ID: {transaction.TransactionId}");
+            result.AppendLine($"Session_ID: {transaction.SessionId}");
+            result.AppendLine($"Transaction_State: {transaction.State}");
+            result.AppendLine($"Transaction_Success: {transaction.Success}");
+            result.AppendLine($"Transaction_Total: {FormatCurrency(transaction.Total)}");
+            result.AppendLine($"Transaction_Item_Count: {transaction.LineItems.Count}");
+            result.AppendLine($"Transaction_Error: {transaction.Error ?? "None"}");
+
+            // Additional properties using reflection
+            var transactionProperties = typeof(TransactionClientResult).GetProperties()
+                .Where(p => p.Name != nameof(transaction.LineItems) && // Handle separately
+                           p.Name != nameof(transaction.Data)) // Handle separately
+                .Where(p => p.CanRead);
+
+            foreach (var prop in transactionProperties)
+            {
+                try
+                {
+                    var value = prop.GetValue(transaction);
+                    var formattedValue = prop.Name.Contains("Total") && value is decimal decVal ? FormatCurrency(decVal) : value?.ToString() ?? "null";
+                    result.AppendLine($"Transaction_{prop.Name}: {formattedValue}");
+                }
+                catch (Exception ex)
+                {
+                    result.AppendLine($"Transaction_{prop.Name}: Error reading ({ex.Message})");
+                }
+            }
+
+            result.AppendLine();
+
+            // Line items with comprehensive data including restaurant extension info
+            if (transaction.LineItems.Any())
+            {
+                result.AppendLine("=== LINE ITEMS ===");
+
+                for (int i = 0; i < transaction.LineItems.Count; i++)
+                {
+                    var lineItem = transaction.LineItems[i];
+                    result.AppendLine($"--- LINE_ITEM_{i + 1} ---");
+
+                    // Core line item properties using reflection
+                    var lineItemProperties = typeof(TransactionLineItem).GetProperties().Where(p => p.CanRead);
+                    foreach (var prop in lineItemProperties)
+                    {
+                        try
+                        {
+                            var value = prop.GetValue(lineItem);
+                            var formattedValue = value;
+
+                            // Special formatting for different property types
+                            if (prop.Name.Contains("Price") && value is decimal priceVal)
+                            {
+                                formattedValue = FormatCurrency(priceVal);
+                            }
+                            else if (prop.Name.Contains("Number") && value != null)
+                            {
+                                formattedValue = value.ToString();
+                            }
+                            else
+                            {
+                                formattedValue = value?.ToString() ?? "null";
+                            }
+
+                            result.AppendLine($"  {prop.Name}: {formattedValue}");
+                        }
+                        catch (Exception ex)
+                        {
+                            result.AppendLine($"  {prop.Name}: Error reading ({ex.Message})");
+                        }
+                    }
+
+                    // Enhanced product information from restaurant extension
+                    try
+                    {
+                        var productInfo = await GetEnhancedProductInfo(lineItem.ProductId, cancellationToken);
+                        if (productInfo != null)
+                        {
+                            result.AppendLine($"  Enhanced_Product_Name: {productInfo.Name}");
+                            result.AppendLine($"  Enhanced_Product_Description: {productInfo.Description}");
+                            result.AppendLine($"  Enhanced_Product_Category: {productInfo.CategoryName}");
+                            result.AppendLine($"  Enhanced_Product_Base_Price: {FormatCurrency(productInfo.BasePrice)}");
+                            result.AppendLine($"  Enhanced_Product_Is_Active: {productInfo.IsActive}");
+
+                            // Additional restaurant extension properties using reflection
+                            var productProperties = productInfo.GetType().GetProperties()
+                                .Where(p => p.CanRead)
+                                .Where(p => !new[] { "Sku", "Name", "Description", "CategoryName", "BasePrice", "BasePriceCents", "IsActive" }.Contains(p.Name));                            foreach (var prop in productProperties)
+                            {
+                                try
+                                {
+                                    var value = prop.GetValue(productInfo);
+                                    result.AppendLine($"  Enhanced_Product_{prop.Name}: {value?.ToString() ?? "null"}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    result.AppendLine($"  Enhanced_Product_{prop.Name}: Error reading ({ex.Message})");
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        result.AppendLine($"  Enhanced_Product_Info: Error retrieving ({ex.Message})");
+                    }
+
+                    result.AppendLine();
+                }
+            }
+            else
+            {
+                result.AppendLine("=== LINE ITEMS ===");
+                result.AppendLine("No line items in transaction");
+                result.AppendLine();
+            }
+
+            // Additional transaction data if present
+            if (transaction.Data != null)
+            {
+                result.AppendLine("=== ADDITIONAL DATA ===");
+                try
+                {
+                    result.AppendLine($"Additional_Data: {transaction.Data}");
+                }
+                catch (Exception ex)
+                {
+                    result.AppendLine($"Additional_Data: Error reading ({ex.Message})");
+                }
+                result.AppendLine();
+            }
+
+            result.AppendLine("=== END TRANSACTION DATA ===");
+            return result.ToString();
+        }
+
+        /// <summary>
+        /// Get enhanced product information from restaurant extension
+        /// </summary>
+        private async Task<PosKernel.Extensions.Restaurant.ProductInfo?> GetEnhancedProductInfo(string productId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (_restaurantClient != null)
+                {
+                    var validationResult = await _restaurantClient.ValidateProductAsync(productId, cancellationToken: cancellationToken);
+                    return validationResult.ProductInfo;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to get enhanced product info for {ProductId}", productId);
+            }
+            return null;
         }
     }
 }

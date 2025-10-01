@@ -50,6 +50,9 @@ public class StructuredReceiptFormatter
     {
         var content = new StringBuilder();
 
+        // ARCHITECTURAL DEBUG: Log receipt header values
+        Console.WriteLine($"🔍 FORMATTER_DEBUG: StoreName='{receipt.Store.Name}', TransactionId='{receipt.TransactionId}'");
+
         // Header section
         content.AppendLine(CenterText(receipt.Store.Name));
         content.AppendLine(CenterText($"Transaction #{receipt.TransactionId}"));
@@ -108,7 +111,9 @@ public class StructuredReceiptFormatter
         var itemLine = $"{indent}{item.ProductName}";
         if (item.ExtendedPrice > 0 || indentLevel == 0) // Show price for top-level items or non-zero items
         {
-            itemLine = itemLine.PadRight(35 - indent.Length) + formattedPrice;
+            // ARCHITECTURAL FIX: Use same alignment as total lines for consistency
+            var nameColumnWidth = _receiptWidth - _priceColumnWidth - indent.Length;
+            itemLine = $"{indent}{item.ProductName.PadRight(nameColumnWidth)}{formattedPrice.PadLeft(_priceColumnWidth)}";
         }
         content.AppendLine(itemLine);
 

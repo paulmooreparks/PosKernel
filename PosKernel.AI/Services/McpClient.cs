@@ -107,8 +107,12 @@ namespace PosKernel.AI.Services
                 // ARCHITECTURAL PRINCIPLE: Simple tool definitions - AI knows how to use tools
                 var toolsData = availableTools.Any() ? JsonSerializer.Serialize(availableTools, new JsonSerializerOptions { WriteIndented = true }) : "";
 
+                // ARCHITECTURAL FIX: Instruct AI on tool call format for text-based parsing
+                var toolInstructions = availableTools.Any() ?
+                    "\n\nTo call tools, use format: TOOL_CALL: tool_name {\"param\": \"value\"}\nExample: TOOL_CALL: add_line_item {\"sku\": \"KOPI001\", \"quantity\": 1}" : "";
+
                 // ARCHITECTURAL PRINCIPLE: Pure user input with minimal infrastructure context
-                var enhancedInput = $"CONTEXT: {contextData}\nTOOLS: {toolsData}\nUSER: {userInput}";
+                var enhancedInput = $"CONTEXT: {contextData}\nTOOLS: {toolsData}{toolInstructions}\nUSER: {userInput}";
 
                 // ARCHITECTURAL FIX: Use shared LLM interface for all providers
                 var textResponse = await _llm.GenerateAsync(enhancedInput, cancellationToken);

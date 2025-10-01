@@ -201,15 +201,25 @@ public static class ProductionAIServiceFactory
                     configuration,
                     provider.GetRequiredService<ICurrencyFormattingService>()));
 
+            // Register ConfigurableContextBuilder for training AI (EXACT same as PosKernel.AI)
+            services.AddSingleton<ConfigurableContextBuilder>(provider =>
+                new ConfigurableContextBuilder(
+                    personalityConfig.Type,
+                    provider.GetRequiredService<ILogger<ConfigurableContextBuilder>>()));
+
             // Register PosAiAgent for real kernel mode (EXACT same as PosKernel.AI)
-            services.AddSingleton<PosAiAgent>(provider => new PosAiAgent(
-                provider.GetRequiredService<McpClient>(),
-                provider.GetRequiredService<ILogger<PosAiAgent>>(),
-                provider.GetRequiredService<StoreConfig>(),
-                new Receipt(),
-                new Transaction(),
-                kernelToolsProvider: provider.GetRequiredService<KernelPosToolsProvider>(),
-                mockToolsProvider: null));
+            services.AddSingleton<PosAiAgent>(provider =>
+            {
+                var storeConfig = provider.GetRequiredService<StoreConfig>();
+                return new PosAiAgent(
+                    provider.GetRequiredService<McpClient>(),
+                    provider.GetRequiredService<ILogger<PosAiAgent>>(),
+                    storeConfig,
+                    new Receipt(),
+                    new Transaction(storeConfig.Currency),
+                    provider.GetRequiredService<ConfigurableContextBuilder>(),
+                    provider.GetRequiredService<KernelPosToolsProvider>());
+            });
         }
         catch (Exception ex)
         {

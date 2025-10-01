@@ -38,8 +38,10 @@ namespace PosKernel.Service.Services
 
         /// <summary>
         /// Adds a line item to the current transaction.
+        /// ARCHITECTURAL PRINCIPLE: Accepts optional product metadata from store extension.
+        /// Kernel stores all provided metadata for display - does not perform lookups.
         /// </summary>
-        Task<TransactionResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, CancellationToken cancellationToken = default);
+        Task<TransactionResult> AddLineItemAsync(string sessionId, string transactionId, string productId, int quantity, decimal unitPrice, string? productName = null, string? productDescription = null, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Processes payment for the transaction.

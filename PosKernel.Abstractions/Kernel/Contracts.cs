@@ -17,6 +17,53 @@
 namespace PosKernel.Abstractions;
 
 /// <summary>
+/// NRF ARTS-compliant line item type enumeration.
+/// Defines the standard types of line items in POS transactions.
+/// </summary>
+public enum LineItemType
+{
+    /// <summary>
+    /// Standard sale item.
+    /// </summary>
+    Sale = 0,
+
+    /// <summary>
+    /// Return/refund item.
+    /// </summary>
+    Return = 1,
+
+    /// <summary>
+    /// Void/cancel item.
+    /// </summary>
+    Void = 2,
+
+    /// <summary>
+    /// Modification to another item (e.g., "extra cheese").
+    /// </summary>
+    Modification = 3,
+
+    /// <summary>
+    /// Discount applied to item or transaction.
+    /// </summary>
+    Discount = 4,
+
+    /// <summary>
+    /// Tax line item.
+    /// </summary>
+    Tax = 5,
+
+    /// <summary>
+    /// Service charge or fee.
+    /// </summary>
+    ServiceCharge = 6,
+
+    /// <summary>
+    /// Tip or gratuity.
+    /// </summary>
+    Tip = 7
+}
+
+/// <summary>
 /// Represents the current state of a transaction lifecycle in the AI-first architecture.
 /// States drive AI behavior - no prompts or orchestration logic.
 /// </summary>
@@ -65,14 +112,35 @@ public enum TransactionState
 }
 
 /// <summary>
-/// Represents a single line item within a transaction including quantity and pricing.
+/// ARCHITECTURAL PRINCIPLE: Pure data holder for displaying POS kernel line item calculations.
+/// This class NEVER performs calculations - all values are set from authoritative POS kernel responses.
+/// Includes ALL fields from kernel TransactionLineItem for complete display capabilities.
 /// </summary>
 public sealed class TransactionLine
 {
     /// <summary>
     /// Gets the unique identifier for this line item within the transaction.
+    /// Legacy field - use LineItemId for kernel compatibility.
     /// </summary>
-    public LineItemId LineId { get; init; } = LineItemId.New();
+    public LineItemId LineId { get; init; } = new LineItemId(Guid.Empty);
+
+    /// <summary>
+    /// Gets or sets the stable line item identifier assigned by the kernel.
+    /// ARCHITECTURAL PRINCIPLE: Stable ID remains constant even when line numbers change due to voids.
+    /// Use this for precise targeting of modifications, not the line number.
+    /// </summary>
+    public string LineItemId { get; set; } = "";
+
+    /// <summary>
+    /// Gets or sets the line number (1-based for POS display/void operations).
+    /// NOTE: Line numbers may change due to voids/insertions. Use LineItemId for stable references.
+    /// </summary>
+    public int LineNumber { get; set; }
+
+    /// <summary>
+    /// Gets or sets the parent line number (0 for base items, parent line for modifications).
+    /// </summary>
+    public int ParentLineNumber { get; set; }
 
     /// <summary>
     /// Gets the product identifier associated with this line.
@@ -80,23 +148,86 @@ public sealed class TransactionLine
     public ProductId ProductId { get; init; } = new("");
 
     /// <summary>
+    /// Gets or sets the product identifier or modification ID (kernel format).
+    /// </summary>
+    public string ProductIdString { get; set; } = "";
+
+    /// <summary>
+    /// Gets or sets the NRF ARTS-compliant line item type.
+    /// </summary>
+    public LineItemType ItemType { get; set; }
+
+    /// <summary>
     /// Gets or sets the quantity for the product on this line.
     /// </summary>
     public int Quantity { get; set; }
 
     /// <summary>
-    /// Gets or sets the unit price for the product (in minor currency units).
+    /// Gets or sets the unit price for the product.
+    /// ARCHITECTURAL PRINCIPLE: Value ONLY set from POS kernel, never calculated in AI layer.
     /// </summary>
     public Money UnitPrice { get; set; }
 
     /// <summary>
-    /// Gets the extended price (unit price multiplied by quantity).
+    /// Gets or sets the extended price for this line item.
+    /// ARCHITECTURAL PRINCIPLE: Value ONLY set from POS kernel calculations, never computed in AI layer.
     /// </summary>
-    public Money Extended => new(UnitPrice.MinorUnits * Quantity, UnitPrice.Currency);
+    public Money Extended { get; set; }
+
+    /// <summary>
+    /// Gets or sets the display indent level for NRF-style receipt formatting.
+    /// </summary>
+    public int DisplayIndentLevel { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this line item is voided.
+    /// </summary>
+    public bool IsVoided { get; set; }
+
+    /// <summary>
+    /// Gets or sets the void reason.
+    /// </summary>
+    public string? VoidReason { get; set; }
+
+    /// <summary>
+    /// Gets or sets additional product information for display (name, description, etc.).
+    /// Populated from restaurant extension or other store services.
+    /// </summary>
+    public string ProductName { get; set; } = "";
+
+    /// <summary>
+    /// Gets or sets the product description for detailed display.
+    /// </summary>
+    public string ProductDescription { get; set; } = "";
+
+    /// <summary>
+    /// Gets or sets additional metadata from the kernel or extensions.
+    /// </summary>
+    public Dictionary<string, object> Metadata { get; set; } = new();
+
+    /// <summary>
+    /// ARCHITECTURAL PRINCIPLE: Constructor requires currency for Money initialization.
+    /// All Money properties initialized with correct currency from store configuration.
+    /// </summary>
+    public TransactionLine(string currency)
+    {
+        UnitPrice = Money.Zero(currency);
+        Extended = Money.Zero(currency);
+    }
+
+    /// <summary>
+    /// Default constructor for serialization - requires currency to be set explicitly.
+    /// </summary>
+    public TransactionLine()
+    {
+        // Note: UnitPrice and Extended must be set explicitly with correct currency
+    }
 }
 
 /// <summary>
-/// Represents a complete point-of-sale transaction composed of line items and tenders.
+/// ARCHITECTURAL PRINCIPLE: Pure data transfer object for displaying POS kernel calculations.
+/// This class NEVER performs calculations - all values are set from authoritative POS kernel responses.
+/// Currency is determined by store configuration, never hardcoded.
 /// </summary>
 public sealed class Transaction
 {
@@ -112,8 +243,9 @@ public sealed class Transaction
 
     /// <summary>
     /// Gets the ISO 4217 currency code for the transaction.
+    /// ARCHITECTURAL PRINCIPLE: Must be provided from store configuration, never hardcoded.
     /// </summary>
-    public string Currency { get; init; } = "USD";
+    public string Currency { get; init; }
 
     /// <summary>
     /// Gets the collection of line items for this transaction.
@@ -121,72 +253,45 @@ public sealed class Transaction
     public List<TransactionLine> Lines { get; } = new();
 
     /// <summary>
-    /// Gets the total extended amount of all line items.
+    /// Gets or sets the total amount for this transaction.
+    /// ARCHITECTURAL PRINCIPLE: Value ONLY set from POS kernel calculations, never computed in AI layer.
     /// </summary>
-    public Money Total => Lines.Aggregate(Money.Zero(Currency), (acc, l) => acc.Add(l.Extended));
+    public Money Total { get; set; }
 
     /// <summary>
-    /// Gets the total tendered amount applied to the transaction.
+    /// Gets or sets the total tendered amount applied to the transaction.
+    /// ARCHITECTURAL PRINCIPLE: Value ONLY set from POS kernel calculations, never computed in AI layer.
     /// </summary>
-    public Money Tendered { get; private set; } = Money.Zero("USD");
+    public Money Tendered { get; set; }
 
     /// <summary>
-    /// Gets the change due (zero if not fully paid or if exact payment).
+    /// Gets or sets the change due amount.
+    /// ARCHITECTURAL PRINCIPLE: Value ONLY set from POS kernel calculations, never computed in AI layer.
     /// </summary>
-    public Money ChangeDue => Tendered.MinorUnits > Total.MinorUnits ? new(Tendered.MinorUnits - Total.MinorUnits, Currency) : Money.Zero(Currency);
+    public Money ChangeDue { get; set; }
 
     /// <summary>
-    /// Adds a line item to the transaction while in the <see cref="TransactionState.ItemsPending"/> state.
+    /// ARCHITECTURAL PRINCIPLE: Constructor requires currency from store configuration.
+    /// No hardcoded currency defaults - fail fast if not provided.
     /// </summary>
-    /// <param name="productId">The product identifier to add.</param>
-    /// <param name="quantity">The quantity being purchased.</param>
-    /// <param name="unitPrice">The unit price for the product.</param>
-    /// <exception cref="InvalidOperationException">Thrown if the transaction is not in the ItemsPending state.</exception>
-    public void AddLine(ProductId productId, int quantity, Money unitPrice)
+    public Transaction(string currency)
     {
-        if (State != TransactionState.ItemsPending && State != TransactionState.StartTransaction)
-        {
-            throw new InvalidOperationException("Cannot add line when not building or starting transaction");
-        }
-
-        // ARCHITECTURAL PRINCIPLE: Transition to ItemsPending when first item added
-        if (State == TransactionState.StartTransaction)
-        {
-            State = TransactionState.ItemsPending;
-        }
-
-        var line = new TransactionLine
-        {
-            ProductId = productId,
-            Quantity = quantity,
-            UnitPrice = unitPrice
-        };
-        Lines.Add(line);
+        Currency = currency ?? throw new ArgumentNullException(nameof(currency));
+        Total = Money.Zero(currency);
+        Tendered = Money.Zero(currency);
+        ChangeDue = Money.Zero(currency);
     }
 
     /// <summary>
-    /// Adds a cash tender amount while in the <see cref="TransactionState.ItemsPending"/> or <see cref="TransactionState.PaymentPending"/> state. 
-    /// Automatically transitions the transaction to <see cref="TransactionState.EndOfTransaction"/> when total tendered meets or exceeds the total.
+    /// ARCHITECTURAL PRINCIPLE: Updates transaction state from authoritative POS kernel data.
+    /// This method receives calculated values from kernel and updates display properties.
+    /// No calculations performed in AI layer.
     /// </summary>
-    /// <param name="amount">The cash amount tendered.</param>
-    /// <exception cref="InvalidOperationException">Thrown if the transaction is not in the correct state for payment.</exception>
-    public void AddCashTender(Money amount)
+    public void UpdateFromKernel(Money total, Money tendered, Money changeDue, TransactionState state)
     {
-        if (State != TransactionState.ItemsPending && State != TransactionState.PaymentPending)
-        {
-            throw new InvalidOperationException("Cannot tender when not in items pending or payment pending state");
-        }
-
-        // ARCHITECTURAL PRINCIPLE: Transition to PaymentPending when payment starts
-        if (State == TransactionState.ItemsPending)
-        {
-            State = TransactionState.PaymentPending;
-        }
-
-        Tendered = new Money(Tendered.MinorUnits + amount.MinorUnits, amount.Currency);
-        if (Tendered.MinorUnits >= Total.MinorUnits)
-        {
-            State = TransactionState.EndOfTransaction;  // AI will see this and auto-cycle to StartTransaction
-        }
+        Total = total;
+        Tendered = tendered;
+        ChangeDue = changeDue;
+        State = state;
     }
 }

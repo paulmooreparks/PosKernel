@@ -67,7 +67,7 @@ if (userInput.Contains("kosong")) {
 
 // AI generates structured commands, not text
 await _kernelClient.AddChildLineItemAsync(
-    sessionId, transactionId, 
+    sessionId, transactionId,
     "MOD_NO_SUGAR", 1, 0.0m, parentLineNumber
 );
 ```
@@ -94,7 +94,7 @@ pub fn add_line_item(&mut self, product_id: &str, quantity: i32, unit_price: Dec
 public class SingaporeanKopitiamUncle {
     public string GetGreeting() {
         var hour = DateTime.Now.Hour;
-        return hour < 11 ? "Morning lah! What you want?" 
+        return hour < 11 ? "Morning lah! What you want?"
              : hour < 15 ? "Afternoon! How are you today?"
              : "Evening! Long day ah?";
     }
@@ -121,7 +121,7 @@ private async Task SyncReceiptWithKernelAsync()
 {
     // Direct kernel access - no text conversion
     var transactionResult = await kernelClient.GetTransactionAsync(sessionId, transactionId);
-    
+
     // Direct structured mapping - zero parsing
     foreach (var kernelItem in transactionResult.LineItems)
     {
@@ -150,26 +150,26 @@ private List<(string modSku, string description)> ProcessKopitiamTerms(string pr
 {
     var modifications = new List<(string, string)>();
     var notes = preparationNotes.ToLowerInvariant();
-    
+
     // Cultural intelligence: Singlish/Hokkien terms
     if (notes.Contains("kosong")) modifications.Add(("MOD_NO_SUGAR", "No Sugar"));
     if (notes.Contains("siew dai")) modifications.Add(("MOD_LESS_SUGAR", "Less Sugar"));
     if (notes.Contains("gao")) modifications.Add(("MOD_STRONG", "Extra Strong"));
-    
+
     return modifications; // Structured data output
 }
 ```
 
-#### **American Barista**  
+#### **American Barista**
 ```csharp
 // Premium modification processing
 private List<(string modSku, decimal price)> ProcessCoffeeModifications(string customerRequest)
 {
     var modifications = new List<(string, decimal)>();
-    
+
     if (customerRequest.Contains("oat milk")) modifications.Add(("MOD_OAT_MILK", 0.65m));
     if (customerRequest.Contains("extra shot")) modifications.Add(("MOD_EXTRA_SHOT", 0.75m));
-    
+
     return modifications; // Structured pricing data
 }
 ```
@@ -180,10 +180,10 @@ private List<(string modSku, decimal price)> ProcessCoffeeModifications(string c
 private List<(string productSku, string displayName)> ProcessFrenchTerms(string customerOrder)
 {
     var items = new List<(string, string)>();
-    
+
     if (customerOrder.Contains("pain au chocolat")) items.Add(("PAIN_CHOCO", "Pain au Chocolat"));
     if (customerOrder.Contains("café")) items.Add(("CAFE", "Café"));
-    
+
     return items; // Structured product data
 }
 ```
@@ -199,7 +199,7 @@ public class AiPersonalityTimeHandler
     {
         var currentTime = DateTime.Now;
         var hour = currentTime.Hour;
-        
+
         return personalityType switch
         {
             AiPersonalityType.SingaporeanKopitiamUncle => GetKopitiamGreeting(hour),
@@ -208,7 +208,7 @@ public class AiPersonalityTimeHandler
             _ => "Welcome! How can I help you?"
         };
     }
-    
+
     private string GetKopitiamGreeting(int hour) => hour switch
     {
         < 11 => "Morning lah! What you want today?",
@@ -233,7 +233,7 @@ if (_conversationState == ConversationState.AwaitingSetCustomization)
     // Step 2: AI processes cultural terms
     var drinkChoice = ExtractDrinkFromCulturalTerms("teh c kosong");
     // Result: "Teh C" with "no sugar" modification
-    
+
     // Step 3: AI generates structured commands
     await ExecuteUpdateSetConfiguration("TSET001", "drink", "Teh C");
     // Followed by: Process preparation modification "no sugar"
@@ -280,7 +280,7 @@ private void UpdateConversationState(McpToolCall toolCall, string result)
                 _logger.LogInformation("Conversation state: Awaiting set customization");
             }
             break;
-            
+
         case "update_set_configuration":
             if (result.StartsWith("SET_UPDATED:"))
             {
@@ -307,7 +307,7 @@ private string BuildToolAnalysisPrompt(PromptContext promptContext, string conte
         prompt += $"Customer's current response ('{promptContext.UserInput}') is their drink choice for the set. ";
         prompt += "Use `update_set_configuration` tool with customization_type='drink' and their drink choice.\n";
     }
-    
+
     return prompt;
 }
 ```
@@ -326,7 +326,7 @@ private string FormatCurrency(decimal amount)
     {
         return _currencyFormatter.FormatCurrency(amount, _storeConfig.Currency, _storeConfig.StoreId);
     }
-    
+
     // ARCHITECTURAL PRINCIPLE: FAIL FAST - No fallback formatting for production paths
     throw new InvalidOperationException(
         $"DESIGN DEFICIENCY: Currency formatting service not available. " +
@@ -386,7 +386,7 @@ public void Should_Handle_Kopitiam_Cultural_Terms()
 
 ### **Structured Data Tests**
 ```csharp
-[Test]  
+[Test]
 public void Should_Preserve_NRF_Hierarchy()
 {
     var transaction = kernelClient.GetTransaction(sessionId, transactionId);

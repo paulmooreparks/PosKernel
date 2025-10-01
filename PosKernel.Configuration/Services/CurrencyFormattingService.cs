@@ -92,7 +92,7 @@ namespace PosKernel.Configuration.Services
         /// <inheritdoc />
         public string FormatCurrency(Money amount, string storeId)
         {
-            return FormatCurrency(amount.ToDecimal(), amount.Currency, storeId);
+            return FormatCurrency(amount.Amount, amount.Currency, storeId);
         }
 
         /// <inheritdoc />

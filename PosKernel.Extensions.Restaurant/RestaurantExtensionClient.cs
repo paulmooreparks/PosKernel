@@ -27,6 +27,18 @@ using PosKernel.Extensions.Restaurant;
 namespace PosKernel.Extensions.Restaurant.Client
 {
     /// <summary>
+    /// Configuration options for RestaurantExtensionClient.
+    /// ARCHITECTURAL PRINCIPLE: Configurable timeouts instead of hardcoded values.
+    /// </summary>
+    public class RestaurantExtensionClientOptions
+    {
+        /// <summary>
+        /// Request timeout in seconds for restaurant extension communications.
+        /// </summary>
+        public int RequestTimeoutSeconds { get; set; } = 10;
+    }
+
+    /// <summary>
     /// Client for communicating with the restaurant domain extension service.
     /// Provides a clean interface for AI demo and other clients to access
     /// restaurant-specific product catalog functionality via IPC.
@@ -35,6 +47,7 @@ namespace PosKernel.Extensions.Restaurant.Client
     {
         private readonly string _pipeName;
         private readonly ILogger<RestaurantExtensionClient> _logger;
+        private readonly RestaurantExtensionClientOptions _options;
         private readonly object _lock = new();
         private NamedPipeClientStream? _client;
         private StreamReader? _reader;
@@ -45,10 +58,14 @@ namespace PosKernel.Extensions.Restaurant.Client
         /// Initializes a new instance of the RestaurantExtensionClient.
         /// </summary>
         /// <param name="logger">Logger for debugging and diagnostics.</param>
+        /// <param name="options">Configuration options including timeout settings.</param>
         /// <param name="pipeName">Named pipe name for IPC communication.</param>
-        public RestaurantExtensionClient(ILogger<RestaurantExtensionClient> logger, string pipeName = "poskernel-restaurant-extension")
+        public RestaurantExtensionClient(ILogger<RestaurantExtensionClient> logger,
+            RestaurantExtensionClientOptions? options = null,
+            string pipeName = "poskernel-restaurant-extension")
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _options = options ?? new RestaurantExtensionClientOptions();
             _pipeName = pipeName;
         }
 
@@ -143,16 +160,16 @@ namespace PosKernel.Extensions.Restaurant.Client
             }
 
             if (response.Data?.TryGetValue("product_info", out var productInfoObj) == true &&
-                response.Data.TryGetValue("effective_price_cents", out var priceObj))
+                response.Data.TryGetValue("effective_price", out var priceObj))
             {
                 var productInfo = JsonSerializer.Deserialize<ProductInfo>(JsonSerializer.Serialize(productInfoObj));
-                var effectivePrice = Convert.ToInt64(priceObj);
+                var effectivePrice = priceObj is JsonElement priceElement && priceElement.ValueKind == JsonValueKind.Number ? priceElement.GetDecimal() : 0.0m;
 
                 return new ProductValidationResult
                 {
                     IsValid = true,
                     ProductInfo = productInfo!,
-                    EffectivePriceCents = effectivePrice
+                    EffectivePrice = effectivePrice
                 };
             }
 
@@ -339,9 +356,9 @@ namespace PosKernel.Extensions.Restaurant.Client
 
                 await _writer.WriteLineAsync(requestJson.AsMemory(), cancellationToken);
 
-                // ADD TIMEOUT: Don't wait forever for a response
+                // ARCHITECTURAL PRINCIPLE: Configurable timeout instead of hardcoded value
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(10)); // 10 second timeout
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(_options.RequestTimeoutSeconds));
 
                 var responseJson = await _reader.ReadLineAsync(timeoutCts.Token);
                 if (responseJson == null)
@@ -498,9 +515,9 @@ namespace PosKernel.Extensions.Restaurant.Client
         public ProductInfo ProductInfo { get; set; } = new();
 
         /// <summary>
-        /// Gets or sets the effective price in cents.
+        /// Gets or sets the effective price.
         /// </summary>
-        public long EffectivePriceCents { get; set; }
+        public decimal EffectivePrice { get; set; }
     }
 
     /// <summary>

@@ -181,15 +181,25 @@ class Program
                             configuration,
                             provider.GetRequiredService<ICurrencyFormattingService>()));
 
+                    // Register ConfigurableContextBuilder for context-driven AI system
+                    services.AddSingleton<ConfigurableContextBuilder>(provider =>
+                        new ConfigurableContextBuilder(
+                            personality.Type,
+                            provider.GetRequiredService<ILogger<ConfigurableContextBuilder>>()));
+
                     // Register PosAiAgent for real kernel mode
-                    services.AddSingleton<PosAiAgent>(provider => new PosAiAgent(
-                        provider.GetRequiredService<McpClient>(),
-                        provider.GetRequiredService<ILogger<PosAiAgent>>(),
-                        provider.GetRequiredService<StoreConfig>(),
-                        new Receipt(),
-                        new Transaction(),
-                        kernelToolsProvider: provider.GetRequiredService<KernelPosToolsProvider>(),
-                        mockToolsProvider: null));
+                    services.AddSingleton<PosAiAgent>(provider =>
+                    {
+                        var storeConfig = provider.GetRequiredService<StoreConfig>();
+                        return new PosAiAgent(
+                            provider.GetRequiredService<McpClient>(),
+                            provider.GetRequiredService<ILogger<PosAiAgent>>(),
+                            storeConfig,
+                            new Receipt(),
+                            new Transaction(storeConfig.Currency),
+                            provider.GetRequiredService<ConfigurableContextBuilder>(),
+                            provider.GetRequiredService<KernelPosToolsProvider>());
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -219,23 +229,18 @@ class Program
             }
             else
             {
-                // Mock mode explicitly requested
-                ui.Log.AddLog("Setting up mock tools integration (development mode)...");
-                services.AddSingleton<PosToolsProvider>(provider =>
-                    new PosToolsProvider(
-                        new KopitiamProductCatalogService(),
-                        provider.GetRequiredService<ILogger<PosToolsProvider>>(),
-                        storeSelectionResult));
+                    // FAIL FAST - Exit immediately since mock mode is no longer supported
+                    ui.Log.ShowError("ARCHITECTURAL CHANGE: Mock mode has been removed. Only real kernel mode is supported.");
+                    ui.Chat.ShowMessage(new ChatMessage
+                    {
+                        Sender = "System",
+                        Content = "❌ Mock mode no longer supported. Please start the Rust kernel service and restaurant extension.",
+                        IsSystem = true,
+                        ShowInCleanMode = true
+                    });
 
-                // Register PosAiAgent for mock mode
-                services.AddSingleton<PosAiAgent>(provider => new PosAiAgent(
-                    provider.GetRequiredService<McpClient>(),
-                    provider.GetRequiredService<ILogger<PosAiAgent>>(),
-                    provider.GetRequiredService<StoreConfig>(),
-                    new Receipt(),
-                    new Transaction(),
-                    kernelToolsProvider: null,
-                    mockToolsProvider: provider.GetRequiredService<PosToolsProvider>()));
+                    await ui.ShutdownAsync();
+                    return 1;
             }
 
             // Add store configuration and orchestrator to services

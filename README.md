@@ -11,7 +11,7 @@ A modern, culturally-aware Point of Sale system written in Rust and C#, designed
 Kernel JSON → Client → Text Formatting → Regex Parsing → Receipt Display (LOSSY)
 ```
 
-### **✅ Our Revolutionary Architecture (IMPLEMENTED)**  
+### **✅ Our Revolutionary Architecture (IMPLEMENTED)**
 ```
 Kernel JSON → Client → Structured Objects → Receipt Display (LOSSLESS)
 ```
@@ -100,7 +100,7 @@ Uncle: Ah, Kopi C no sugar! S$3.40. What else you want?
 > kaya toast set
 Uncle: OK, Traditional Kaya Toast Set added! What drink you want with the set?
 
-> teh c kosong  
+> teh c kosong
 Uncle: Perfect! Teh C no sugar for your set. Anything else today?
 ```
 
@@ -112,7 +112,7 @@ Uncle: Perfect! Teh C no sugar for your set. Anything else today?
 ┌─────────────────────────────────────────────┐
 │           AI Personalities Layer            │
 │  • Cultural Intelligence (kopitiam terms)   │
-│  • Time/Context Awareness                   │  
+│  • Time/Context Awareness                   │
 │  • Natural Language Processing              │
 └─────────────────────────────────────────────┘
                           ↓
@@ -152,7 +152,7 @@ PosKernel/
 │   └── src/bin/service.rs       # HTTP service wrapper
 ├── PosKernel.AI/               # AI personality system
 │   ├── PosAiAgent.cs           # AI-first interaction layer (pure agency)
-│   └── Tools/                   # MCP tool implementations  
+│   └── Tools/                   # MCP tool implementations
 ├── PosKernel.Client/           # Kernel client libraries
 │   └── RustKernelClient.cs     # HTTP client for Rust service
 ├── PosKernel.Extensions.Restaurant/ # Restaurant domain
@@ -171,7 +171,7 @@ Customer: "kopi si kosong"
 🇸🇬 Uncle: "OK lah, Kopi C no sugar. S$3.40. What else?"
 ```
 
-### **☕ American Coffee Shop** 
+### **☕ American Coffee Shop**
 ```
 🇺🇸 Barista: "Good morning! What can I get started for you?"
 Customer: "large oat milk latte with extra shot"
@@ -194,7 +194,7 @@ Customer: "pain au chocolat et café"
 - **Dependency Injection**: Full DI container support with fail-fast error handling
 - **Memory Safety**: All Rust-C# FFI boundaries properly secured
 
-### **🧠 AI Intelligence**  
+### **🧠 AI Intelligence**
 
 - **Two-Phase Pattern**: Tool execution separated from conversational response generation
 - **Cultural Awareness**: AI personalities handle cultural terms without kernel involvement
@@ -203,7 +203,7 @@ Customer: "pain au chocolat et café"
 
 ### **📊 NRF Compliance**
 
-- **Hierarchical Transactions**: Full parent-child line item relationships  
+- **Hierarchical Transactions**: Full parent-child line item relationships
 - **Modification Tracking**: All modifications stored as separate kernel line items
 - **Void Cascade**: Proper recursive voiding of parent-child relationships
 - **Audit Trail**: Complete transaction history for regulatory compliance
@@ -211,7 +211,7 @@ Customer: "pain au chocolat et café"
 ## Performance & Reliability
 
 - **Memory-Safe Core**: Rust kernel eliminates entire classes of memory bugs
-- **Zero-Copy Operations**: Efficient data structures throughout transaction pipeline  
+- **Zero-Copy Operations**: Efficient data structures throughout transaction pipeline
 - **Fail-Fast Design**: Clear error messages prevent silent failures
 - **Structured Data**: No text parsing means no parsing failures or data loss
 - **Type Safety**: Strong typing throughout all language boundaries
@@ -223,7 +223,7 @@ We welcome contributions! Please see our [contributing guidelines](docs/CONTRIBU
 ### **Development Priorities:**
 
 1. **Additional Store Types**: More cultural experiences (Japanese konbini, Indian chai stall)
-2. **Advanced Modifications**: Support for complex recipe modifications 
+2. **Advanced Modifications**: Support for complex recipe modifications
 3. **Multi-Language Support**: Additional AI personality languages
 4. **Performance Optimization**: Further kernel performance improvements
 5. **Integration APIs**: REST/GraphQL APIs for third-party integrations
@@ -232,7 +232,7 @@ We welcome contributions! Please see our [contributing guidelines](docs/CONTRIBU
 
 - **[Architectural Overview](docs/ARCHITECTURE_INDEX.md)** - Complete system architecture
 - **[Recursive Modifications](docs/recursive-modification-architecture.md)** - NRF-compliant modification system
-- **[AI Personality Design](docs/ai-architecture-separation.md)** - Cultural intelligence architecture  
+- **[AI Personality Design](docs/ai-architecture-separation.md)** - Cultural intelligence architecture
 - **[Internationalization Strategy](docs/internationalization-strategy.md)** - Multi-cultural support
 - **[Performance Benchmarks](docs/examples/performance/)** - System performance data
 

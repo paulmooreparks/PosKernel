@@ -48,7 +48,7 @@ namespace PosKernel.Extensions.Restaurant
         {
             var typedLogger = logger as ILogger<RestaurantExtensionClient> ??
                 new LoggerWrapper<RestaurantExtensionClient>(logger);
-            return new RestaurantExtensionClient(typedLogger, pipeName);
+            return new RestaurantExtensionClient(typedLogger, null, pipeName);
         }
 
         /// <summary>

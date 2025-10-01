@@ -84,7 +84,7 @@ public static class Pos
         }
 
         bool isStandard = IsStandardCurrency(currencyCode);
-        
+
         // For standard currencies, we know the decimal places
         byte decimalPlaces = currencyCode.ToUpperInvariant() switch
         {
@@ -120,7 +120,7 @@ public static class Pos
 
         var storeBytes = Encoding.UTF8.GetBytes(store);
         var currencyBytes = Encoding.UTF8.GetBytes(currency.ToUpperInvariant());
-        
+
         // ARCHITECTURAL PRINCIPLE: Client must provide decimal places - no hardcoded defaults
         // Use currency-specific decimal places if not explicitly provided
         byte actualDecimalPlaces;
@@ -134,13 +134,13 @@ public static class Pos
             var currencyInfo = GetCurrencyInfo(currency);
             actualDecimalPlaces = currencyInfo?.DecimalPlaces ?? 2; // Fallback for custom currencies
         }
-        
+
         var result = RustNative.pk_begin_transaction(
             storeBytes, (UIntPtr)storeBytes.Length,
             currencyBytes, (UIntPtr)currencyBytes.Length,
             actualDecimalPlaces,
             out var handle);
-        
+
         EnsureSuccess(result, nameof(BeginTransaction));
         return handle;
     }
@@ -180,12 +180,12 @@ public static class Pos
     public static void AddLine(ulong handle, string sku, int quantity, decimal unitPrice)
     {
         var skuBytes = Encoding.UTF8.GetBytes(sku);
-        
+
         // Get currency decimal places for proper conversion
         var decimalPlaces = GetCurrencyDecimalPlaces(handle);
         var multiplier = (long)Math.Pow(10, decimalPlaces);
         var unitMinor = (long)(unitPrice * multiplier);
-        
+
         var result = RustNative.pk_add_line(handle, skuBytes, (UIntPtr)skuBytes.Length, quantity, unitMinor);
         EnsureSuccess(result, nameof(AddLine));
     }
@@ -202,7 +202,7 @@ public static class Pos
         var decimalPlaces = GetCurrencyDecimalPlaces(handle);
         var multiplier = (long)Math.Pow(10, decimalPlaces);
         var amountMinor = (long)(amount * multiplier);
-        
+
         var result = RustNative.pk_add_cash_tender(handle, amountMinor);
         EnsureSuccess(result, nameof(AddCashTender));
     }
@@ -366,13 +366,13 @@ public class Transaction : IDisposable
     /// <summary>
     /// Gets the current totals for this transaction.
     /// </summary>
-    public TransactionTotals Totals 
-    { 
-        get 
-        { 
+    public TransactionTotals Totals
+    {
+        get
+        {
             ThrowIfDisposed();
-            return Pos.GetTotals(Handle); 
-        } 
+            return Pos.GetTotals(Handle);
+        }
     }
 
     /// <summary>
@@ -414,7 +414,7 @@ public class Transaction : IDisposable
             {
                 // Ignore disposal errors
             }
-            
+
             Handle = RustNative.PK_INVALID_HANDLE;
             _disposed = true;
         }

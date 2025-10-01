@@ -167,6 +167,8 @@ public class TerminalChatDisplay : IChatDisplay
 
             var aiAgent = terminalUI?.GetAiAgent();
 
+            terminalUI?.LogDisplay?.AddLog($"🔍 INPUT_DEBUG: aiAgent = {(aiAgent != null ? "FOUND" : "NULL")}");
+
             if (aiAgent != null)
             {
                 ShowMessage(new ChatMessage
