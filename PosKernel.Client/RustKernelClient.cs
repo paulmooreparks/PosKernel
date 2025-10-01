@@ -830,10 +830,10 @@ namespace PosKernel.Client.Rust
         {
             public bool Success { get; set; }
             public string Error { get; set; } = "";
-            
+
             [System.Text.Json.Serialization.JsonPropertyName("transaction_id")]
             public string TransactionId { get; set; } = "";
-            
+
             public double Total { get; set; }
             public double Tendered { get; set; }
             public double Change { get; set; }

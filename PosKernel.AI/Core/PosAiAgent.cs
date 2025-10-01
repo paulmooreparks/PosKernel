@@ -387,9 +387,9 @@ namespace PosKernel.AI.Core
             {
                 _logger.LogDebug("[RECEIPT_EVENT] Firing ReceiptChanged event - TransactionId='{TransactionId}', StoreName='{StoreName}', ItemCount={ItemCount}",
                     _receipt.TransactionId ?? "NULL",
-                    _receipt.Store?.Name ?? "NULL", 
+                    _receipt.Store?.Name ?? "NULL",
                     _receipt.Items?.Count ?? 0);
-                
+
                 var args = new ReceiptChangedEventArgs(ReceiptChangeType.ItemsUpdated, _receipt, "AI Agent tool execution");
                 ReceiptChanged?.Invoke(this, args);
                 _logger.LogDebug("Receipt change notification sent");
@@ -517,14 +517,14 @@ namespace PosKernel.AI.Core
                 // Sync Receipt object to display kernel data (NO CALCULATIONS HERE)
                 _logger.LogInformation("🔍 KERNEL_TRANSACTION_DEBUG: kernelTransaction.TransactionId='{KernelTransactionId}'",
                     kernelTransaction.TransactionId ?? "NULL");
-                
+
                 _receipt.TransactionId = kernelTransaction.TransactionId ?? "";
                 _receipt.Store.Name = _storeConfig.StoreName;
                 _receipt.Store.Currency = _storeConfig.Currency;
-                
+
                 _logger.LogInformation("🔍 RECEIPT_SYNC_DEBUG: TransactionId='{TransactionId}', StoreName='{StoreName}'",
                     _receipt.TransactionId, _receipt.Store.Name);
-                
+
                 _receipt.Items.Clear();
                 foreach (var transactionLine in _transaction.Lines)
                 {
@@ -537,10 +537,10 @@ namespace PosKernel.AI.Core
                         UnitPrice = transactionLine.UnitPrice.Amount,
                         ProductSku = transactionLine.ProductId.Value
                     };
-                    
+
                     _logger.LogInformation("🔍 RECEIPT_DEBUG: ReceiptLine ProductName='{ProductName}' (fallback used: {FallbackUsed})",
                         receiptLine.ProductName, string.IsNullOrEmpty(transactionLine.ProductName));
-                    
+
                     _receipt.Items.Add(receiptLine);
                 }
 

@@ -83,9 +83,6 @@ struct Line {
     unit_minor: i64,
     // NRF COMPLIANCE: Support linked items (parent-child relationships) ONLY
     parent_line_item_id: Option<u32>,
-    // ARCHITECTURAL ENHANCEMENT: Product metadata for AI display
-    product_name: String,
-    product_description: String,
 }
 
 impl Line {
@@ -95,20 +92,6 @@ impl Line {
             qty,
             unit_minor,
             parent_line_item_id: None, // Initialize as top-level item
-            product_name: String::new(), // Will be populated by extension service
-            product_description: String::new(), // Will be populated by extension service
-        }
-    }
-
-    // Constructor with product metadata for enhanced protocol
-    fn new_with_metadata(sku: String, qty: i32, unit_minor: i64, product_name: String, product_description: String) -> Self {
-        Self {
-            sku,
-            qty,
-            unit_minor,
-            parent_line_item_id: None,
-            product_name,
-            product_description,
         }
     }
 
@@ -119,8 +102,6 @@ impl Line {
             qty,
             unit_minor,
             parent_line_item_id: Some(parent_line_id),
-            product_name: String::new(), // Will be populated by extension service
-            product_description: String::new(), // Will be populated by extension service
         }
     }
 
