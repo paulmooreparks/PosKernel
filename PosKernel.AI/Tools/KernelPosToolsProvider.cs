@@ -47,7 +47,7 @@ namespace PosKernel.AI.Tools
         private readonly IConfiguration? _configuration;
         private ICurrencyFormattingService? _currencyFormatter;
         private StoreConfig? _storeConfig;
-        private readonly object _sessionLock = new();
+        private readonly SemaphoreSlim _sessionSemaphore = new(1, 1); // ARCHITECTURAL FIX: Use async-safe semaphore for session management
 
         private string? _sessionId;
         private string? _currentTransactionId;
@@ -176,16 +176,15 @@ namespace PosKernel.AI.Tools
         /// </summary>
         private async Task EnsureSessionAsync(CancellationToken cancellationToken = default)
         {
-            lock (_sessionLock)
+            // ARCHITECTURAL FIX: Use async-safe semaphore to prevent race conditions in session creation
+            await _sessionSemaphore.WaitAsync(cancellationToken);
+            try
             {
                 if (!string.IsNullOrEmpty(_sessionId) && _kernelClient.IsConnected)
                 {
                     return;
                 }
-            }
 
-            try
-            {
                 // Connect to kernel if not connected
                 if (!_kernelClient.IsConnected)
                 {
@@ -217,6 +216,10 @@ namespace PosKernel.AI.Tools
                                  "Ensure 'cargo run --bin pos-kernel-service' is running in pos-kernel-rs directory.";
                 _logger.LogError(ex, errorMessage);
                 throw new InvalidOperationException(errorMessage, ex);
+            }
+            finally
+            {
+                _sessionSemaphore.Release();
             }
         }
 
@@ -1524,6 +1527,7 @@ namespace PosKernel.AI.Tools
                     }
                 }
                 _restaurantClient?.Dispose();
+                _sessionSemaphore?.Dispose(); // ARCHITECTURAL FIX: Clean up semaphore
             }
 
             // Dispose unmanaged resources here if any

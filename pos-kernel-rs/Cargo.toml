@@ -25,6 +25,18 @@ name = "pos-kernel-service"
 path = "src/bin/service.rs"
 
 [[bin]]
+name = "pos-kernel-service-new"
+path = "src/bin/pos_kernel_service.rs"
+
+[[bin]]
+name = "reliable-service"
+path = "src/bin/reliable_service.rs"
+
+[[bin]]
+name = "minimal-service"
+path = "src/bin/minimal_service.rs"
+
+[[bin]]
 name = "minimal-test"
 path = "src/bin/minimal-test.rs"
 
@@ -33,9 +45,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
-uuid = { version = "1.0", features = ["v4"] }
-axum = "0.7"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+axum = { version = "0.7", features = ["json"] }
+tower = { version = "0.4", features = ["timeout"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 [build-dependencies]

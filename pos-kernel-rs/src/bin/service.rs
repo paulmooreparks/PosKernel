@@ -261,10 +261,17 @@ fn minor_to_major(amount: i64, _handle: u64) -> f64 {
     amount as f64 / 100.0
 }
 
+async fn test_named_handler() -> &'static str {
+    println!("🎯 Named handler called!");
+    "named handler works"
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🦀 POS Kernel Rust Service v0.4.0-minimal");
     println!("🚀 Starting HTTP API on http://127.0.0.1:8080");
+
+    println!("🔧 Registering routes...");
 
     // Initialize terminal
     let terminal_id = "RUST_SERVICE_01";
@@ -293,49 +300,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/", get(root_handler))
-        .route("/version", get(version_handler))
         .route("/health", get(health_handler))
-        .route("/test", post(|| async { "POST works with closure" }))
-        .route("/test-closure", post(|| async { "POST closure works" }))
-        .route("/minimal-json", post(|| async { axum::Json(serde_json::json!({"minimal": true})) }))
-        .route("/api/minimal-json", post(|| async { axum::Json(serde_json::json!({"api_minimal": true})) }))
-        .route("/api/test-json-param", post(|Json(req): Json<CreateSessionRequest>| async move {
-            axum::Json(serde_json::json!({"received_terminal": req.terminal_id, "received_operator": req.operator_id}))
-        }))
-        // Session management endpoints
-        .route("/api/sessions", post(|Json(req): Json<CreateSessionRequest>| async move {
-            let session_id = format!("SESSION_{}", req.terminal_id);
-            axum::Json(serde_json::json!({
-                "success": true,
-                "session_id": session_id,
-                "terminal_id": req.terminal_id,
-                "operator_id": req.operator_id
-            }))
-        }))
-        // Simple test endpoints for diagnostics
-        .route("/api/simple-test", post(simple_test_handler))
-        // Simple test endpoint to validate JSON works
-        .route("/api/test-json", post(test_json_handler))
-        .route("/api/sessions/:session_id/transactions", post(start_transaction_handler))
-        .route("/api/sessions/:session_id/transactions/:transaction_id/lines", post(|| async {
-            Json(serde_json::json!({
-                "success": true,
-                "line_item_id": "LINE_001",
-                "message": "Line item added successfully"
-            }))
-        }))
-        // NRF COMPLIANCE: Hierarchical child line item endpoint
-        .route("/api/sessions/:session_id/transactions/:transaction_id/child-lines", post(add_child_line_handler))
-        // ARCHITECTURAL FIX: Add line item modification by ID endpoint
-        .route("/api/sessions/:session_id/transactions/:transaction_id/line-items/:line_item_id/modify", put(modify_line_item_by_id_handler))
-        // ARCHITECTURAL FIX: Add line item void by ID endpoint
-        .route("/api/sessions/:session_id/transactions/:transaction_id/line-items/:line_item_id/void", post(void_line_item_by_id_handler))
-        .route("/api/sessions/:session_id/transactions/:transaction_id/payment", post(process_payment_handler))
-        .route("/api/sessions/:session_id/transactions/:transaction_id", get(get_transaction_handler))
-        // ARCHITECTURAL FIX: Add dedicated endpoint for transaction details for AI tools
-        .route("/api/transactions/:transaction_id/details", get(get_transaction_details_handler))
-        // ARCHITECTURAL FIX: Add line item modification endpoint
-        .route("/api/sessions/:session_id/transactions/:transaction_id/line-items/:line_item_id/modifications", post(add_modification_to_line_item_handler))
+        .route("/simple", get(|| async { "simple works" }))
+        .route("/api/sessions", post(create_session_handler))
         .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -398,21 +365,32 @@ async fn test_json_handler(State(_): State<AppState>, Json(req): Json<CreateSess
 }
 
 async fn create_session_handler(
+    State(app_state): State<AppState>,
     Json(req): Json<CreateSessionRequest>
-) -> Json<serde_json::Value> {
+) -> Json<CreateSessionResponse> {
     println!("📝 Create session handler called - terminal: {}, operator: {}", req.terminal_id, req.operator_id);
 
     let session_id = format!("SESSION_{}", req.terminal_id);
 
-    println!("✅ Created session {} for terminal {} with operator {}", session_id, req.terminal_id, req.operator_id);
+    // Store the session in the session store
+    let session = Session {
+        id: session_id.clone(),
+        terminal_id: req.terminal_id.clone(),
+        operator_id: req.operator_id.clone(),
+        transaction_id: None,
+    };
 
-    Json(serde_json::json!({
-        "success": true,
-        "session_id": session_id,
-        "message": "Session created successfully",
-        "terminal_id": req.terminal_id,
-        "operator_id": req.operator_id
-    }))
+    let mut session_store = app_state.sessions.lock().unwrap();
+    session_store.insert(session_id.clone(), session);
+    drop(session_store);
+
+    println!("✅ Created and stored session {} for terminal {} with operator {}", session_id, req.terminal_id, req.operator_id);
+
+    Json(CreateSessionResponse {
+        success: true,
+        session_id,
+        error: None,
+    })
 }
 
 async fn start_transaction_handler(

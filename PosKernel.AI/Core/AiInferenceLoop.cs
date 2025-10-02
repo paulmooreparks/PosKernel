@@ -29,7 +29,7 @@ namespace PosKernel.AI.Core
         private readonly KernelPosToolsProvider _kernelToolsProvider;
         private readonly ILogger<AiInferenceLoop> _logger;
 
-        private const int MaxInferenceIterations = 3;
+        private const int MaxInferenceIterations = 1; // TEMP FIX: Reduce to 1 to avoid OpenAI rate limits
         private string? _cachedInventoryContext; // Cache inventory context for efficiency
 
         public AiInferenceLoop(
