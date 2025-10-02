@@ -281,14 +281,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(root_handler))
         .route("/version", get(version_handler))
         .route("/health", get(health_handler))
-        .route("/test-post", post(test_post_handler))
         // Session management endpoints
         .route("/api/sessions", post({
             let sessions = Arc::clone(&sessions);
-            move |body| {
-                println!("DEBUG: POST /api/sessions route handler called");
-                create_session_handler(body, sessions)
-            }
+            move |body| create_session_handler(body, sessions)
         }))
         .route("/api/sessions/:session_id/transactions", post({
             let sessions = Arc::clone(&sessions);
@@ -383,19 +379,12 @@ async fn health_handler() -> Json<serde_json::Value> {
     }))
 }
 
-async fn test_post_handler() -> &'static str {
-    println!("DEBUG: test_post_handler called");
-    "TEST POST OK"
-}
-
 async fn create_session_handler(
     Json(req): Json<CreateSessionRequest>,
     sessions: SessionStore,
 ) -> Json<CreateSessionResponse> {
-    println!("DEBUG: create_session_handler called with terminal_id: {}, operator_id: {}", req.terminal_id, req.operator_id);
-
     let session_id = format!("sess_{}", uuid::Uuid::new_v4().to_string().replace('-', "")[..8].to_uppercase());
-
+    
     let session = Session {
         id: session_id.clone(),
         terminal_id: req.terminal_id.clone(),
