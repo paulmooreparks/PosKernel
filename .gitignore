@@ -1,6 +1,10 @@
 # POS Kernel .gitignore
 # Build outputs
-bin/
+*/bin/Debug/
+*/bin/Release/
+*/bin/x64/
+*/bin/x86/
+target/
 obj/
 *.dll
 *.exe
