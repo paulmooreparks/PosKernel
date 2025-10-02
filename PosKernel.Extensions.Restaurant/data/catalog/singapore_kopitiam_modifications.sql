@@ -44,7 +44,7 @@ INSERT OR REPLACE INTO product_modifications (modification_id, name, description
 INSERT OR REPLACE INTO modification_category_items (category_id, modification_id, sort_order, is_default) VALUES
 -- Singapore drink choices
 ('DRINK_CHOICE', 'MOD_KOPI', 1, FALSE),
-('DRINK_CHOICE', 'MOD_KOPI_C', 2, FALSE), 
+('DRINK_CHOICE', 'MOD_KOPI_C', 2, FALSE),
 ('DRINK_CHOICE', 'MOD_KOPI_O', 3, FALSE),
 ('DRINK_CHOICE', 'MOD_TEH', 4, TRUE), -- Default choice for Singapore
 ('DRINK_CHOICE', 'MOD_TEH_C', 5, FALSE),

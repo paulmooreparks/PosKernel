@@ -93,8 +93,8 @@ INSERT OR REPLACE INTO modification_availability (availability_id, parent_sku, p
 
 -- USAGE: This file demonstrates how the same NRF framework supports different cultures
 -- Compare with singapore_kopitiam_modifications.sql to see cultural differences:
--- - Singapore: "Kopi C Kosong" vs American: "Regular Coffee, Cream, No Sugar" 
+-- - Singapore: "Kopi C Kosong" vs American: "Regular Coffee, Cream, No Sugar"
 -- - Singapore: "Peng" vs American: "Iced"
 -- - Singapore: "Half-boiled eggs" vs American: "Hash browns"
--- 
+--
 -- The framework is the same, but the cultural implementations differ completely

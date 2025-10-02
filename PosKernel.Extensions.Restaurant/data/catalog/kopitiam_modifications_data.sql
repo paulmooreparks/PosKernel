@@ -32,7 +32,7 @@ INSERT OR REPLACE INTO product_modifications (modification_id, name, description
 -- Automatic inclusions for toast sets
 ('MOD_HALF_BOILED_EGGS', '2 Half-boiled Eggs', 'Two soft-boiled eggs', 'INCLUDED', 'FREE', 0),
 
--- Side choices for local sets  
+-- Side choices for local sets
 ('MOD_KAYA_TOAST_SIDE', 'Kaya Toast', 'Traditional kaya toast as side', 'INGREDIENT', 'FREE', 0),
 ('MOD_THICK_TOAST_SIDE', 'Thick Toast', 'Thick toast as side', 'INGREDIENT', 'FREE', 0);
 
@@ -40,7 +40,7 @@ INSERT OR REPLACE INTO product_modifications (modification_id, name, description
 INSERT OR REPLACE INTO modification_category_items (category_id, modification_id, sort_order, is_default) VALUES
 -- Drink choices
 ('DRINK_CHOICE', 'MOD_KOPI', 1, FALSE),
-('DRINK_CHOICE', 'MOD_KOPI_C', 2, FALSE), 
+('DRINK_CHOICE', 'MOD_KOPI_C', 2, FALSE),
 ('DRINK_CHOICE', 'MOD_KOPI_O', 3, FALSE),
 ('DRINK_CHOICE', 'MOD_TEH', 4, TRUE), -- Default choice
 ('DRINK_CHOICE', 'MOD_TEH_C', 5, FALSE),
@@ -91,7 +91,7 @@ INSERT OR REPLACE INTO modification_availability (availability_id, parent_sku, p
 ('AVAIL_TEH_O_SUGAR_2', 'MOD_TEH_O', 'MODIFICATION', 'MOD_LESS_SUGAR', 1, FALSE),
 ('AVAIL_TEH_O_SUGAR_3', 'MOD_TEH_O', 'MODIFICATION', 'MOD_EXTRA_SUGAR', 1, FALSE);
 
--- Define set meal components for Traditional Kaya Toast Set  
+-- Define set meal components for Traditional Kaya Toast Set
 INSERT OR REPLACE INTO set_meal_components (component_id, set_product_sku, component_type, modification_id, is_required, is_automatic, quantity) VALUES
 -- Main item (the toast itself - no modification needed)
 ('SET_KAYA_MAIN', 'TSET001', 'MAIN', NULL, TRUE, TRUE, 1),

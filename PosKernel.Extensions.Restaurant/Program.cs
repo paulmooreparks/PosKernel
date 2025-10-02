@@ -18,8 +18,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
+using System.Text.Json;
 
-namespace PosKernel.Extensions.Restaurant 
+namespace PosKernel.Extensions.Restaurant
 {
     /// <summary>
     /// Main entry point for the retail domain extension service.
@@ -27,74 +31,163 @@ namespace PosKernel.Extensions.Restaurant
     /// This runs as a hosted service that provides product catalog operations
     /// via named pipe IPC for any client (AI demo, kernel service, etc.).
     /// </summary>
-    class Program 
+    class Program
     {
-        static async Task<int> Main(string[] args) 
+        static async Task<int> Main(string[] args)
         {
-            try 
+            try
             {
                 Console.WriteLine("🏪 POS Kernel Retail Extension v0.5.0");
-                Console.WriteLine("Generic retail domain service with named pipe IPC");
+                Console.WriteLine("Generic retail domain service with HTTP API and named pipe IPC");
 
-                // Build host with proper DI and logging
-                var host = Host.CreateDefaultBuilder(args)
-                    .ConfigureAppConfiguration((hostingContext, config) =>
+                // ARCHITECTURAL PRINCIPLE: CLI arguments take precedence over configuration files
+                var storeTypeOverride = GetCommandLineArgument(args, "--store-type");
+                var storeNameOverride = GetCommandLineArgument(args, "--store-name");
+                var currencyOverride = GetCommandLineArgument(args, "--currency");
+
+                // Build ASP.NET Core web application
+                var builder = WebApplication.CreateBuilder(args);
+
+                // Configure configuration
+                builder.Configuration.Sources.Clear();
+
+                // Add configuration from the project directory
+                var projectDir = "PosKernel.Extensions.Restaurant";
+                var configFile = Path.Combine(projectDir, "appsettings.json");
+
+                Console.WriteLine($"📁 Loading configuration from: {configFile}");
+
+                if (File.Exists(configFile))
+                {
+                    builder.Configuration.AddJsonFile(configFile, optional: false, reloadOnChange: true);
+                    Console.WriteLine($"✅ Found configuration file: {configFile}");
+                }
+                else
+                {
+                    Console.WriteLine($"❌ Configuration file not found: {configFile}");
+                    Console.WriteLine($"📁 Current directory: {Directory.GetCurrentDirectory()}");
+                    Console.WriteLine($"📄 Files in current directory:");
+                    foreach (var file in Directory.GetFiles(".", "*.json"))
                     {
-                        // Clear existing sources and add our specific configuration
-                        config.Sources.Clear();
-                        
-                        // Add configuration from the project directory  
-                        var projectDir = "PosKernel.Extensions.Restaurant";
-                        var configFile = Path.Combine(projectDir, "appsettings.json");
-                        
-                        Console.WriteLine($"📁 Loading configuration from: {configFile}");
-                        
-                        if (File.Exists(configFile))
+                        Console.WriteLine($"   {file}");
+                    }
+                }
+
+                builder.Configuration.AddEnvironmentVariables();
+
+                // Configure services
+                builder.Services.AddSingleton<RetailExtensionService>(serviceProvider =>
+                {
+                    var logger = serviceProvider.GetRequiredService<ILogger<RetailExtensionService>>();
+                    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+
+                    // ARCHITECTURAL PRINCIPLE: CLI arguments override configuration files
+                    var storeType = storeTypeOverride ??
+                                   configuration["Retail:StoreType"] ??
+                                   "CoffeeShop";
+
+                    Console.WriteLine($"🔧 Configured store type: {storeType}");
+
+                    return new RetailExtensionService(logger, storeType);
+                });
+
+                builder.Services.AddHostedService<RetailExtensionHost>();
+
+                // Configure logging
+                builder.Logging.ClearProviders();
+                builder.Logging.AddConsole();
+                builder.Logging.SetMinimumLevel(LogLevel.Information);
+
+                // Configure JSON options
+                builder.Services.ConfigureHttpJsonOptions(options =>
+                {
+                    options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+                    options.SerializerOptions.WriteIndented = true;
+                });
+
+                // Set URLs
+                builder.WebHost.UseUrls("http://localhost:8081");
+
+                var app = builder.Build();
+
+                // Get the retail extension service
+                var retailService = app.Services.GetRequiredService<RetailExtensionService>();
+
+                // Configure HTTP API endpoints
+                app.MapGet("/health", () => Results.Ok(new { Status = "OK", Service = "Restaurant Extension", Version = "0.5.0" }));
+
+                app.MapGet("/info", () =>
+                {
+                    return Results.Ok(new
+                    {
+                        Service = "Restaurant Extension",
+                        Version = "0.5.0",
+                        StoreType = retailService.StoreType,
+                        Endpoints = new[] { "/health", "/info", "/products/search", "/products/{id}" }
+                    });
+                });
+
+                app.MapGet("/products/search", async (string? q, int? limit) =>
+                {
+                    try
+                    {
+                        var query = q ?? "";
+                        var maxResults = Math.Min(limit ?? 10, 100); // Cap at 100 results
+
+                        var products = await retailService.SearchProductsHttpAsync(query, maxResults);
+
+                        return Results.Ok(new
                         {
-                            config.AddJsonFile(configFile, optional: false, reloadOnChange: true);
-                            Console.WriteLine($"✅ Found configuration file: {configFile}");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"❌ Configuration file not found: {configFile}");
-                            Console.WriteLine($"📁 Current directory: {Directory.GetCurrentDirectory()}");
-                            Console.WriteLine($"📄 Files in current directory:");
-                            foreach (var file in Directory.GetFiles(".", "*.json"))
+                            Query = query,
+                            Count = products.Count,
+                            Products = products.Select(p => new
                             {
-                                Console.WriteLine($"   {file}");
-                            }
-                        }
-                        
-                        config.AddEnvironmentVariables();
-                    })
-                    .ConfigureServices((context, services) =>
-                    {
-                        // Register RetailExtensionService with configuration
-                        services.AddSingleton<RetailExtensionService>(serviceProvider =>
-                        {
-                            var logger = serviceProvider.GetRequiredService<ILogger<RetailExtensionService>>();
-                            var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-                            
-                            // ARCHITECTURAL PRINCIPLE: Store type comes from configuration, not hardcoded
-                            var storeType = configuration["Retail:StoreType"] ?? "CoffeeShop";
-                            
-                            Console.WriteLine($"🔧 Configured store type: {storeType}");
-                            
-                            return new RetailExtensionService(logger, storeType);
+                                Id = p.Sku,
+                                Name = p.Name,
+                                Price = p.BasePriceCents / 100.0, // Convert back to dollars
+                                Category = p.CategoryName,
+                                Description = p.Description
+                            })
                         });
-                        
-                        services.AddHostedService<RetailExtensionHost>();
-                    })
-                    .ConfigureLogging(logging =>
+                    }
+                    catch (Exception ex)
                     {
-                        logging.ClearProviders();
-                        logging.AddConsole();
-                        logging.SetMinimumLevel(LogLevel.Information);
-                    })
-                    .Build();
+                        return Results.Problem(ex.Message, statusCode: 500);
+                    }
+                });
 
-                // Run the service
-                await host.RunAsync();
+                app.MapGet("/products/{id}", async (string id) =>
+                {
+                    try
+                    {
+                        var product = await retailService.GetProductByIdHttpAsync(id);
+
+                        if (product == null)
+                        {
+                            return Results.NotFound(new { Error = $"Product with ID '{id}' not found" });
+                        }
+
+                        return Results.Ok(new
+                        {
+                            Id = product.Sku,
+                            Name = product.Name,
+                            Price = product.BasePriceCents / 100.0, // Convert back to dollars
+                            Category = product.CategoryName,
+                            Description = product.Description
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        return Results.Problem(ex.Message, statusCode: 500);
+                    }
+                });
+
+                Console.WriteLine("🌐 HTTP API available at: http://localhost:8081");
+                Console.WriteLine("📡 Named pipe IPC available at: poskernel-restaurant-extension");
+                Console.WriteLine();
+
+                // Run the application
+                await app.RunAsync();
 
                 return 0;
             }
@@ -102,6 +195,25 @@ namespace PosKernel.Extensions.Restaurant
                 Console.Error.WriteLine($"Fatal error: {ex}");
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// Extract a command-line argument value from args array.
+        /// ARCHITECTURAL PRINCIPLE: CLI arguments take precedence over configuration files.
+        /// </summary>
+        /// <param name="args">Command line arguments</param>
+        /// <param name="argumentName">Argument name (e.g., "--store-type")</param>
+        /// <returns>Argument value or null if not found</returns>
+        private static string? GetCommandLineArgument(string[] args, string argumentName)
+        {
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i].Equals(argumentName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return args[i + 1];
+                }
+            }
+            return null;
         }
     }
 
@@ -132,11 +244,11 @@ namespace PosKernel.Extensions.Restaurant
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("Starting Retail Extension Service...");
-            
+
             try
             {
                 await _service.StartAsync(stoppingToken);
-                
+
                 // Keep running until cancellation is requested
                 await Task.Delay(Timeout.Infinite, stoppingToken);
             }

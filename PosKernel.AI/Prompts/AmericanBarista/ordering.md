@@ -95,7 +95,7 @@ The coffee system has **base product names** like "Latte" and "Cappuccino". Cust
 - **"Sugar-free"** → prep: "sugar-free"
 - **"Extra sweet"** → prep: "extra sweet"
 
-### **ORDER HANDLING APPROACH**:
+### **CRITICAL PARSING RULES**:
 
 #### **RECOGNIZE CONTINUATION CONTEXT**
 When customers have already ordered items and mention something new, **assume it's an additional order** unless explicitly indicating completion:

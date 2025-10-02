@@ -48,6 +48,7 @@ namespace PosKernel.AI.Core
         private readonly Transaction _transaction;
         private readonly ConfigurableContextBuilder _contextBuilder;
         private readonly string _baseCulturalContext; // ARCHITECTURAL FIX: Load cultural context from prompt files
+        private readonly AiInferenceLoop _inferenceLoop; // ARCHITECTURAL UPGRADE: Global inference loop for all interactions
 
         // ARCHITECTURAL PRINCIPLE: Receipt changes are infrastructure events, not business logic
         public event EventHandler<ReceiptChangedEventArgs>? ReceiptChanged;
@@ -84,6 +85,14 @@ namespace PosKernel.AI.Core
             };
             _baseCulturalContext = _contextBuilder.BuildContext("StartTransaction", variables);
 
+            // ARCHITECTURAL UPGRADE: Initialize inference loop for global structured reasoning
+            _inferenceLoop = new AiInferenceLoop(
+                mcpClient,
+                contextBuilder,
+                storeConfig,
+                kernelToolsProvider,
+                logger as ILogger<AiInferenceLoop> ?? new Microsoft.Extensions.Logging.Abstractions.NullLogger<AiInferenceLoop>());
+
             _logger.LogInformation("AI Agent initialized with kernel tools provider: {StoreName} ({CultureCode})",
                 _storeConfig.StoreName, _storeConfig.CultureCode);
         }
@@ -91,6 +100,7 @@ namespace PosKernel.AI.Core
         /// <summary>
         /// Main interaction method - AI handles customer input with full context and direct tool access.
         /// ARCHITECTURAL PRINCIPLE: AI has agency - manages own context and decisions.
+        /// ARCHITECTURAL UPGRADE: Now uses inference loop for structured reasoning and validation.
         /// </summary>
         public async Task<string> ProcessCustomerInputAsync(string customerInput)
         {
@@ -128,123 +138,56 @@ namespace PosKernel.AI.Core
             {
                 _logger.LogInformation("🔍 AI_AGENT_DEBUG: ProcessCustomerInputAsync called with input: '{Input}'", customerInput);
 
-                // AI-FIRST REDESIGN: Get current transaction state for AI context
+                // ARCHITECTURAL UPGRADE: Use inference loop for ALL customer interactions
+                // This replaces the direct AI → Tool Call pattern with structured reasoning
+
+                // Get current transaction state for inference loop context
                 var transactionState = await GetCurrentTransactionStateAsync();
                 _logger.LogDebug("Current transaction state: {State}", transactionState);
 
-                // Get available tools
+                // Get available tools for inference loop
                 var tools = GetAvailableTools();
                 _logger.LogInformation("🔍 AI_AGENT_DEBUG: Available tools count: {ToolCount}", tools.Count);
 
-                // AI-FIRST PRINCIPLE: AI sees transaction state and makes ALL decisions
-                // Create context that includes both store context and current transaction state
-                var variables = new Dictionary<string, object>
+                // INFERENCE LOOP: Process through structured reasoning → validation → execution
+                _logger.LogInformation("🔍 AI_AGENT_DEBUG: About to call inference loop with state: {State}", transactionState);
+
+                InferenceResult inferenceResult;
+                try
                 {
-                    ["StoreName"] = _storeConfig.StoreName,
-                    ["CultureCode"] = _storeConfig.CultureCode,
-                    ["CurrentTime"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                    ["TransactionState"] = transactionState,
-                    ["ItemCount"] = _transaction.Lines.Count,
-                    ["TransactionTotal"] = FormatTransactionTotal(),
-                    ["InventoryStatus"] = GetInventoryStatus(),
-                    ["ToolsAvailable"] = GetAvailableTools().Count > 0 ? "TRUE" : "FALSE"
-                };
-
-                var contextWithState = new
-                {
-                    StoreContext = _contextBuilder.BuildContext(transactionState, variables),
-                    TransactionState = transactionState,
-                    StateDescription = GetStateDescription(transactionState)
-                };
-
-                var aiResponse = await _mcpClient.CompleteWithContextAsync(
-                    customerInput, // Raw customer input
-                    tools,
-                    contextWithState); // Store context + transaction state
-
-                _logger.LogInformation("🔍 AI_AGENT_DEBUG: AI response received: '{Response}', ToolCalls: {ToolCallCount}",
-                    aiResponse.Content?.Substring(0, Math.Min(aiResponse.Content?.Length ?? 0, 100)) + "...", aiResponse.ToolCalls.Count);
-
-                // Execute any tool calls the AI requested
-                var responseText = aiResponse.Content ?? "";
-                if (aiResponse.ToolCalls.Any())
-                {
-                    _logger.LogInformation("AI requested {ToolCount} tool calls", aiResponse.ToolCalls.Count);
-
-                    var toolExecutionSuccessful = true;
-                    foreach (var toolCall in aiResponse.ToolCalls)
-                    {
-                        try
-                        {
-                            var toolResult = await ExecuteToolCallAsync(toolCall);
-                            _logger.LogDebug("Tool {ToolName} executed: {Result}", toolCall.FunctionName, toolResult);
-
-                            // ARCHITECTURAL PRINCIPLE: Sync Receipt/Transaction with kernel state after tool execution
-                            await SyncWithKernelStateAsync();
-
-                            // ARCHITECTURAL PRINCIPLE: Always notify on tool execution - pure infrastructure
-                            NotifyReceiptChanged();
-                        }
-                        catch (Exception ex)
-                        {
-                            toolExecutionSuccessful = false;
-                            _logger.LogError(ex, "Tool execution failed: {ToolName}", toolCall.FunctionName);
-                            // ARCHITECTURAL PRINCIPLE: Let AI handle error responses in appropriate cultural context
-                            // Don't hardcode English apologies - AI knows the culture and language
-                            var errorContext = $"Tool execution failed: {toolCall.FunctionName}. Error: {ex.Message}";
-
-                            // Build error context with current state
-                            var errorVariables = new Dictionary<string, object>
-                            {
-                                ["StoreName"] = _storeConfig.StoreName,
-                                ["CultureCode"] = _storeConfig.CultureCode,
-                                ["CurrentTime"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                                ["TransactionState"] = transactionState,
-                                ["ErrorMessage"] = ex.Message,
-                                ["FailedTool"] = toolCall.FunctionName
-                            };
-
-                            var errorResponse = await _mcpClient.CompleteWithContextAsync(
-                                errorContext,
-                                GetAvailableTools(),
-                                _contextBuilder.BuildContext(transactionState, errorVariables));
-                            responseText = errorResponse.Content;
-                        }
-                    }
-
-                    // ARCHITECTURAL PRINCIPLE: AI provides follow-up response after successful tool execution
-                    if (toolExecutionSuccessful)
-                    {
-                        var newTransactionState = await GetCurrentTransactionStateAsync();
-                            var followUpVariables = new Dictionary<string, object>
-                            {
-                                ["StoreName"] = _storeConfig.StoreName,
-                                ["CultureCode"] = _storeConfig.CultureCode,
-                                ["CurrentTime"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                                ["TransactionState"] = newTransactionState,
-                                ["ItemCount"] = _transaction.Lines.Count,
-                                ["TransactionTotal"] = FormatTransactionTotal(),
-                                ["InventoryStatus"] = GetInventoryStatus(),
-                                ["ToolsAvailable"] = GetAvailableTools().Count > 0 ? "TRUE" : "FALSE"
-                            };
-
-                        var followUpContext = new
-                        {
-                            StoreContext = _contextBuilder.BuildContext(newTransactionState, followUpVariables),
-                            TransactionState = newTransactionState,
-                            StateDescription = GetStateDescription(newTransactionState)
-                        };
-
-                        var followUpResponse = await _mcpClient.CompleteWithContextAsync(
-                            "Tools executed successfully. Please acknowledge the completed action and provide appropriate next steps to the customer.",
-                            GetAvailableTools(),
-                            followUpContext);
-                        responseText = followUpResponse.Content;
-                    }
+                    inferenceResult = await _inferenceLoop.ProcessCustomerInteractionAsync(
+                        customerInput,
+                        transactionState,
+                        tools);
+                    _logger.LogInformation("🔍 AI_AGENT_DEBUG: Inference loop completed successfully");
                 }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "🔍 AI_AGENT_DEBUG: Inference loop threw exception");
+                    throw;
+                }
+                _logger.LogInformation("🧠 INFERENCE_RESULT: Success={Success}, Iterations={Iterations}, Tools={ToolCount}",
+                    inferenceResult.Success,
+                    inferenceResult.IterationsUsed,
+                    inferenceResult.ToolsExecuted.Count);
 
-                // ARCHITECTURAL PRINCIPLE: No conversation history management - AI maintains context naturally
-                return responseText;
+                if (inferenceResult.Success)
+                {
+                    // ARCHITECTURAL PRINCIPLE: Sync Receipt/Transaction with kernel state after tool execution
+                    if (inferenceResult.ToolsExecuted.Any())
+                    {
+                        await SyncWithKernelStateAsync();
+                        NotifyReceiptChanged();
+                    }
+
+                    return inferenceResult.CustomerResponse;
+                }
+                else
+                {
+                    // ARCHITECTURAL PRINCIPLE: Let AI handle failures gracefully
+                    _logger.LogWarning("🚨 INFERENCE_FAILED: {Reason}", inferenceResult.FailureReason);
+                    return inferenceResult.CustomerResponse; // AI-generated failure response
+                }
             }
             catch (Exception ex)
             {
@@ -481,8 +424,31 @@ namespace PosKernel.AI.Core
                     return;
                 }
 
-                _logger.LogDebug("🔄 SYNC_DEBUG: Received structured kernel data with {LineCount} line items",
-                    kernelTransaction.LineItems?.Count ?? 0);
+                _logger.LogDebug("🔄 SYNC_DEBUG: Received structured kernel data with {LineCount} line items, State: {State}",
+                    kernelTransaction.LineItems?.Count ?? 0, kernelTransaction.State);
+
+                // ARCHITECTURAL FIX: Clear receipt when starting a new transaction OR when transaction completed
+                bool isStartTransaction = kernelTransaction.State?.Equals("StartTransaction", StringComparison.OrdinalIgnoreCase) == true;
+                bool isCompletedTransaction = kernelTransaction.State?.Equals("Completed", StringComparison.OrdinalIgnoreCase) == true;
+
+                if ((isStartTransaction && kernelTransaction.LineItems?.Count == 0) || isCompletedTransaction)
+                {
+                    string reason = isCompletedTransaction ? "Transaction completed - clearing for next customer"
+                                                         : "New transaction started";
+                    _logger.LogInformation("🧾 RECEIPT_CLEAR: Clearing receipt for transition ({Reason})", reason);
+
+                    // Clear transaction and receipt for fresh start
+                    _transaction.Lines.Clear();
+                    _receipt.Items.Clear();
+                    _receipt.TransactionId = "";
+                    _transaction.Total = new Money(0, _storeConfig.Currency);
+
+                    // Notify UI of receipt clear
+                    var clearArgs = new ReceiptChangedEventArgs(ReceiptChangeType.Cleared, _receipt, reason);
+                    ReceiptChanged?.Invoke(this, clearArgs);
+                    _logger.LogDebug("Receipt cleared notification sent for: {Reason}", reason);
+                    return;
+                }
 
                 // Sync Transaction object with kernel-calculated values (NO CALCULATIONS HERE)
                 _transaction.Lines.Clear();

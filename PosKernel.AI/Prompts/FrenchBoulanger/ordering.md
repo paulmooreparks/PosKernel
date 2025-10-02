@@ -91,7 +91,7 @@ The boulangerie system has **base product names** like "Croissant" and "Pain au 
 - **"Lait"** = Milk → prep: "with milk"
 - **"Crème"** = Cream → prep: "with cream"
 
-### **ORDER HANDLING APPROACH**:
+### **CRITICAL PARSING RULES**:
 
 #### **RECOGNIZE CONTINUATION CONTEXT**
 When customers have already ordered items and mention something new, **assume it's an additional order** unless explicitly indicating completion:

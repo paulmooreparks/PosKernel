@@ -17,7 +17,7 @@ This document tracks the evolution of the POS Kernel architecture and major impl
 
 **Current Implementation Status**:
 - **✅ Training Infrastructure**: Environment loading, service registration, configuration management
-- **✅ Production AI Integration**: Real PosAiAgent, RestaurantExtensionClient, POS Kernel Service integration
+- **✅ Production AI Integration**: Real ChatOrchestrator, RestaurantExtensionClient, POS Kernel Service integration
 - **🔧 IN PROGRESS**: Prompt optimization and file update system
 - **🔧 IN PROGRESS**: Comprehensive training logging and verification
 - **❌ TODO**: Advanced prompt variation generation algorithms
@@ -72,7 +72,7 @@ var context = new PromptContext {
 
 **Training System Requirements** (enforced via fail-fast architecture):
 1. **Environment Variables**: Must load from `~/.poskernel/.env` via `PosKernelConfiguration`
-2. **Service Integration**: Must use same PosAiAgent/RestaurantExtensionClient as production
+2. **Service Integration**: Must use same ChatOrchestrator/RestaurantExtensionClient as production
 3. **Currency Context**: All prompt contexts must include currency from store configuration
 4. **Prompt File Updates**: Must actually save optimized prompts to production files that cashier reads
 5. **Verification**: Must confirm that changes took effect and cashier will use optimized prompts

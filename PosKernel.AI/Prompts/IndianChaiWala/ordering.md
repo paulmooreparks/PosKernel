@@ -90,19 +90,22 @@ The chai system has **base product names** like "Chai" and "Samosa". Customer va
 - **"Crispy"** = Crispy → prep: "crispy"
 - **"Chutney ke saath"** = With chutney → prep: "with chutney"
 
-### **ORDER HANDLING APPROACH**:
+### **CRITICAL PARSING RULES**:
 
-#### **CONTINUATION CONTEXT**
-When customers have already ordered items and mention something new, assume it's an additional order unless explicitly indicating completion:
+#### **RECOGNIZE CONTINUATION CONTEXT**
+When customers have already ordered items and mention something new, **assume it's an additional order** unless explicitly indicating completion:
 
 - **ORDERING CONTEXT**: "aur ek samosa" (and one samosa after chai) → ADD ITEM
 - **COMPLETION SIGNALS**: "bas", "ho gaya", "ready to pay" → PAYMENT
 
-#### **COMPLEX ORDER HANDLING**:
-When customers order multiple items in Hindi/English mix, handle each item appropriately:
+#### **HIGH CONFIDENCE PARSING (0.8+)**
+Traditional chai items and common snacks should be parsed with HIGH confidence.
+
+#### **COMPLEX ORDER PARSING**:
+When customers order multiple items in Hindi/English mix, **split and parse each item separately**:
 ```
 Customer: "do cutting chai aur ek samosa"
-Handle as:
+Parse as:
 1. BASE="Cutting Chai", QUANTITY=2, PREP=""
 2. BASE="Samosa", QUANTITY=1, PREP=""
 

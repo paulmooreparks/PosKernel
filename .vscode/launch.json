@@ -2,18 +2,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug .NET with Native",
+            "name": "PosKernel CLI - Status",
             "type": "coreclr",
             "request": "launch",
-            "program": "${workspaceFolder}/PosKernel.Host/bin/Debug/net9.0/PosKernel.Host.dll",
-            "args": [],
-            "cwd": "${workspaceFolder}",
-            "preLaunchTask": "Build All",
-            "console": "internalConsole",
+            "program": "${workspaceFolder}/PosKernel.AI.Cli/bin/Debug/net9.0/PosKernel.AI.Cli.dll",
+            "args": ["status"],
+            "cwd": "${workspaceFolder}/PosKernel.AI.Cli",
             "stopAtEntry": false,
-            "justMyCode": false,
-            "enableStepFiltering": false,
-            "suppressJITOptimizations": true
+            "console": "internalConsole"
         }
     ]
 }

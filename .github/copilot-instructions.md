@@ -2,14 +2,6 @@
 
 You are a senior-level software developer who knows that warnings are build failures. You always fix all warnings before calling a build successful.
 
-### ANTI-PATTERN: NEVER HARDCODE CULTURAL CONTENT IN CODE
-- ❌ NEVER add business rules, cultural assumptions, or prompts to PosAiAgent
-- ❌ NEVER hardcode coffee terminology, language patterns, or cultural behavior
-- ❌ NEVER add "You are an experienced Uncle" or similar roleplay instructions
-- ✅ ALWAYS: PosAiAgent = PURE INFRASTRUCTURE ONLY
-- ✅ Cultural intelligence comes from AI's training, not code
-- ✅ Store context = data loading only, no business logic
-
 ## CRITICAL ARCHITECTURAL PRINCIPLES - READ EVERY TIME
 
 ### GENERAL INTERACTION
@@ -23,16 +15,6 @@ You are a senior-level software developer who knows that warnings are build fail
 
 ### KEEP THE DESIGN IN MIND
 The goal of this project is captured in the many .md files under the docs directory. Keep them in mind.
-
-**CRITICAL: AI-FIRST ARCHITECTURE**
-The current architectural strategy is defined in **[docs/ai-redesign-2025-09-29.md](../docs/ai-redesign-2025-09-29.md)**:
-- Pure AI agency model - AI is the cashier, POS is the register
-- No orchestration logic in code - AI makes ALL business decisions
-- Transaction state-driven behavior - No prompts or scripts
-- MCP layer isolation - AI ↔ MCP ↔ POS (no direct AI-POS access)
-- Cultural intelligence through context, not code
-
-This document provides the foundational constraints. The AI redesign document provides the strategic architecture.
 
 ### FAIL-FAST PRINCIPLE
 **NO FALLBACK ASSUMPTIONS** - If a service/configuration is missing, **FAIL FAST** with clear error messages. DO NOT provide "helpful" defaults or fallbacks.
@@ -66,13 +48,13 @@ if (currencyService == null) {
 - Don't run things that will require me to stop them later.
 - Don't use Console.ReadKey() for things that you might legitimately want to run unattended.
 
-### NEVER RUN TUI APPLICATIONS
-- **NEVER run dotnet run --project PosKernel.AI.Demo or similar TUI applications**
-- **NEVER launch interactive console applications during code analysis or development**
-- **FOCUS on code analysis, file reading, and static analysis instead of running applications**
-- When debugging is needed, read log files from `~/.poskernel/logs` instead of running the application
-- If the user specifically requests to run an application, ask for explicit confirmation first
-- Running TUI applications disrupts the development workflow and should be avoided
+### USE THE CLI FOR SERVICE MANAGEMENT
+- **ALWAYS use the PosKernel.AI.Cli for service management operations**
+- Use `dotnet run --project PosKernel.AI.Cli --no-build -- start [service]` to start services
+- Use `dotnet run --project PosKernel.AI.Cli --no-build -- stop [service]` to stop services
+- Use `dotnet run --project PosKernel.AI.Cli --no-build -- logs [service]` to view service logs
+- The CLI handles proper process management and avoids build conflicts
+- Don't manually start services with `cargo run` or `dotnet run` directly
 
 ### LOGS AND DIAGNOSTICS
 - When asked to "read the logs", read files in `~/.poskernel/logs` (use `PosKernelConfiguration.ConfigDirectory + "/logs"`).

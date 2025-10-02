@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS categories (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Products table  
+-- Products table
 CREATE TABLE IF NOT EXISTS products (
     sku VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,

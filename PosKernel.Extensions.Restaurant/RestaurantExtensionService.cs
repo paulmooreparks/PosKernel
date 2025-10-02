@@ -40,6 +40,11 @@ namespace PosKernel.Extensions.Restaurant
         private bool _disposed = false;
 
         /// <summary>
+        /// Gets the store type this service is configured for.
+        /// </summary>
+        public string StoreType => _storeType;
+
+        /// <summary>
         /// Initializes a new instance of the RetailExtensionService.
         /// ARCHITECTURAL PRINCIPLE: Store type comes from configuration, not hardcoded assumptions.
         /// </summary>
@@ -57,7 +62,7 @@ namespace PosKernel.Extensions.Restaurant
             _databasePath = Path.Combine(catalogPath, "retail_catalog.db");
             _schemaPath = Path.Combine(catalogPath, "retail_schema.sql");
             _dataPath = Path.Combine(catalogPath, "retail_data.sql");
-            
+
             _logger.LogInformation("Retail Extension Service configured for store type: {StoreType}", _storeType);
             _logger.LogInformation("User directory: {UserDirectory}", _userDirectoryPath);
             _logger.LogInformation("Database path: {DatabasePath}", _databasePath);
@@ -69,13 +74,13 @@ namespace PosKernel.Extensions.Restaurant
         public async Task StartAsync(CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Retail extension service starting for {StoreType} on pipe: {PipeName}", _storeType, _pipeName);
-            
+
             // Initialize database first
             await InitializeDatabaseAsync();
-            
+
             // Start the named pipe server
             _serverTask = Task.Run(RunServerLoopAsync, cancellationToken);
-            
+
             _logger.LogInformation("Retail extension service started successfully for {StoreType}", _storeType);
         }
 
@@ -85,27 +90,127 @@ namespace PosKernel.Extensions.Restaurant
         public async Task StopAsync(CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Retail extension service stopping...");
-            
+
             _cancellationTokenSource.Cancel();
-            
+
             if (_serverTask != null)
             {
                 await _serverTask.WaitAsync(cancellationToken);
             }
-            
+
             _logger.LogInformation("Retail extension service stopped");
+        }
+
+        /// <summary>
+        /// Searches for products matching the given query (public HTTP API method).
+        /// </summary>
+        public async Task<IReadOnlyList<RestaurantCompatibleProductInfo>> SearchProductsHttpAsync(string query, int maxResults = 10)
+        {
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync();
+
+            var products = new List<RestaurantCompatibleProductInfo>();
+
+            // Search across multiple fields with fuzzy matching
+            var sql = @"
+                SELECT
+                    p.sku,
+                    p.name,
+                    p.description,
+                    c.name as category_name,
+                    p.base_price_cents as price,
+                    p.is_active as active
+                FROM products p
+                LEFT JOIN categories c ON p.category_id = c.id
+                WHERE p.is_active = 1
+                    AND (
+                        p.name LIKE @query
+                        OR p.description LIKE @query
+                        OR c.name LIKE @query
+                        OR p.sku LIKE @query
+                    )
+                ORDER BY
+                    CASE
+                        WHEN p.name LIKE @exactQuery THEN 1
+                        WHEN p.name LIKE @startQuery THEN 2
+                        WHEN p.description LIKE @exactQuery THEN 3
+                        ELSE 4
+                    END,
+                    p.name
+                LIMIT @limit";
+
+            using var command = new SqliteCommand(sql, connection);
+            command.Parameters.AddWithValue("@query", $"%{query}%");
+            command.Parameters.AddWithValue("@exactQuery", query);
+            command.Parameters.AddWithValue("@startQuery", $"{query}%");
+            command.Parameters.AddWithValue("@limit", maxResults);
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                products.Add(new RestaurantCompatibleProductInfo
+                {
+                    Sku = reader.GetString(0),      // sku
+                    Name = reader.GetString(1),     // name
+                    Description = reader.GetString(2), // description
+                    CategoryName = reader.GetString(3), // category_name
+                    BasePriceCents = reader.GetInt64(4) // base_price_cents
+                });
+            }
+
+            return products;
+        }
+
+        /// <summary>
+        /// Gets a specific product by ID (public HTTP API method).
+        /// </summary>
+        public async Task<RestaurantCompatibleProductInfo?> GetProductByIdHttpAsync(string productId)
+        {
+            using var connection = new SqliteConnection($"Data Source={_databasePath}");
+            await connection.OpenAsync();
+
+            var sql = @"
+                SELECT
+                    p.sku,
+                    p.name,
+                    p.description,
+                    c.name as category_name,
+                    p.base_price_cents as price,
+                    p.is_active as active
+                FROM products p
+                LEFT JOIN categories c ON p.category_id = c.id
+                WHERE p.is_active = 1 AND p.sku = @sku
+                LIMIT 1";
+
+            using var command = new SqliteCommand(sql, connection);
+            command.Parameters.AddWithValue("@sku", productId);
+
+            using var reader = await command.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                return new RestaurantCompatibleProductInfo
+                {
+                    Sku = reader.GetString(0),      // sku
+                    Name = reader.GetString(1),     // name
+                    Description = reader.GetString(2), // description
+                    CategoryName = reader.GetString(3), // category_name
+                    BasePriceCents = reader.GetInt64(4) // base_price_cents
+                };
+            }
+
+            return null;
         }
 
         private async Task RunServerLoopAsync()
         {
             var tasks = new List<Task>();
-            
+
             while (!_cancellationTokenSource.Token.IsCancellationRequested)
             {
                 try
                 {
                     _logger.LogDebug("Waiting for client connection on pipe: {PipeName}", _pipeName);
-                    
+
                     var server = new NamedPipeServerStream(
                         _pipeName,
                         PipeDirection.InOut,
@@ -128,9 +233,9 @@ namespace PosKernel.Extensions.Restaurant
                             server.Dispose();
                         }
                     });
-                    
+
                     tasks.Add(clientTask);
-                    
+
                     // Clean up completed tasks
                     tasks.RemoveAll(t => t.IsCompleted);
                 }
@@ -145,7 +250,7 @@ namespace PosKernel.Extensions.Restaurant
                     // Continue to next iteration
                 }
             }
-            
+
             // Wait for all client tasks to complete
             if (tasks.Count > 0)
             {
@@ -187,21 +292,21 @@ namespace PosKernel.Extensions.Restaurant
 
                         var response = await ProcessRequestAsync(request, cancellationToken);
                         var responseJson = JsonSerializer.Serialize(response);
-                        
+
                         _logger.LogDebug("Sending response: {Response}", responseJson);
                         await writer.WriteLineAsync(responseJson);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error processing request: {Request}", requestLine);
-                        
+
                         var errorResponse = new ExtensionResponse
                         {
                             Id = "unknown",
                             Success = false,
                             Error = ex.Message
                         };
-                        
+
                         await writer.WriteLineAsync(JsonSerializer.Serialize(errorResponse));
                     }
                 }
@@ -254,14 +359,14 @@ namespace PosKernel.Extensions.Restaurant
             // Extract parameters
             var productId = GetStringParameter(request, "product_id");
             var storeId = GetStringParameter(request, "store_id", "STORE_DEFAULT");
-            
+
             using var connection = new SqliteConnection($"Data Source={_databasePath}");
             await connection.OpenAsync();
 
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                FROM products p 
+                FROM products p
                 INNER JOIN categories c ON p.category_id = c.id
                 WHERE p.sku = @productId OR p.name LIKE '%' || @productId ||'%'
                 LIMIT 1";
@@ -271,7 +376,7 @@ namespace PosKernel.Extensions.Restaurant
             if (await reader.ReadAsync())
             {
                 var priceCents = reader.GetInt64(4); // base_price_cents from database
-                
+
                 var productInfo = new RestaurantCompatibleProductInfo
                 {
                     Sku = reader.GetString(0),
@@ -307,17 +412,19 @@ namespace PosKernel.Extensions.Restaurant
             var searchTerm = GetStringParameter(request, "search_term", "");
             var maxResults = GetIntParameter(request, "max_results", 50);
 
+            _logger.LogInformation("SEARCH_PRODUCTS: Searching for '{SearchTerm}' (max: {MaxResults}) in {StoreType} database", searchTerm, maxResults, _storeType);
+
             using var connection = new SqliteConnection($"Data Source={_databasePath}");
             await connection.OpenAsync();
 
             using var command = connection.CreateCommand();
-            
+
             if (string.IsNullOrEmpty(searchTerm))
             {
                 // Return all products
                 command.CommandText = @"
                     SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                    FROM products p 
+                    FROM products p
                     INNER JOIN categories c ON p.category_id = c.id
                     WHERE p.is_active = 1
                     ORDER BY p.name
@@ -328,15 +435,15 @@ namespace PosKernel.Extensions.Restaurant
                 // Search by term
                 command.CommandText = @"
                     SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                    FROM products p 
+                    FROM products p
                     INNER JOIN categories c ON p.category_id = c.id
-                    WHERE p.is_active = 1 
-                    AND (p.sku LIKE '%' || @searchTerm || '%' 
-                         OR p.name LIKE '%' || @searchTerm || '%' 
+                    WHERE p.is_active = 1
+                    AND (p.sku LIKE '%' || @searchTerm || '%'
+                         OR p.name LIKE '%' || @searchTerm || '%'
                          OR p.description LIKE '%' || @searchTerm || '%'
                          OR c.name LIKE '%' || @searchTerm || '%')
-                    ORDER BY 
-                        CASE 
+                    ORDER BY
+                        CASE
                             WHEN p.name LIKE @searchTerm || '%' THEN 1
                             WHEN p.name LIKE '%' || @searchTerm || '%' THEN 2
                             ELSE 3
@@ -345,16 +452,16 @@ namespace PosKernel.Extensions.Restaurant
                     LIMIT @maxResults";
                 command.Parameters.AddWithValue("@searchTerm", searchTerm);
             }
-            
+
             command.Parameters.AddWithValue("@maxResults", maxResults);
 
             var products = new List<RetailProductSearchResult>();
             using var reader = await command.ExecuteReaderAsync();
-            
+
             while (await reader.ReadAsync())
             {
                 var priceCents = reader.GetInt64(4); // base_price_cents from database
-                
+
                 var productInfo = new RestaurantCompatibleProductInfo
                 {
                     Sku = reader.GetString(0),
@@ -370,6 +477,17 @@ namespace PosKernel.Extensions.Restaurant
                     ProductInfo = productInfo,
                     EffectivePriceCents = priceCents
                 });
+            }
+
+            _logger.LogInformation("SEARCH_PRODUCTS: Found {ProductCount} products for search term '{SearchTerm}'", products.Count, searchTerm);
+
+            // Log first few results for debugging
+            foreach (var product in products.Take(3))
+            {
+                _logger.LogInformation("SEARCH_PRODUCTS: Result - {Sku}: {Name} (${Price:F2})",
+                    product.ProductInfo.Sku,
+                    product.ProductInfo.Name,
+                    product.ProductInfo.BasePriceCents / 100.0);
             }
 
             return new ExtensionResponse
@@ -392,10 +510,10 @@ namespace PosKernel.Extensions.Restaurant
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                FROM products p 
+                FROM products p
                 INNER JOIN categories c ON p.category_id = c.id
                 WHERE p.is_active = 1
-                ORDER BY 
+                ORDER BY
                     CASE c.name
                         WHEN 'Hot Coffees' THEN 1
                         WHEN 'Hot Drinks' THEN 2
@@ -408,11 +526,11 @@ namespace PosKernel.Extensions.Restaurant
 
             var products = new List<RetailProductSearchResult>();
             using var reader = await command.ExecuteReaderAsync();
-            
+
             while (await reader.ReadAsync())
             {
                 var priceCents = reader.GetInt64(4); // base_price_cents from database
-                
+
                 var productInfo = new RestaurantCompatibleProductInfo
                 {
                     Sku = reader.GetString(0),
@@ -451,7 +569,7 @@ namespace PosKernel.Extensions.Restaurant
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT p.sku, p.name, p.description, c.name as category_name, p.base_price_cents, p.is_active
-                FROM products p 
+                FROM products p
                 INNER JOIN categories c ON p.category_id = c.id
                 WHERE p.is_active = 1 AND c.name = @category
                 ORDER BY p.name";
@@ -459,11 +577,11 @@ namespace PosKernel.Extensions.Restaurant
 
             var products = new List<RetailProductSearchResult>();
             using var reader = await command.ExecuteReaderAsync();
-            
+
             while (await reader.ReadAsync())
             {
                 var priceCents = reader.GetInt64(4); // base_price_cents from database
-                
+
                 var productInfo = new RestaurantCompatibleProductInfo
                 {
                     Sku = reader.GetString(0),
@@ -500,13 +618,13 @@ namespace PosKernel.Extensions.Restaurant
             using var command = connection.CreateCommand();
             command.CommandText = @"
                 SELECT c.name
-                FROM categories c 
+                FROM categories c
                 WHERE c.is_active = 1
                 ORDER BY c.display_order, c.name";
 
             var categories = new List<string>();
             using var reader = await command.ExecuteReaderAsync();
-            
+
             while (await reader.ReadAsync())
             {
                 categories.Add(reader.GetString(0));
@@ -647,14 +765,14 @@ namespace PosKernel.Extensions.Restaurant
 
             // Check if database exists and is initialized
             var dbExists = File.Exists(_databasePath);
-            
+
             using var connection = new SqliteConnection($"Data Source={_databasePath}");
             connection.Open();
 
             if (!dbExists)
             {
                 _logger.LogInformation("Initializing new retail catalog database for {StoreType}: {DatabasePath}", _storeType, _databasePath);
-                
+
                 // ARCHITECTURAL PRINCIPLE: Schema and data files come from user space, not solution directory
                 if (File.Exists(_schemaPath))
                 {
@@ -689,13 +807,38 @@ namespace PosKernel.Extensions.Restaurant
                 using var command = connection.CreateCommand();
                 command.CommandText = "PRAGMA integrity_check";
                 var result = command.ExecuteScalar()?.ToString();
-                
+
                 if (result != "ok")
                 {
                     throw new InvalidOperationException($"Database integrity check failed: {result}");
                 }
-                
+
                 _logger.LogInformation("Database integrity verified for {StoreType}: {DatabasePath}", _storeType, _databasePath);
+            }
+
+            // DIAGNOSTIC: Always log product count after database initialization/verification
+            using var countCommand = connection.CreateCommand();
+            countCommand.CommandText = "SELECT COUNT(*) FROM products WHERE is_active = 1";
+            var productCount = Convert.ToInt32(countCommand.ExecuteScalar());
+            _logger.LogInformation("DATABASE DIAGNOSTIC: {ProductCount} active products found in {StoreType} database", productCount, _storeType);
+
+            // DIAGNOSTIC: Always log some sample kopi products for debugging
+            if (productCount > 0)
+            {
+                using var sampleCommand = connection.CreateCommand();
+                sampleCommand.CommandText = "SELECT sku, name, base_price FROM products WHERE name LIKE '%kopi%' OR name LIKE '%coffee%' LIMIT 5";
+                using var reader = sampleCommand.ExecuteReader();
+                while (reader.Read())
+                {
+                    var sku = reader.GetString(0);  // sku column (index 0)
+                    var name = reader.GetString(1); // name column (index 1)
+                    var price = reader.IsDBNull(2) ? 0.0 : reader.GetDouble(2); // base_price column (index 2)
+                    _logger.LogInformation("DATABASE DIAGNOSTIC: Found product {Sku}: {Name} - ${Price:F2}", sku, name, price);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("DATABASE DIAGNOSTIC: No active products found! Database may be empty or have schema issues.");
             }
         }
 
@@ -739,7 +882,7 @@ namespace PosKernel.Extensions.Restaurant
             using var command = connection.CreateCommand();
             command.CommandText = defaultSchema;
             command.ExecuteNonQuery();
-            
+
             _logger.LogInformation("Default retail schema created for {StoreType}", _storeType);
 
             // Also write the schema to the expected file location for future reference
@@ -773,7 +916,7 @@ namespace PosKernel.Extensions.Restaurant
 
             using var command = connection.CreateCommand();
             command.CommandText = @"
-                SELECT 
+                SELECT
                     component_id,
                     set_product_sku,
                     component_type,
@@ -784,14 +927,14 @@ namespace PosKernel.Extensions.Restaurant
                     price_adjustment_cents,
                     display_order
                 FROM set_meal_components
-                WHERE set_product_sku = @productSku 
+                WHERE set_product_sku = @productSku
                   AND is_active = 1
                 ORDER BY display_order, component_type";
             command.Parameters.AddWithValue("@productSku", productSku);
 
             var components = new List<SetMealComponent>();
             using var reader = await command.ExecuteReaderAsync();
-            
+
             while (await reader.ReadAsync())
             {
                 components.Add(new SetMealComponent
@@ -835,13 +978,13 @@ namespace PosKernel.Extensions.Restaurant
                     pm.display_order
                 FROM product_modifications pm
                 INNER JOIN modification_availability ma ON ma.modification_id = pm.modification_id
-                WHERE ma.parent_sku = @productSku 
+                WHERE ma.parent_sku = @productSku
                   AND ma.parent_type = 'PRODUCT'
                   AND pm.is_active = 1
                   AND ma.is_active = 1
                   AND EXISTS (
-                      SELECT 1 FROM set_meal_components smc 
-                      WHERE smc.set_product_sku = @productSku 
+                      SELECT 1 FROM set_meal_components smc
+                      WHERE smc.set_product_sku = @productSku
                         AND smc.component_type = @componentType
                   )
                 ORDER BY pm.display_order, pm.name";
@@ -850,7 +993,7 @@ namespace PosKernel.Extensions.Restaurant
 
             var modifications = new List<ProductModification>();
             using var reader = await command.ExecuteReaderAsync();
-            
+
             while (await reader.ReadAsync())
             {
                 modifications.Add(new ProductModification
@@ -878,12 +1021,12 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets or sets the request identifier.
         /// </summary>
         public string Id { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the method name.
         /// </summary>
         public string Method { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the request parameters.
         /// </summary>
@@ -899,17 +1042,17 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets or sets the response identifier.
         /// </summary>
         public string Id { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets whether the operation was successful.
         /// </summary>
         public bool Success { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the error message if the operation failed.
         /// </summary>
         public string? Error { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the response data.
         /// </summary>
@@ -926,28 +1069,28 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets or sets the product SKU.
         /// </summary>
         public string Sku { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the product name.
         /// </summary>
         public string Name { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the product description.
         /// </summary>
         public string Description { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the category name.
         /// </summary>
         public string CategoryName { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the base price in cents.
         /// ARCHITECTURAL PRINCIPLE: Store price as integers to avoid floating-point precision issues.
         /// </summary>
         public long BasePriceCents { get; set; }
-        
+
         /// <summary>
         /// Gets or sets whether the product is active.
         /// </summary>
@@ -963,7 +1106,7 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets or sets the product information.
         /// </summary>
         public RestaurantCompatibleProductInfo ProductInfo { get; set; } = new();
-        
+
         /// <summary>
         /// Gets or sets the effective price in cents.
         /// </summary>
@@ -980,43 +1123,43 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets or sets the component identifier.
         /// </summary>
         public string ComponentId { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the set product SKU that this component belongs to.
         /// </summary>
         public string SetProductSku { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the component type (e.g., "DRINK_CHOICE", "SIDE_CHOICE").
         /// </summary>
         public string ComponentType { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the modification identifier if this component has a modification.
         /// </summary>
         public string? ModificationId { get; set; }
-        
+
         /// <summary>
         /// Gets or sets whether this component is required.
         /// </summary>
         public bool IsRequired { get; set; }
-        
+
         /// <summary>
         /// Gets or sets whether this component is automatic (i.e., added by default).
         /// </summary>
         public bool IsAutomatic { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the quantity of this component.
         /// </summary>
         public int Quantity { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the price adjustment in cents for this component.
         /// ARCHITECTURAL PRINCIPLE: All monetary values in cents to avoid floating-point issues.
         /// </summary>
         public long PriceAdjustmentCents { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the display order for this component in the set meal.
         /// </summary>
@@ -1033,32 +1176,32 @@ namespace PosKernel.Extensions.Restaurant
         /// Gets or sets the modification identifier.
         /// </summary>
         public string ModificationId { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the modification name.
         /// </summary>
         public string Name { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the modification description.
         /// </summary>
         public string? Description { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the modification type.
         /// </summary>
         public string ModificationType { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the price adjustment type.
         /// </summary>
         public string PriceAdjustmentType { get; set; } = "";
-        
+
         /// <summary>
         /// Gets or sets the base price in cents.
         /// </summary>
         public long BasePriceCents { get; set; }
-        
+
         /// <summary>
         /// Gets or sets the display order.
         /// </summary>

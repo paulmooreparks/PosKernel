@@ -1,34 +1,33 @@
 # POS Kernel Documentation
 
-**System**: POS Kernel v0.7.5+ with Template-Driven AI Architecture
-**Status**: Production Ready - Cultural Intelligence Complete
-**Latest Achievement**: Template-based AI prompts with zero hardcoded cultural assumptions
+**System**: POS Kernel v0.7.0+ with Universal Product Modifications
+**Status**: Development Build - Modifications Framework Complete
+**Latest Achievement**: Universal modifications + multi-language architecture implementation
 
 ## Quick Start
 
 **New to POS Kernel?** Start here:
 1. [ARCHITECTURE_INDEX.md](ARCHITECTURE_INDEX.md) - Complete documentation overview
-2. [ai-prompt-template-architecture.md](ai-prompt-template-architecture.md) - Latest AI template system
+2. [product-modifications-localization-architecture.md](product-modifications-localization-architecture.md) - Latest major feature
 3. [ai-setup-guide.md](ai-setup-guide.md) - Get AI demo running
 4. [BUILD_RULES.md](BUILD_RULES.md) - Development guidelines
 
 ## Latest Major Achievement
 
-### Template-Driven AI Cultural Intelligence System
+### Universal Product Modifications + Multi-Language System
 
-**Architecture Implementation**: Complete elimination of hardcoded cultural assumptions in C# code
+**Architecture Implementation**: Complete modifications framework with Singapore kopitiam design
 
 ```
-Customer: "set roti bakar kaya"
-Template: Translates "roti bakar kaya set" → "kaya toast set"
-Database: Finds "Traditional Kaya Toast Set" (TSET001)
-AI: "OK, Traditional Kaya Toast Set S$7.40. What drink you want?"
+Customer: "kopi si kosong"
+AI: Identifies base="Kopi C", modification="no_sugar"
+Receipt: "Kopi C (无糖) $1.40" [Chinese localization]
 ```
 
 **Key Documents**:
-- [ai-prompt-template-architecture.md](ai-prompt-template-architecture.md) - Complete template system specification
-- [ai-integration-architecture.md](ai-integration-architecture.md) - AI-kernel integration patterns
-- [internationalization-strategy.md](internationalization-strategy.md) - Multi-cultural framework
+- [product-modifications-localization-architecture.md](product-modifications-localization-architecture.md) - Complete specification
+- [internationalization-strategy.md](internationalization-strategy.md) - Enhanced with cultural AI
+- [catalog-architecture.md](catalog-architecture.md) - Updated with modifications schema
 
 ## Documentation Categories
 
@@ -47,8 +46,7 @@ AI: "OK, Traditional Kaya Toast Set S$7.40. What drink you want?"
 - [internationalization-strategy.md](internationalization-strategy.md) - Enhanced with modifications system
 - [product-modifications-localization-architecture.md](product-modifications-localization-architecture.md) - Multi-language implementation
 
-### AI Integration & Cultural Intelligence
-- [ai-prompt-template-architecture.md](ai-prompt-template-architecture.md) - Template-driven AI prompts (NEW)
+### AI Integration
 - [ai-integration-architecture.md](ai-integration-architecture.md) - AI-POS integration strategy
 - [ai-demo-technical-overview.md](ai-demo-technical-overview.md) - Technical implementation details
 - [ai-setup-guide.md](ai-setup-guide.md) - Configuration and setup
@@ -78,13 +76,12 @@ Grocery: Substitutions (organic +$0.50)
 Bakery: Custom orders (extra filling, sugar-free)
 ```
 
-### Cultural AI Intelligence (Production Ready)
+### Cultural AI Intelligence
 ```
-Template-Driven Translation: "roti bakar kaya set" → "kaya toast set"
-Database Integration: Finds "Traditional Kaya Toast Set" automatically
-Zero Hardcoding: All cultural knowledge in configurable template files
-Multi-Store Support: Different personalities per store (Kopitiam, American Diner, Japanese Conbini)
-Fail-Fast Design: Clear errors when cultural configuration missing
+No Hard-Coding: AI learns cultural context intelligently
+Multi-Language: BCP 47 compliance with script support
+Natural Parsing: "kopi si kosong" → base + modifications
+Context Aware: Kopitiam vs coffee shop vs grocery intelligence
 ```
 
 ## Technical Achievements

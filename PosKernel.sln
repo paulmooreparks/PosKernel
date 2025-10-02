@@ -65,8 +65,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pos-kernel-rs", "pos-kernel
 		pos-kernel-rs\poskernel.toml = pos-kernel-rs\poskernel.toml
 	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "pos_kernel_data", "pos_kernel_data", "{59C3FB27-6369-4CBE-BCE0-FA3878D827BC}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "proto", "proto", "{FE785415-E85F-4ED0-9C1C-AB71C78A1EA9}"
 	ProjectSection(SolutionItems) = preProject
 		pos-kernel-rs\proto\pos_kernel.proto = pos-kernel-rs\proto\pos_kernel.proto
@@ -134,6 +132,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.AI", "PosKernel.AI\PosKernel.AI.csproj", "{3E0110EC-EAC5-00F1-9FED-AB5EFAA06BF9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.AI.Demo", "PosKernel.AI.Demo\PosKernel.AI.Demo.csproj", "{9ED3A0DE-3D3E-434B-86BD-C75234A93EEE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.AI.Cli", "PosKernel.AI.Cli\PosKernel.AI.Cli.csproj", "{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -289,6 +289,18 @@ Global
 		{9ED3A0DE-3D3E-434B-86BD-C75234A93EEE}.Release|x64.Build.0 = Release|Any CPU
 		{9ED3A0DE-3D3E-434B-86BD-C75234A93EEE}.Release|x86.ActiveCfg = Release|Any CPU
 		{9ED3A0DE-3D3E-434B-86BD-C75234A93EEE}.Release|x86.Build.0 = Release|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Debug|x64.Build.0 = Debug|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Debug|x86.Build.0 = Debug|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|x64.ActiveCfg = Release|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|x64.Build.0 = Release|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|x86.ActiveCfg = Release|Any CPU
+		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -296,7 +308,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{3DC9CEF6-0580-44D6-82D4-7A8A9B8B87FE} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{C41C18A3-361A-426B-897A-920E5D6027BA} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
-		{59C3FB27-6369-4CBE-BCE0-FA3878D827BC} = {C41C18A3-361A-426B-897A-920E5D6027BA}
 		{FE785415-E85F-4ED0-9C1C-AB71C78A1EA9} = {C41C18A3-361A-426B-897A-920E5D6027BA}
 		{3FD8744D-09FF-4496-909F-FD3DB58C1C58} = {C41C18A3-361A-426B-897A-920E5D6027BA}
 		{BC288E33-A36A-4710-87B6-1B77CFE5BB3F} = {C41C18A3-361A-426B-897A-920E5D6027BA}

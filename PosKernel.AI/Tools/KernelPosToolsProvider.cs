@@ -23,6 +23,8 @@ using PosKernel.Abstractions.Services;
 using PosKernel.AI.Services;
 using PosKernel.Client;
 using PosKernel.Extensions.Restaurant.Client;
+using HttpRestaurantExtensionClient = PosKernel.Extensions.Restaurant.Client.HttpRestaurantExtensionClient;
+using HttpProductInfo = PosKernel.Extensions.Restaurant.Client.HttpProductInfo;
 using RestaurantProductInfo = PosKernel.Extensions.Restaurant.ProductInfo;
 using Microsoft.Extensions.Configuration;
 using PosKernel.Configuration.Services;
@@ -39,7 +41,8 @@ namespace PosKernel.AI.Tools
     public class KernelPosToolsProvider : IDisposable
     {
         private readonly IPosKernelClient _kernelClient;
-        private readonly RestaurantExtensionClient _restaurantClient;
+        private readonly RestaurantExtensionClient? _restaurantClient;
+        private readonly HttpRestaurantExtensionClient? _httpRestaurantClient;
         private readonly ILogger<KernelPosToolsProvider> _logger;
         private readonly IConfiguration? _configuration;
         private ICurrencyFormattingService? _currencyFormatter;
@@ -51,6 +54,25 @@ namespace PosKernel.AI.Tools
         private bool _disposed = false;
 
         /// <summary>
+        /// Constructor with HTTP Restaurant Extension client (cross-platform).
+        /// </summary>
+        public KernelPosToolsProvider(
+            HttpRestaurantExtensionClient httpRestaurantClient,
+            ILogger<KernelPosToolsProvider> logger,
+            IConfiguration? configuration = null)
+        {
+            _httpRestaurantClient = httpRestaurantClient ?? throw new ArgumentNullException(nameof(httpRestaurantClient));
+            _restaurantClient = null;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _configuration = configuration;
+            _currencyFormatter = null;
+            _storeConfig = null;
+
+            _kernelClient = PosKernelClientFactory.CreateClient(_logger, configuration);
+            _logger.LogInformation("🚀 KernelPosToolsProvider initialized with HTTP Restaurant Extension client");
+        }
+
+        /// <summary>
         /// Basic constructor with minimal dependencies.
         /// </summary>
         public KernelPosToolsProvider(
@@ -59,6 +81,7 @@ namespace PosKernel.AI.Tools
             IConfiguration? configuration = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
+            _httpRestaurantClient = null;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration;
             _currencyFormatter = null;
@@ -80,6 +103,7 @@ namespace PosKernel.AI.Tools
             ICurrencyFormattingService? currencyFormatter = null)
         {
             _restaurantClient = restaurantClient ?? throw new ArgumentNullException(nameof(restaurantClient));
+            _httpRestaurantClient = null;
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _storeConfig = storeConfig ?? throw new ArgumentNullException(nameof(storeConfig));
             _configuration = configuration;
@@ -91,6 +115,60 @@ namespace PosKernel.AI.Tools
             _kernelClient = PosKernelClientFactory.CreateClient(_logger, kernelType, configuration);
             _logger.LogInformation("🚀 KernelPosToolsProvider initialized with {KernelType} kernel and store: {StoreName} ({Currency})",
                 kernelType, storeConfig.StoreName, storeConfig.Currency);
+        }
+
+        /// <summary>
+        /// Constructor with HTTP Restaurant Extension client and store configuration for cross-platform support.
+        /// </summary>
+        public KernelPosToolsProvider(
+            HttpRestaurantExtensionClient httpRestaurantClient,
+            ILogger<KernelPosToolsProvider> logger,
+            StoreConfig storeConfig,
+            PosKernelClientFactory.KernelType kernelType,
+            IConfiguration? configuration = null,
+            ICurrencyFormattingService? currencyFormatter = null)
+        {
+            _httpRestaurantClient = httpRestaurantClient ?? throw new ArgumentNullException(nameof(httpRestaurantClient));
+            _restaurantClient = null;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _storeConfig = storeConfig ?? throw new ArgumentNullException(nameof(storeConfig));
+            _configuration = configuration;
+            _currencyFormatter = currencyFormatter;
+
+            // ARCHITECTURAL PRINCIPLE: Validate store configuration completeness at construction time
+            ValidateStoreConfiguration(storeConfig);
+
+            _kernelClient = PosKernelClientFactory.CreateClient(_logger, kernelType, configuration);
+            _logger.LogInformation("🚀 KernelPosToolsProvider initialized with HTTP client, {KernelType} kernel and store: {StoreName} ({Currency})",
+                kernelType, storeConfig.StoreName, storeConfig.Currency);
+        }
+
+        /// <summary>
+        /// Helper method to search products using either client type.
+        /// </summary>
+        private async Task<IEnumerable<dynamic>> SearchProductsInternalAsync(string query, int maxResults, CancellationToken cancellationToken = default)
+        {
+            if (_httpRestaurantClient != null)
+            {
+                var products = await _httpRestaurantClient.SearchProductsAsync(query, maxResults);
+                return products.Select(p => new
+                {
+                    Sku = p.Id,
+                    Name = p.Name,
+                    Price = p.Price,
+                    Category = p.Category,
+                    Description = p.Description
+                });
+            }
+            else if (_restaurantClient != null)
+            {
+                // For now, throw exception - would need actual implementation
+                throw new NotImplementedException("Named pipe client search not yet adapted");
+            }
+            else
+            {
+                throw new InvalidOperationException("No restaurant client available");
+            }
         }
 
         /// <summary>
@@ -525,39 +603,45 @@ namespace PosKernel.AI.Tools
                 }
 
                 // Search for the product (by SKU or description)
-                var products = await _restaurantClient.SearchProductsAsync(searchQuery, 3, cancellationToken);
-                if (products.Count == 0)
+                var products = await SearchProductsInternalAsync(searchQuery, 3, cancellationToken);
+                var productsList = products.ToList();
+                if (!productsList.Any())
                 {
                     return $"PRODUCT_NOT_FOUND: No products found matching '{searchQuery}'. Try different search terms.";
                 }
 
                 // Pick the best match
-                var product = products[0];
+                var product = productsList[0];
 
                 // Ensure transaction exists
                 var transactionId = await EnsureTransactionAsync(cancellationToken);
 
                 // Add with correct price
-                var productPrice = product.BasePriceCents / 100.0m;
-                _logger.LogInformation("Adding item {ProductSku} with price: {PriceCents} cents ({Decimal})", product.Sku, product.BasePriceCents, productPrice);
-                _logger.LogInformation("Product metadata: Name='{ProductName}', Description='{ProductDescription}'", product.Name, product.Description);
+                var productPrice = (int)product.BasePriceCents / 100.0m;
+                var extractedProductSku = (string)product.Sku;
+                var extractedProductName = (string)product.Name;
+                var extractedProductDescription = (string)product.Description;
+                var extractedProductBasePriceCents = (int)product.BasePriceCents;
+
+                _logger.LogInformation("Adding item {ProductSku} with price: {PriceCents} cents ({Decimal})", extractedProductSku, extractedProductBasePriceCents, productPrice);
+                _logger.LogInformation("Product metadata: Name='{ProductName}', Description='{ProductDescription}'", extractedProductName, extractedProductDescription);
 
                 var result = await _kernelClient.AddLineItemAsync(
-                    _sessionId!, transactionId, product.Sku, quantity, productPrice, product.Name, product.Description, cancellationToken);
+                    _sessionId!, transactionId, extractedProductSku, quantity, productPrice, extractedProductName, extractedProductDescription, cancellationToken);
 
                 if (!result.Success)
                 {
                     throw new InvalidOperationException($"Failed to add item to transaction: {result.Error}");
                 }
 
-                var newlyAddedLineItem = result.LineItems?.Where(item => item.ProductId == product.Sku)
+                var newlyAddedLineItem = result.LineItems?.Where(item => item.ProductId == extractedProductSku)
                                                           .OrderByDescending(item => item.LineNumber)
                                                           .FirstOrDefault();
 
                 if (newlyAddedLineItem == null)
                 {
-                    _logger.LogError("❌ CRITICAL: Could not find newly added line item for {ProductSku} in transaction result", product.Sku);
-                    return $"ITEM_ADDED: sku={product.Sku}; qty={quantity}; line_id=<unknown>; line_number=0";
+                    _logger.LogError("❌ CRITICAL: Could not find newly added line item for {ProductSku} in transaction result", extractedProductSku);
+                    return $"ITEM_ADDED: sku={extractedProductSku}; qty={quantity}; line_id=<unknown>; line_number=0";
                 }
 
                 var newlyAddedLineItemId = newlyAddedLineItem.LineItemId;
@@ -567,11 +651,11 @@ namespace PosKernel.AI.Tools
                 {
                     if (string.IsNullOrEmpty(newlyAddedLineItemId))
                     {
-                        _logger.LogWarning("⚠️  MISSING_LINE_ID: Newly added line for {ProductSku} has no LineItemId; cannot apply preparation notes.", product.Sku);
+                        _logger.LogWarning("⚠️  MISSING_LINE_ID: Newly added line for {ProductSku} has no LineItemId; cannot apply preparation notes.", extractedProductSku);
                     }
                     else
                     {
-                        _logger.LogInformation("Processing preparation notes for {ProductSku} (line item {LineItemId}): '{Notes}'", product.Sku, newlyAddedLineItemId, preparationNotes);
+                        _logger.LogInformation("Processing preparation notes for {ProductSku} (line item {LineItemId}): '{Notes}'", extractedProductSku, newlyAddedLineItemId, preparationNotes);
                         await ProcessPreparationNotesAsModificationsAsync(transactionId, newlyAddedLineItemId, preparationNotes, cancellationToken);
                     }
                 }
@@ -592,7 +676,7 @@ namespace PosKernel.AI.Tools
                             if (drinkProducts.Count == 0)
                             {
                                 _logger.LogWarning("Could not find drink product for composite order tail: {Tail}", compositeTail);
-                                return $"SET_ADDED: {product.Sku} added to transaction. Use get_set_configuration to determine customization options.";
+                                return $"SET_ADDED: {extractedProductSku} added to transaction. Use get_set_configuration to determine customization options.";
                             }
 
                             var drinkProduct = drinkProducts[0];
@@ -600,13 +684,13 @@ namespace PosKernel.AI.Tools
                             if (!addDrink.Success)
                             {
                                 _logger.LogError("❌ Failed to add drink to set: {Error}", addDrink.Error);
-                                return $"SET_ADDED: {product.Sku} added to transaction. Use get_set_configuration to determine customization options.";
+                                return $"SET_ADDED: {extractedProductSku} added to transaction. Use get_set_configuration to determine customization options.";
                             }
 
                             var txnAfterDrink = await _kernelClient.GetTransactionAsync(_sessionId!, transactionId, cancellationToken);
                             if (!txnAfterDrink.Success)
                             {
-                                return $"SET_ADDED: {product.Sku} added but failed to retrieve transaction for drink confirmation: {txnAfterDrink.Error}";
+                                return $"SET_ADDED: {extractedProductSku} added but failed to retrieve transaction for drink confirmation: {txnAfterDrink.Error}";
                             }
 
                             var drinkChild = txnAfterDrink.LineItems?
@@ -620,19 +704,19 @@ namespace PosKernel.AI.Tools
                             // ARCHITECTURAL PRINCIPLE: AI handles ALL cultural modifications through direct tool calls
                             // No interpretation logic - AI uses modify_line_item tool directly for cultural variants
 
-                            return $"SET_UPDATED: {product.Sku} drink updated to {drinkProduct.Name}{(string.IsNullOrEmpty(drinkChildId) ? string.Empty : $". DRINK_LINE_ID={drinkChildId}, DRINK_LINE_NUMBER={drinkChildNumber}")}";
+                            return $"SET_UPDATED: {extractedProductSku} drink updated to {drinkProduct.Name}{(string.IsNullOrEmpty(drinkChildId) ? string.Empty : $". DRINK_LINE_ID={drinkChildId}, DRINK_LINE_NUMBER={drinkChildNumber}")}";
                         }
                         catch (Exception ex)
                         {
                             _logger.LogError(ex, "Failed to process composite set-with-drink order for {Item}", itemDescription);
-                            return $"SET_ADDED: {product.Sku} added to transaction. Use get_set_configuration to determine customization options.";
+                            return $"SET_ADDED: {extractedProductSku} added to transaction. Use get_set_configuration to determine customization options.";
                         }
                     }
 
-                    return $"SET_ADDED: {product.Sku} added to transaction. Use get_set_configuration to determine customization options.";
+                    return $"SET_ADDED: {extractedProductSku} added to transaction. Use get_set_configuration to determine customization options.";
                 }
 
-                return $"ITEM_ADDED: sku={product.Sku}; qty={quantity}; line_id={newlyAddedLineItemId}; line_number={newlyAddedLineItem.LineNumber}";
+                return $"ITEM_ADDED: sku={extractedProductSku}; qty={quantity}; line_id={newlyAddedLineItemId}; line_number={newlyAddedLineItem.LineNumber}";
             }
             catch (Exception ex)
             {
@@ -1067,22 +1151,51 @@ namespace PosKernel.AI.Tools
 
             try
             {
-                var products = await _restaurantClient.SearchProductsAsync(searchTerm, maxResults, cancellationToken);
-
-                if (products.Count == 0)
+                // ARCHITECTURAL FIX: Use appropriate client based on what's available
+                if (_httpRestaurantClient != null)
                 {
-                    return $"PRODUCT_NOT_FOUND: No products found matching '{searchTerm}'. Try different search terms.";
+                    var products = await _httpRestaurantClient.SearchProductsAsync(searchTerm, maxResults);
+
+                    if (products.Count == 0)
+                    {
+                        return $"PRODUCT_NOT_FOUND: No products found matching '{searchTerm}'. Try different search terms.";
+                    }
+
+                    var resultBuilder = new StringBuilder();
+                    resultBuilder.AppendLine($"FOUND_PRODUCTS: {products.Count} products found for '{searchTerm}':");
+
+                    foreach (var product in products)
+                    {
+                        resultBuilder.AppendLine($"- {product.Id}: {product.Name} ({FormatCurrency(product.Price)})");
+                    }
+
+                    return resultBuilder.ToString();
                 }
-
-                var resultBuilder = new StringBuilder();
-                resultBuilder.AppendLine($"FOUND_PRODUCTS: {products.Count} products found for '{searchTerm}':");
-
-                foreach (var product in products)
+                else if (_restaurantClient != null)
                 {
-                    resultBuilder.AppendLine($"- {product.Sku}: {product.Name} ({FormatCurrency(product.BasePriceCents / 100.0m)})");
-                }
+                    var products = await _restaurantClient.SearchProductsAsync(searchTerm, maxResults, cancellationToken);
 
-                return resultBuilder.ToString();
+                    if (products.Count == 0)
+                    {
+                        return $"PRODUCT_NOT_FOUND: No products found matching '{searchTerm}'. Try different search terms.";
+                    }
+
+                    var resultBuilder = new StringBuilder();
+                    resultBuilder.AppendLine($"FOUND_PRODUCTS: {products.Count} products found for '{searchTerm}':");
+
+                    foreach (var product in products)
+                    {
+                        resultBuilder.AppendLine($"- {product.Sku}: {product.Name} ({FormatCurrency(product.BasePriceCents / 100.0m)})");
+                    }
+
+                    return resultBuilder.ToString();
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        "DESIGN DEFICIENCY: No restaurant client available. " +
+                        "Either HttpRestaurantExtensionClient or RestaurantExtensionClient must be configured.");
+                }
             }
             catch (Exception ex)
             {

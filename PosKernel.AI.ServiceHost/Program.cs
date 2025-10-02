@@ -1,79 +1,234 @@
-//
-// Copyright 2025 Paul Moore Parks and contributors
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
+using Microsoft.AspNetCore.Builder;//
+
+using Microsoft.Extensions.DependencyInjection;// Copyright 2025 Paul Moore Parks and contributors
+
+using Microsoft.Extensions.Hosting;//
+
+using Microsoft.Extensions.Logging;// Licensed under the Apache License, Version 2.0 (the "License");
+
+using PosKernel.AI.Core;// you may not use this file except in compliance with the License.
+
+using PosKernel.AI.Models;// You may obtain a copy of the License at
+
+using PosKernel.AI.Services;//
+
+using PosKernel.Configuration;//     http://www.apache.org/licenses/LICENSE-2.0
+
+using System.Text;//
+
 // Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
+
+namespace PosKernel.AI.ServiceHost;// distributed under the License is distributed on an "AS IS" BASIS,
+
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
 
-using System.Text;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
-using PosKernel.Abstractions;
-using PosKernel.Abstractions.Services;
-using PosKernel.AI.Services;
-using PosKernel.AI.Tools;
-using PosKernel.AI.Core;
-using PosKernel.AI.Demo.UI.Terminal;
-using PosKernel.AI.Demo.Services;
-using PosKernel.AI.Interfaces;
-using PosKernel.Configuration;
-using PosKernel.Configuration.Services;
-using PosKernel.AI.Models;
-using PosKernel.Extensions.Restaurant.Client;
-using PosKernel.AI.Common.Abstractions;
-using PosKernel.AI.Common.Factories;
+class Program// See the License for the specific language governing permissions and
 
-namespace PosKernel.AI.Demo;
+{// limitations under the License.
 
-/// <summary>
-/// Terminal.Gui demo application for POS Kernel AI integration.
-/// ARCHITECTURAL PRINCIPLE: Pure UI application - all business logic remains in PosKernel.AI
-/// </summary>
-class Program
-{
-    static async Task<int> Main(string[] args)
+    static async Task<int> Main(string[] args)//
+
     {
-        System.Console.OutputEncoding = Encoding.UTF8;
 
-        try
-        {
-            var showDebug = args.Contains("--debug") || args.Contains("-d");
-            var useMockKernel = args.Contains("--mock") || args.Contains("-m");
+        Console.OutputEncoding = Encoding.UTF8;using System.Text;
 
-            if (args.Contains("--help") || args.Contains("-h"))
+using Microsoft.AspNetCore.Builder;
+
+        tryusing Microsoft.AspNetCore.Http;
+
+        {using Microsoft.AspNetCore.Hosting;
+
+            var config = PosKernelConfiguration.Initialize();using Microsoft.Extensions.DependencyInjection;
+
+            using Microsoft.Extensions.Hosting;
+
+            Console.WriteLine("AI Service Host v0.5.0");using Microsoft.Extensions.Logging;
+
+            using Microsoft.Extensions.Configuration;
+
+            var builder = WebApplication.CreateBuilder(args);using PosKernel.Abstractions;
+
+            using PosKernel.Abstractions.Services;
+
+            builder.Logging.ClearProviders();using PosKernel.AI.Services;
+
+            builder.Logging.AddConsole();using PosKernel.AI.Tools;
+
+            using PosKernel.AI.Core;
+
+            var storeConfig = new StoreConfigurationusing PosKernel.AI.Interfaces;
+
+            {using PosKernel.Configuration;
+
+                StoreName = "Toast Boleh",using PosKernel.Configuration.Services;
+
+                StoreType = StoreType.Kopitiam,using PosKernel.AI.Models;
+
+                Currency = "SGD"using PosKernel.Extensions.Restaurant.Client;
+
+            };using System.Diagnostics;
+
+            using PosKernel.AI.Common.Abstractions;
+
+            var personality = new PersonalityConfigurationusing PosKernel.AI.Common.Factories;
+
+            {
+
+                PersonalityType = PersonalityType.SingaporeanKopitiamUncle,namespace PosKernel.AI.ServiceHost;
+
+                StaffTitle = "Uncle",
+
+                CultureInfo = "en-SG"/// <summary>
+
+            };/// Headless AI Service Host for POS Kernel AI integration.
+
+            /// Provides cross-platform HTTP API for AI services.
+
+            await builder.Services.ConfigurePosAiServicesAsync(storeConfig, personality, false);/// Can be controlled via CLI commands and provides continuous logging.
+
+            ///
+
+            var app = builder.Build();/// ARCHITECTURAL PRINCIPLE: Same business logic as Demo, different interface.
+
+            /// </summary>
+
+            app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }));class Program
+
+            {
+
+            Console.WriteLine("Starting on http://localhost:5000");    static async Task<int> Main(string[] args)
+
+                {
+
+            await app.RunAsync();        Console.OutputEncoding = Encoding.UTF8;
+
+
+
+            return 0;        try
+
+        }        {
+
+        catch (Exception ex)            // ARCHITECTURAL PRINCIPLE: Initialize PosKernel configuration to load .env file
+
+        {            var config = PosKernelConfiguration.Initialize();
+
+            Console.WriteLine($"FATAL ERROR: {ex.Message}");
+
+            return 1;            var showDebug = args.Contains("--debug") || args.Contains("-d");
+
+        }            var storeType = GetStoreTypeFromArgs(args);
+
+    }
+
+}            if (args.Contains("--help") || args.Contains("-h"))
             {
                 ShowHelp();
                 return 0;
             }
 
-            // Initialize configuration system
-            var config = PosKernelConfiguration.Initialize();
-            var storeAiConfig = new AiConfiguration(config);
+            Console.WriteLine("🤖 POS Kernel AI Service Host v0.5.0");
+            Console.WriteLine("Cross-platform AI cashier service with HTTP API");
 
-            // ARCHITECTURAL PRINCIPLE: Use shared factory - no hardcoded provider assumptions
-            // Validate store AI configuration at startup (fail fast)
-            var provider = storeAiConfig.Provider;
-            var model = storeAiConfig.Model;
-            var baseUrl = storeAiConfig.BaseUrl;
-            var apiKey = storeAiConfig.ApiKey;
-
-            if (string.IsNullOrWhiteSpace(provider))
+            // Create minimal configuration for service
+            var storeConfig = new StoreConfiguration
             {
-                Console.WriteLine("❌ Store AI provider not configured!");
-                Console.WriteLine("Set STORE_AI_PROVIDER in ~/.poskernel/.env (e.g., STORE_AI_PROVIDER=Ollama)");
-                Console.WriteLine($"Config directory: {PosKernelConfiguration.ConfigDirectory}");
-                return 1;
+                StoreName = "Toast Boleh",
+                StoreType = StoreType.Kopitiam,
+                Currency = "SGD"
+            };
+
+            var personality = new PersonalityConfiguration
+            {
+                PersonalityType = PersonalityType.SingaporeanKopitiamUncle,
+                StaffTitle = "Uncle",
+                CultureInfo = "en-SG"
+            };
+
+            // Build ASP.NET Core application
+            var builder = WebApplication.CreateBuilder(args);
+
+            builder.Logging.ClearProviders();
+            builder.Logging.AddConsole();
+
+            await builder.Services.ConfigurePosAiServicesAsync(storeConfig, personality, showDebug);
+
+            var app = builder.Build();
+
+            app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }));
+
+            Console.WriteLine("🚀 Starting on http://localhost:5000");
+
+            await app.RunAsync();
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ FATAL ERROR: {ex.Message}");
+            Console.WriteLine($"🔍 Exception details: {ex}");
+            return 1;
+        }
+    }
+
+    private static StoreType GetStoreTypeFromArgs(string[] args)
+    {
+        var storeArg = args.FirstOrDefault(arg => arg.StartsWith("--store="));
+        if (storeArg != null)
+        {
+            var storeValue = storeArg.Split('=')[1];
+            if (Enum.TryParse<StoreType>(storeValue, true, out var parsedStore))
+            {
+                return parsedStore;
             }
+        }
+
+        // Default to Kopitiam for testing
+        return StoreType.Kopitiam;
+    }
+
+    private static void ShowHelp()
+    {
+        Console.WriteLine("🤖 POS Kernel AI Service Host");
+        Console.WriteLine();
+        Console.WriteLine("USAGE:");
+        Console.WriteLine("  dotnet run [options]");
+        Console.WriteLine();
+        Console.WriteLine("OPTIONS:");
+        Console.WriteLine("  --store=<type>    Store type (Kopitiam, CoffeeShop, Boulangerie, Generic)");
+        Console.WriteLine("  --debug, -d       Enable debug logging");
+        Console.WriteLine("  --help, -h        Show this help message");
+        Console.WriteLine();
+        Console.WriteLine("EXAMPLES:");
+        Console.WriteLine("  dotnet run --store=Kopitiam --debug");
+        Console.WriteLine("  dotnet run --store=CoffeeShop");
+        Console.WriteLine();
+        Console.WriteLine("NOTES:");
+        Console.WriteLine("  - Restaurant Extension Service must be running first");
+        Console.WriteLine("  - Use PosKernel.AI.Cli to send commands to this service");
+        Console.WriteLine("  - HTTP API available at http://localhost:5000");
+        Console.WriteLine("  - Cross-platform: Windows, Linux, macOS supported");
+    }
+}
+
+/// <summary>
+/// Request payload for chat API endpoint.
+/// </summary>
+public class ChatRequest
+{
+    public string Prompt { get; set; } = "";
+    public string? Timestamp { get; set; }
+}
+
+/// <summary>
+/// Response payload for chat API endpoint.
+/// </summary>
+public class ChatResponse
+{
+    public bool Success { get; set; } = true;
+    public string Response { get; set; } = "";
+    public string? ProcessingTime { get; set; }
+    public string? Error { get; set; }
+}
 
             if (provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(apiKey))
             {
@@ -603,5 +758,90 @@ class Program
             StoreType.ChaiStall => new List<string> { "hi", "en" },
             _ => new List<string> { "en" }
         };
+    }
+}
+
+/// <summary>
+/// Simple file logger provider for AI service dedicated logging.
+/// ARCHITECTURAL PRINCIPLE: Dedicated AI service logs that won't get mixed with other applications.
+/// </summary>
+public class FileLoggerProvider : ILoggerProvider
+{
+    private readonly string _filePath;
+    private readonly object _lock = new object();
+
+    public FileLoggerProvider(string filePath)
+    {
+        _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
+    }
+
+    public ILogger CreateLogger(string categoryName)
+    {
+        return new FileLogger(categoryName, _filePath, _lock);
+    }
+
+    public void Dispose() { }
+}
+
+/// <summary>
+/// Simple file logger implementation for AI service.
+/// ARCHITECTURAL PRINCIPLE: Detailed logging with timestamps for debugging AI initialization and execution.
+/// </summary>
+public class FileLogger : ILogger
+{
+    private readonly string _categoryName;
+    private readonly string _filePath;
+    private readonly object _lock;
+
+    public FileLogger(string categoryName, string filePath, object lockObject)
+    {
+        _categoryName = categoryName;
+        _filePath = filePath;
+        _lock = lockObject;
+    }
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Debug;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        if (!IsEnabled(logLevel))
+        {
+            return;
+        }
+
+        var message = formatter(state, exception);
+        var logLevelText = logLevel switch
+        {
+            LogLevel.Trace => "TRACE",
+            LogLevel.Debug => "DEBUG",
+            LogLevel.Information => "INFO ",
+            LogLevel.Warning => "WARN ",
+            LogLevel.Error => "ERROR",
+            LogLevel.Critical => "CRIT ",
+            _ => "UNKN "
+        };
+
+        var categoryShort = _categoryName.Split('.').LastOrDefault() ?? _categoryName;
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+        var logEntry = $"[{timestamp}] {logLevelText}: {categoryShort}[{eventId.Id}] {message}";
+
+        if (exception != null)
+        {
+            logEntry += Environment.NewLine + exception.ToString();
+        }
+
+        lock (_lock)
+        {
+            try
+            {
+                File.AppendAllText(_filePath, logEntry + Environment.NewLine);
+            }
+            catch
+            {
+                // Fail silently for logging issues
+            }
+        }
     }
 }
