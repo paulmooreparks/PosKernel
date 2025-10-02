@@ -297,26 +297,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health_handler))
         .route("/test", post(|| async { "POST works with closure" }))
         .route("/test-closure", post(|| async { "POST closure works" }))
+        .route("/minimal-json", post(|| async { axum::Json(serde_json::json!({"minimal": true})) }))
+        .route("/api/minimal-json", post(|| async { axum::Json(serde_json::json!({"api_minimal": true})) }))
+        .route("/api/test-json-param", post(|Json(req): Json<CreateSessionRequest>| async move {
+            axum::Json(serde_json::json!({"received_terminal": req.terminal_id, "received_operator": req.operator_id}))
+        }))
         // Session management endpoints
         .route("/api/sessions", post(|Json(req): Json<CreateSessionRequest>| async move {
-            Json(serde_json::json!({
+            let session_id = format!("SESSION_{}", req.terminal_id);
+            axum::Json(serde_json::json!({
                 "success": true,
-                "session_id": format!("SESSION_{}", req.terminal_id),
-                "message": "Session created successfully",
+                "session_id": session_id,
                 "terminal_id": req.terminal_id,
                 "operator_id": req.operator_id
             }))
         }))
-        .route("/api/sessions/:session_id/transactions", post(|Path(session_id): Path<String>, Json(req): Json<CreateTransactionRequest>| async move {
-            Json(serde_json::json!({
-                "success": true,
-                "transaction_id": format!("TX_{}_{}", session_id, "001"),
-                "session_id": session_id,
-                "message": "Transaction created successfully",
-                "store": req.store,
-                "currency": req.currency
-            }))
-        }))
+        // Simple test endpoints for diagnostics
+        .route("/api/simple-test", post(simple_test_handler))
+        // Simple test endpoint to validate JSON works
+        .route("/api/test-json", post(test_json_handler))
+        .route("/api/sessions/:session_id/transactions", post(start_transaction_handler))
         .route("/api/sessions/:session_id/transactions/:transaction_id/lines", post(|| async {
             Json(serde_json::json!({
                 "success": true,
@@ -387,12 +387,31 @@ async fn test_post_handler() -> Json<serde_json::Value> {
     Json(serde_json::json!({"message": "POST works", "status": "success"}))
 }
 
-async fn create_session_handler() -> Json<serde_json::Value> {
-    println!("📝 Create session handler called - no dependencies");
+async fn simple_test_handler(State(_): State<AppState>) -> Json<serde_json::Value> {
+    println!("🧪 Simple POST test called");
+    Json(serde_json::json!({"test": "success"}))
+}
+
+async fn test_json_handler(State(_): State<AppState>, Json(req): Json<CreateSessionRequest>) -> Json<serde_json::Value> {
+    println!("🧪 JSON test - terminal: {}, operator: {}", req.terminal_id, req.operator_id);
+    Json(serde_json::json!({"received": true, "terminal": req.terminal_id}))
+}
+
+async fn create_session_handler(
+    Json(req): Json<CreateSessionRequest>
+) -> Json<serde_json::Value> {
+    println!("📝 Create session handler called - terminal: {}, operator: {}", req.terminal_id, req.operator_id);
+
+    let session_id = format!("SESSION_{}", req.terminal_id);
+
+    println!("✅ Created session {} for terminal {} with operator {}", session_id, req.terminal_id, req.operator_id);
+
     Json(serde_json::json!({
         "success": true,
-        "session_id": "test123",
-        "error": null
+        "session_id": session_id,
+        "message": "Session created successfully",
+        "terminal_id": req.terminal_id,
+        "operator_id": req.operator_id
     }))
 }
 
