@@ -135,6 +135,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.AI.Demo", "PosKer
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.AI.Cli", "PosKernel.AI.Cli\PosKernel.AI.Cli.csproj", "{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PosKernel.HttpService", "PosKernel.HttpService\PosKernel.HttpService.csproj", "{8522F046-11B8-4CD3-B508-2248B1CD654E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -301,6 +303,18 @@ Global
 		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|x64.Build.0 = Release|Any CPU
 		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|x86.ActiveCfg = Release|Any CPU
 		{2F70B25B-76FB-4F17-AE6C-B96276B84F8B}.Release|x86.Build.0 = Release|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Debug|x64.Build.0 = Debug|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Debug|x86.Build.0 = Debug|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Release|x64.ActiveCfg = Release|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Release|x64.Build.0 = Release|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Release|x86.ActiveCfg = Release|Any CPU
+		{8522F046-11B8-4CD3-B508-2248B1CD654E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

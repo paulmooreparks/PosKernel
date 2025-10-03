@@ -1271,7 +1271,7 @@ namespace PosKernel.AI.Tools
                     foreach (var product in categoryProducts)
                     {
                         // ARCHITECTURAL PRINCIPLE: Provide complete product context for AI decisions
-                        var price = product.BasePriceCents > 0 ? $" (${product.BasePriceCents / 100.0m:F2})" : "";
+                        var price = product.BasePriceCents > 0 ? $" ({product.BasePriceCents / 100.0m} currency units)" : "";
                         var description = !string.IsNullOrEmpty(product.Description) ? $" - {product.Description}" : "";
 
                         results.AppendLine($"- **{product.Sku}**: {product.Name}{price}{description}");

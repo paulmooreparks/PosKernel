@@ -175,7 +175,7 @@ public static class Pos
     /// <param name="handle">Transaction handle</param>
     /// <param name="sku">Product SKU</param>
     /// <param name="quantity">Quantity of items</param>
-    /// <param name="unitPrice">Unit price in major currency units (e.g., dollars)</param>
+    /// <param name="unitPrice">Unit price in major currency units</param>
     /// <exception cref="PosException">Thrown when the operation fails</exception>
     public static void AddLine(ulong handle, string sku, int quantity, decimal unitPrice)
     {
@@ -194,7 +194,7 @@ public static class Pos
     /// Adds a cash tender to the transaction.
     /// </summary>
     /// <param name="handle">Transaction handle</param>
-    /// <param name="amount">Cash amount in major currency units (e.g., dollars)</param>
+    /// <param name="amount">Cash amount in major currency units</param>
     /// <exception cref="PosException">Thrown when the operation fails</exception>
     public static void AddCashTender(ulong handle, decimal amount)
     {

@@ -28,6 +28,7 @@ using PosKernel.AI.Demo.Services;
 using PosKernel.AI.Interfaces;
 using PosKernel.Configuration;
 using PosKernel.Configuration.Services;
+using Serilog;
 using PosKernel.AI.Models;
 using PosKernel.Extensions.Restaurant.Client;
 using PosKernel.AI.Common.Abstractions;

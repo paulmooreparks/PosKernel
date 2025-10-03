@@ -22,6 +22,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using System.Text.Json;
+using Serilog;
+using PosKernel.Configuration;
 
 namespace PosKernel.Extensions.Restaurant
 {
@@ -37,16 +39,31 @@ namespace PosKernel.Extensions.Restaurant
         {
             try
             {
-                Console.WriteLine("🏪 POS Kernel Retail Extension v0.5.0");
-                Console.WriteLine("Generic retail domain service with HTTP API and named pipe IPC");
-
                 // ARCHITECTURAL PRINCIPLE: CLI arguments take precedence over configuration files
                 var storeTypeOverride = GetCommandLineArgument(args, "--store-type");
                 var storeNameOverride = GetCommandLineArgument(args, "--store-name");
                 var currencyOverride = GetCommandLineArgument(args, "--currency");
 
+                // Configure Serilog logging to file
+                var logDirectory = Path.Combine(PosKernelConfiguration.ConfigDirectory, "logs");
+                Directory.CreateDirectory(logDirectory);
+
+                var logFilePath = Path.Combine(logDirectory, "restaurant-extension.log");
+
+                Log.Logger = new LoggerConfiguration()
+                    .MinimumLevel.Debug()
+                    .WriteTo.Console()
+                    .WriteTo.File(logFilePath,
+                        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff}] [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+                        rollingInterval: RollingInterval.Day,
+                        retainedFileCountLimit: 7)
+                    .CreateLogger();
+
                 // Build ASP.NET Core web application
                 var builder = WebApplication.CreateBuilder(args);
+
+                // Use Serilog for ASP.NET Core
+                builder.Host.UseSerilog();
 
                 // Configure configuration
                 builder.Configuration.Sources.Clear();
@@ -55,21 +72,21 @@ namespace PosKernel.Extensions.Restaurant
                 var projectDir = "PosKernel.Extensions.Restaurant";
                 var configFile = Path.Combine(projectDir, "appsettings.json");
 
-                Console.WriteLine($"📁 Loading configuration from: {configFile}");
+                Log.Information("📁 Loading configuration from: {ConfigFile}", configFile);
 
                 if (File.Exists(configFile))
                 {
                     builder.Configuration.AddJsonFile(configFile, optional: false, reloadOnChange: true);
-                    Console.WriteLine($"✅ Found configuration file: {configFile}");
+                    Log.Information("✅ Found configuration file: {ConfigFile}", configFile);
                 }
                 else
                 {
-                    Console.WriteLine($"❌ Configuration file not found: {configFile}");
-                    Console.WriteLine($"📁 Current directory: {Directory.GetCurrentDirectory()}");
-                    Console.WriteLine($"📄 Files in current directory:");
+                    Log.Warning("❌ Configuration file not found: {ConfigFile}", configFile);
+                    Log.Information("📁 Current directory: {CurrentDirectory}", Directory.GetCurrentDirectory());
+                    Log.Information("📄 Files in current directory:");
                     foreach (var file in Directory.GetFiles(".", "*.json"))
                     {
-                        Console.WriteLine($"   {file}");
+                        Log.Information("   {File}", file);
                     }
                 }
 
@@ -86,17 +103,12 @@ namespace PosKernel.Extensions.Restaurant
                                    configuration["Retail:StoreType"] ??
                                    "CoffeeShop";
 
-                    Console.WriteLine($"🔧 Configured store type: {storeType}");
+                    Log.Information("🔧 Configured store type: {StoreType}", storeType);
 
                     return new RetailExtensionService(logger, storeType);
                 });
 
                 builder.Services.AddHostedService<RetailExtensionHost>();
-
-                // Configure logging
-                builder.Logging.ClearProviders();
-                builder.Logging.AddConsole();
-                builder.Logging.SetMinimumLevel(LogLevel.Information);
 
                 // Configure JSON options
                 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -110,11 +122,25 @@ namespace PosKernel.Extensions.Restaurant
 
                 var app = builder.Build();
 
+                // Add startup banner with Serilog
+                Log.Information("🏪 POS Kernel Retail Extension v0.5.0");
+                Log.Information("Generic retail domain service with HTTP API and named pipe IPC");
+
+                // Report log file location for CLI orchestrator
+                Console.WriteLine($"POSKERNEL_LOG_FILE: {logFilePath}");
+                Log.Information("POSKERNEL_LOG_FILE: {LogFile}", logFilePath);
+
                 // Get the retail extension service
                 var retailService = app.Services.GetRequiredService<RetailExtensionService>();
 
                 // Configure HTTP API endpoints
-                app.MapGet("/health", () => Results.Ok(new { Status = "OK", Service = "Restaurant Extension", Version = "0.5.0" }));
+                app.MapGet("/health", () => Results.Ok(new {
+                    Status = "OK",
+                    Service = "Restaurant Extension",
+                    Version = "0.5.0",
+                    LogFile = logFilePath,
+                    Timestamp = DateTime.UtcNow
+                }));
 
                 app.MapGet("/info", () =>
                 {
@@ -144,7 +170,7 @@ namespace PosKernel.Extensions.Restaurant
                             {
                                 Id = p.Sku,
                                 Name = p.Name,
-                                Price = p.BasePriceCents / 100.0, // Convert back to dollars
+                                Price = p.BasePriceCents / 100.0, // Convert back to decimal currency units
                                 Category = p.CategoryName,
                                 Description = p.Description
                             })
@@ -171,7 +197,7 @@ namespace PosKernel.Extensions.Restaurant
                         {
                             Id = product.Sku,
                             Name = product.Name,
-                            Price = product.BasePriceCents / 100.0, // Convert back to dollars
+                            Price = product.BasePriceCents / 100.0, // Convert cents to decimal currency units
                             Category = product.CategoryName,
                             Description = product.Description
                         });
@@ -182,9 +208,8 @@ namespace PosKernel.Extensions.Restaurant
                     }
                 });
 
-                Console.WriteLine("🌐 HTTP API available at: http://localhost:8081");
-                Console.WriteLine("📡 Named pipe IPC available at: poskernel-restaurant-extension");
-                Console.WriteLine();
+                Log.Information("🌐 HTTP API available at: http://localhost:8081");
+                Log.Information("📡 Named pipe IPC available at: poskernel-restaurant-extension");
 
                 // Run the application
                 await app.RunAsync();
@@ -192,7 +217,7 @@ namespace PosKernel.Extensions.Restaurant
                 return 0;
             }
             catch (Exception ex) {
-                Console.Error.WriteLine($"Fatal error: {ex}");
+                Log.Fatal(ex, "Fatal error occurred");
                 return 1;
             }
         }

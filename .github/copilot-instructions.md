@@ -48,13 +48,16 @@ if (currencyService == null) {
 - Don't run things that will require me to stop them later.
 - Don't use Console.ReadKey() for things that you might legitimately want to run unattended.
 
-### USE THE CLI FOR SERVICE MANAGEMENT
-- **ALWAYS use the PosKernel.AI.Cli for service management operations**
+### USE THE POSKERNEL WRAPPER FOR SERVICE MANAGEMENT
+- **ALWAYS use the poskernel wrapper script for ALL service operations**
 - Use `dotnet run --project PosKernel.AI.Cli --no-build -- start [service]` to start services
 - Use `dotnet run --project PosKernel.AI.Cli --no-build -- stop [service]` to stop services
 - Use `dotnet run --project PosKernel.AI.Cli --no-build -- logs [service]` to view service logs
-- The CLI handles proper process management and avoids build conflicts
-- Don't manually start services with `cargo run` or `dotnet run` directly
+- Use `dotnet run --project PosKernel.AI.Cli --no-build -- status` to check service status
+- **NEVER run services directly** with `dotnet run` or `cargo run` - always use the wrapper
+- **NEVER use `dotnet run --project [ServiceName]` directly** - this bypasses orchestration
+- The CLI wrapper handles proper process management, log discovery, and health checks
+- Services self-report their log file locations via health endpoints and startup messages
 
 ### LOGS AND DIAGNOSTICS
 - When asked to "read the logs", read files in `~/.poskernel/logs` (use `PosKernelConfiguration.ConfigDirectory + "/logs"`).

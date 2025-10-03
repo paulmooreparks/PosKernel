@@ -484,7 +484,7 @@ namespace PosKernel.Extensions.Restaurant
             // Log first few results for debugging
             foreach (var product in products.Take(3))
             {
-                _logger.LogInformation("SEARCH_PRODUCTS: Result - {Sku}: {Name} (${Price:F2})",
+                _logger.LogInformation("SEARCH_PRODUCTS: Result - {Sku}: {Name} (Price: {Price})",
                     product.ProductInfo.Sku,
                     product.ProductInfo.Name,
                     product.ProductInfo.BasePriceCents / 100.0);
@@ -833,7 +833,7 @@ namespace PosKernel.Extensions.Restaurant
                     var sku = reader.GetString(0);  // sku column (index 0)
                     var name = reader.GetString(1); // name column (index 1)
                     var price = reader.IsDBNull(2) ? 0.0 : reader.GetDouble(2); // base_price column (index 2)
-                    _logger.LogInformation("DATABASE DIAGNOSTIC: Found product {Sku}: {Name} - ${Price:F2}", sku, name, price);
+                    _logger.LogInformation("DATABASE DIAGNOSTIC: Found product {Sku}: {Name} - Price: {Price}", sku, name, price);
                 }
             }
             else

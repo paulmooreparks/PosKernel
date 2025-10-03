@@ -647,6 +647,15 @@ namespace PosKernel.AI.Cli
                     RedirectStandardError = true
                 };
 
+                // Apply environment variables from service configuration
+                if (service.Environment != null)
+                {
+                    foreach (var envVar in service.Environment)
+                    {
+                        startInfo.EnvironmentVariables[envVar.Key] = envVar.Value;
+                    }
+                }
+
                 var process = Process.Start(startInfo);
                 if (process == null)
                 {
@@ -1028,6 +1037,9 @@ namespace PosKernel.AI.Cli
         [XferProperty("startupTimeout")]
         public int StartupTimeout { get; set; } = 30;
 
+        [XferProperty("environment")]
+        public Dictionary<string, string>? Environment { get; set; }
+
         [XferProperty("healthCheck")]
         public HealthCheckConfig? HealthCheck { get; set; }
     }
@@ -1099,6 +1111,9 @@ namespace PosKernel.AI.Cli
 
         [XferProperty("startupTimeout")]
         public int StartupTimeout { get; set; } = 30;
+
+        [XferProperty("environment")]
+        public Dictionary<string, string>? Environment { get; set; }
 
         [XferProperty("healthCheck")]
         public HealthCheck? HealthCheck { get; set; }

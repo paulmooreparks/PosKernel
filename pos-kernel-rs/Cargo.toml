@@ -24,22 +24,6 @@ crate-type = ["cdylib", "rlib", "staticlib"]
 name = "pos-kernel-service"
 path = "src/bin/service.rs"
 
-[[bin]]
-name = "pos-kernel-service-new"
-path = "src/bin/pos_kernel_service.rs"
-
-[[bin]]
-name = "reliable-service"
-path = "src/bin/reliable_service.rs"
-
-[[bin]]
-name = "minimal-service"
-path = "src/bin/minimal_service.rs"
-
-[[bin]]
-name = "minimal-test"
-path = "src/bin/minimal-test.rs"
-
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

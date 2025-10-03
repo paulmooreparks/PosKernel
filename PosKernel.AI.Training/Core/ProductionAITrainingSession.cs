@@ -1447,9 +1447,9 @@ public class ProductionAITrainingSession : ITrainingSession
                     attempt.Completed = true;
                     attempt.PaymentMethod = selectedPayment;
 
-                    // Extract total if possible
+                    // Extract total if possible - culture-neutral numeric pattern
                     var content = paymentResponse ?? "";
-                    var totalMatch = System.Text.RegularExpressions.Regex.Match(content, @"[$]?(\d+\.?\d*)");
+                    var totalMatch = System.Text.RegularExpressions.Regex.Match(content, @"(\d+\.?\d*)");
                     if (totalMatch.Success && double.TryParse(totalMatch.Groups[1].Value, out var total))
                     {
                         attempt.FinalTotal = total;

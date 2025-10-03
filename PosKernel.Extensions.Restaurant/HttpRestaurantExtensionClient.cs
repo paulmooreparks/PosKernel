@@ -140,7 +140,7 @@ namespace PosKernel.Extensions.Restaurant.Client
                     PropertyNameCaseInsensitive = true
                 });
 
-                _logger.LogInformation("Found product: {ProductName} (${Price})", product?.Name, product?.Price);
+                _logger.LogInformation("Found product: {ProductName} ({Price})", product?.Name, product?.Price);
                 return product;
             }
             catch (Exception ex)
