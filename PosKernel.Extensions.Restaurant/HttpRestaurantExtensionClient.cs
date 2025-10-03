@@ -184,6 +184,16 @@ namespace PosKernel.Extensions.Restaurant.Client
         public decimal Price { get; set; }
 
         /// <summary>
+        /// Gets or sets the base price (catalog price for POS kernel integration).
+        /// Maps to Price for proper terminology alignment.
+        /// </summary>
+        public decimal BasePrice 
+        { 
+            get => Price; 
+            set => Price = value; 
+        }
+
+        /// <summary>
         /// Gets or sets the product category.
         /// </summary>
         public string Category { get; set; } = "";
@@ -192,6 +202,11 @@ namespace PosKernel.Extensions.Restaurant.Client
         /// Gets or sets the product description.
         /// </summary>
         public string Description { get; set; } = "";
+
+        /// <summary>
+        /// Gets or sets the product specifications for set products and other attributes.
+        /// </summary>
+        public Dictionary<string, object> Specifications { get; set; } = new();
     }
 
     /// <summary>

@@ -25,23 +25,23 @@ using System.Linq; // Add LINQ using directive for .Select() extension method
 namespace PosKernel.Client.Rust
 {
     /// <summary>
-    /// HTTP client adapter for the Rust POS Kernel Service.
+    /// HTTP client adapter for the POS Kernel Service.
     /// Implements IPosKernelClient to provide a seamless interface to the AI demo.
     /// </summary>
-    public class RustKernelClient : IPosKernelClient
+    public class PosClient : IPosKernelClient
     {
-        private readonly ILogger<RustKernelClient> _logger;
+        private readonly ILogger<PosClient> _logger;
         private readonly RustKernelClientOptions _options;
         private readonly HttpClient _httpClient;
         private bool _disposed = false;
         private bool _connected = false;
 
         /// <summary>
-        /// Initializes a new instance of the RustKernelClient.
+        /// Initializes a new instance of the PosClient.
         /// </summary>
         /// <param name="logger">Logger for diagnostics.</param>
         /// <param name="options">Client configuration options.</param>
-        public RustKernelClient(ILogger<RustKernelClient> logger, RustKernelClientOptions? options = null)
+        public PosClient(ILogger<PosClient> logger, RustKernelClientOptions? options = null)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _options = options ?? new RustKernelClientOptions();
@@ -61,10 +61,10 @@ namespace PosKernel.Client.Rust
         {
             if (_disposed)
             {
-                throw new ObjectDisposedException(nameof(RustKernelClient));
+                throw new ObjectDisposedException(nameof(PosClient));
             }
 
-            _logger.LogInformation("Connecting to Rust POS Kernel Service at {Address}", _options.Address);
+            _logger.LogInformation("Connecting to POS Kernel Service at {Address}", _options.Address);
 
             try
             {
@@ -75,20 +75,32 @@ namespace PosKernel.Client.Rust
                 var healthJson = await response.Content.ReadAsStringAsync(cancellationToken);
                 var healthData = JsonSerializer.Deserialize<JsonElement>(healthJson);
 
+                // Support both formats: {"healthy": true} and {"status": "healthy"}
+                bool isHealthy = false;
                 if (healthData.TryGetProperty("healthy", out var healthyProp) && healthyProp.GetBoolean())
                 {
+                    isHealthy = true;
+                }
+                else if (healthData.TryGetProperty("status", out var statusProp) && 
+                         statusProp.GetString()?.Equals("healthy", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    isHealthy = true;
+                }
+
+                if (isHealthy)
+                {
                     _connected = true;
-                    _logger.LogInformation("✅ Connected to Rust POS Kernel Service successfully");
+                    _logger.LogInformation("✅ Connected to POS Kernel Service successfully");
                 }
                 else
                 {
-                    throw new InvalidOperationException("Rust kernel service reported unhealthy status");
+                    throw new InvalidOperationException("POS kernel service reported unhealthy status");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to connect to Rust POS Kernel Service");
-                throw new InvalidOperationException("Unable to connect to Rust POS Kernel Service", ex);
+                _logger.LogError(ex, "Failed to connect to POS Kernel Service");
+                throw new InvalidOperationException("Unable to connect to POS Kernel Service", ex);
             }
         }
 
@@ -136,7 +148,14 @@ namespace PosKernel.Client.Rust
                 var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
                 var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
 
-                if (responseData.TryGetProperty("success", out var successProp) && successProp.GetBoolean())
+                // Handle both response formats: HTTP service format and legacy format
+                if (responseData.TryGetProperty("session_id", out var sessionIdProp))
+                {
+                    var sessionId = sessionIdProp.GetString()!;
+                    _logger.LogInformation("Session {SessionId} created successfully", sessionId);
+                    return sessionId;
+                }
+                else if (responseData.TryGetProperty("success", out var successProp) && successProp.GetBoolean())
                 {
                     var sessionId = responseData.GetProperty("session_id").GetString()!;
                     _logger.LogInformation("Session {SessionId} created successfully", sessionId);
@@ -172,13 +191,14 @@ namespace PosKernel.Client.Rust
                 {
                     session_id = sessionId,
                     store = storeName, // TEMPORARY: Hardcoded until store config injection is implemented
-                    currency = currency
+                    currency = currency,
+                    language = "en" // Default language
                 };
 
                 var json = JsonSerializer.Serialize(request);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                var response = await _httpClient.PostAsync($"/api/sessions/{sessionId}/transactions", content, cancellationToken);
+                var response = await _httpClient.PostAsync("/api/transactions", content, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
                 var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -186,12 +206,12 @@ namespace PosKernel.Client.Rust
 
                 var result = new TransactionClientResult
                 {
-                    Success = responseData.GetProperty("success").GetBoolean(),
-                    Error = responseData.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null,
-                    SessionId = responseData.TryGetProperty("session_id", out var sidProp) ? sidProp.GetString() : sessionId,
-                    TransactionId = responseData.TryGetProperty("transaction_id", out var tidProp) ? tidProp.GetString() : null,
-                    Total = responseData.TryGetProperty("total", out var totalProp) ? (decimal)totalProp.GetDouble() : 0,
-                    State = responseData.TryGetProperty("state", out var stateProp) ? stateProp.GetString() ?? "" : "",
+                    Success = true, // HTTP 201 Created means success
+                    Error = null,
+                    SessionId = responseData.GetProperty("session_id").GetString() ?? sessionId,
+                    TransactionId = responseData.GetProperty("transaction_id").GetString(),
+                    Total = responseData.GetProperty("total").GetDecimal(),
+                    State = responseData.GetProperty("status").GetString() ?? "",
                     Data = responseData
                 };
 
@@ -242,13 +262,14 @@ namespace PosKernel.Client.Rust
                 var json = JsonSerializer.Serialize(request);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                var response = await _httpClient.PostAsync($"/api/sessions/{sessionId}/transactions/{transactionId}/lines", content, cancellationToken);
+                var response = await _httpClient.PostAsync($"/api/transactions/{transactionId}/items", content, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
                 var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
                 var responseData = JsonSerializer.Deserialize<JsonElement>(responseJson);
 
-                var result = ParseTransactionResponse(responseData, sessionId, transactionId);
+                // HTTP service returns LineItemResponse directly, not wrapped in success/error format
+                var result = ParseLineItemResponse(responseData, sessionId, transactionId);
 
                 if (result.Success)
                 {
@@ -815,13 +836,55 @@ namespace PosKernel.Client.Rust
             return result;
         }
 
+        private TransactionClientResult ParseLineItemResponse(JsonElement responseData, string sessionId, string transactionId)
+        {
+            // HTTP service returns LineItemResponse directly (successful creation via CreatedAtAction)
+            // Create a successful result with line item information converted to transaction format
+            var result = new TransactionClientResult
+            {
+                Success = true,  // HTTP 201 Created means success
+                Error = null,
+                SessionId = sessionId,
+                TransactionId = transactionId,
+                Total = 0,  // Line item response doesn't include total, would need separate call
+                State = "open",
+                Data = responseData,
+                LineItems = new List<TransactionLineItem>()
+            };
+
+            // Extract line item information from the response
+            if (responseData.TryGetProperty("line_item_id", out var lineItemIdProp))
+            {
+                var lineItem = new TransactionLineItem
+                {
+                    LineNumber = 1, // HTTP service doesn't provide line numbers
+                    ParentLineNumber = 0,
+                    ProductId = responseData.TryGetProperty("product_id", out var prodProp) ? prodProp.GetString() ?? "" : "",
+                    ProductName = "", // Line item response doesn't include product name
+                    ProductDescription = "",
+                    ItemType = LineItemType.Sale,
+                    Quantity = responseData.TryGetProperty("quantity", out var qtyProp) ? qtyProp.GetInt32() : 0,
+                    UnitPrice = responseData.TryGetProperty("unit_price", out var unitProp) ? unitProp.GetDecimal() : 0,
+                    ExtendedPrice = responseData.TryGetProperty("line_total", out var totalProp) ? totalProp.GetDecimal() : 0,
+                    DisplayIndentLevel = 0,
+                    IsVoided = false,
+                    VoidReason = null,
+                    Metadata = new Dictionary<string, string>()
+                };
+                
+                result.LineItems.Add(lineItem);
+            }
+
+            return result;
+        }
+
         private string FormatCurrency(decimal amount)
         {
             // ARCHITECTURAL FIX: FAIL FAST - No hardcoded currency formatting
             throw new InvalidOperationException(
                 "DESIGN DEFICIENCY: Currency formatting requires ICurrencyFormattingService. " +
                 "Client cannot decide currency symbols, decimal places, or formatting rules. " +
-                "Register ICurrencyFormattingService in DI container and inject into RustKernelClient. " +
+                "Register ICurrencyFormattingService in DI container and inject into PosClient. " +
                 "Current implementation hardcoded S$.F2 format violated architectural principles.");
         }
 
@@ -879,12 +942,12 @@ namespace PosKernel.Client.Rust
         {
             if (_disposed)
             {
-                throw new ObjectDisposedException(nameof(RustKernelClient));
+                throw new ObjectDisposedException(nameof(PosClient));
             }
 
             if (!_connected)
             {
-                throw new InvalidOperationException("Not connected to Rust kernel service. Call ConnectAsync first.");
+                throw new InvalidOperationException("Not connected to POS kernel service. Call ConnectAsync first.");
             }
         }
 
@@ -916,7 +979,7 @@ namespace PosKernel.Client.Rust
         {
             if (!_disposed)
             {
-                _logger.LogDebug("Disposing RustKernelClient");
+                _logger.LogDebug("Disposing PosClient");
 
                 try
                 {

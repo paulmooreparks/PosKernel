@@ -126,10 +126,10 @@ namespace PosKernel.Client
                 }
             }
 
-            var typedLogger = logger as ILogger<RustKernelClient> ??
-                new LoggerWrapper<RustKernelClient>(logger);
+            var typedLogger = logger as ILogger<PosClient> ??
+                new LoggerWrapper<PosClient>(logger);
 
-            return new RustKernelClient(typedLogger, options);
+            return new PosClient(typedLogger, options);
         }
 
         /// <summary>

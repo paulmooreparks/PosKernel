@@ -155,9 +155,10 @@ namespace PosKernel.AI.Tools
                 {
                     Sku = p.Id,
                     Name = p.Name,
-                    Price = p.Price,
+                    BasePrice = p.BasePrice,  // ARCHITECTURAL FIX: Use BasePrice decimal for proper financial precision
                     Category = p.Category,
-                    Description = p.Description
+                    Description = p.Description,
+                    Specifications = p.Specifications
                 });
             }
             else if (_restaurantClient != null)
@@ -619,14 +620,14 @@ namespace PosKernel.AI.Tools
                 // Ensure transaction exists
                 var transactionId = await EnsureTransactionAsync(cancellationToken);
 
-                // Add with correct price
-                var productPrice = (int)product.BasePriceCents / 100.0m;
+                // Add with correct price using decimal BasePrice
+                var productPrice = (decimal)product.BasePrice;
                 var extractedProductSku = (string)product.Sku;
                 var extractedProductName = (string)product.Name;
                 var extractedProductDescription = (string)product.Description;
-                var extractedProductBasePriceCents = (int)product.BasePriceCents;
+                var extractedProductBasePrice = (decimal)product.BasePrice;
 
-                _logger.LogInformation("Adding item {ProductSku} with price: {PriceCents} cents ({Decimal})", extractedProductSku, extractedProductBasePriceCents, productPrice);
+                _logger.LogInformation("Adding item {ProductSku} with price: {Price} {Currency}", extractedProductSku, extractedProductBasePrice, "SGD");
                 _logger.LogInformation("Product metadata: Name='{ProductName}', Description='{ProductDescription}'", extractedProductName, extractedProductDescription);
 
                 var result = await _kernelClient.AddLineItemAsync(
