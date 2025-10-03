@@ -96,45 +96,21 @@ namespace PosKernel.AI.Services
         /// <summary>
         /// AI AGENT VERSION: Pure context injection without prompt building.
         /// ARCHITECTURAL REDESIGN: AI has persistent knowledge and natural tool access.
+        /// ENHANCED: Now uses native function calling when provider supports it.
         /// </summary>
         public async Task<McpResponse> CompleteWithContextAsync(string userInput, IReadOnlyList<McpTool> availableTools, object? persistentContext = null, CancellationToken cancellationToken = default)
         {
             try
             {
-                // ARCHITECTURAL PRINCIPLE: Minimal context injection - AI has native tool understanding
-                var contextData = persistentContext != null ? JsonSerializer.Serialize(persistentContext, new JsonSerializerOptions { WriteIndented = true }) : "";
-
-                // ARCHITECTURAL PRINCIPLE: Simple tool definitions - AI knows how to use tools
-                var toolsData = availableTools.Any() ? JsonSerializer.Serialize(availableTools, new JsonSerializerOptions { WriteIndented = true }) : "";
-
-                // ARCHITECTURAL FIX: Instruct AI on tool call format for text-based parsing
-                var toolInstructions = availableTools.Any() ?
-                    "\n\nTo call tools, use format: TOOL_CALL: tool_name {\"param\": \"value\"}\nExample: TOOL_CALL: add_line_item {\"sku\": \"KOPI001\", \"quantity\": 1}" : "";
-
-                // ARCHITECTURAL PRINCIPLE: Pure user input with minimal infrastructure context
-                var enhancedInput = $"CONTEXT: {contextData}\nTOOLS: {toolsData}{toolInstructions}\nUSER: {userInput}";
-
-                // ARCHITECTURAL FIX: Use shared LLM interface for all providers
-                var textResponse = await _llm.GenerateAsync(enhancedInput, cancellationToken);
-
-                _logger.LogDebug("LLM response received: {Length} characters from {Provider}", textResponse.Length, _llm.ProviderInfo.Name);
-
-                // ARCHITECTURAL PRINCIPLE: Pure tool extraction - no interpretation logic
-                var toolCalls = ExtractToolCallsFromText(textResponse, availableTools);
-
-                if (toolCalls.Any())
+                // ARCHITECTURAL ENHANCEMENT: Use native function calling if provider supports it
+                if (_llm.SupportsFunctionCalling && availableTools.Any())
                 {
-                    _logger.LogInformation("AI requested {ToolCount} tool calls", toolCalls.Count);
+                    return await CompleteWithNativeFunctionCallingAsync(userInput, availableTools, persistentContext, cancellationToken);
                 }
-
-                // Return clean response - tool calls execute separately
-                var sanitizedContent = SanitizeAssistantContent(textResponse);
-
-                return new McpResponse
+                else
                 {
-                    Content = sanitizedContent,
-                    ToolCalls = toolCalls
-                };
+                    return await CompleteWithTextBasedToolsAsync(userInput, availableTools, persistentContext, cancellationToken);
+                }
             }
             catch (Exception ex)
             {
@@ -144,6 +120,128 @@ namespace PosKernel.AI.Services
                     $"Error: {ex.Message}. " +
                     "Check LLM provider configuration and service availability.", ex);
             }
+        }
+
+        /// <summary>
+        /// Use native function calling (OpenAI-style)
+        /// ARCHITECTURAL ENHANCEMENT: Better reliability and structured responses
+        /// </summary>
+        private async Task<McpResponse> CompleteWithNativeFunctionCallingAsync(string userInput, IReadOnlyList<McpTool> availableTools, object? persistentContext, CancellationToken cancellationToken)
+        {
+            // ARCHITECTURAL PRINCIPLE: Minimal context injection - AI has native tool understanding
+            var contextData = persistentContext != null ? JsonSerializer.Serialize(persistentContext, new JsonSerializerOptions { WriteIndented = true }) : "";
+
+            // Convert MCP tools to LLM tools
+            var llmTools = availableTools.Select(tool => new LLMTool
+            {
+                Name = tool.Name,
+                Description = tool.Description,
+                Parameters = tool.Parameters
+            }).ToList();
+
+            // Enhanced prompt with context
+            var enhancedInput = string.IsNullOrEmpty(contextData) ? userInput : $"CONTEXT: {contextData}\nUSER: {userInput}";
+
+            // ARCHITECTURAL FIX: Use native function calling
+            var llmResponse = await _llm.GenerateWithToolsAsync(enhancedInput, llmTools, cancellationToken);
+
+            _logger.LogDebug("Native function calling response received: {Length} characters from {Provider}",
+                llmResponse.Content.Length, _llm.ProviderInfo.Name);
+
+            // Convert LLM tool calls to MCP tool calls
+            var mcpToolCalls = llmResponse.ToolCalls.Select(tc => new McpToolCall
+            {
+                Id = tc.Id,
+                FunctionName = tc.FunctionName,
+                Arguments = ParseArgumentsFromJson(tc.Arguments)
+            }).ToList();
+
+            if (mcpToolCalls.Any())
+            {
+                _logger.LogInformation("Native function calling: AI requested {ToolCount} tool calls", mcpToolCalls.Count);
+                foreach (var tool in mcpToolCalls)
+                {
+                    _logger.LogDebug("Native tool call: {FunctionName} with {ArgCount} arguments", tool.FunctionName, tool.Arguments.Count);
+                }
+            }
+
+            // Return clean response - tool calls execute separately
+            var sanitizedContent = SanitizeAssistantContent(llmResponse.Content);
+
+            return new McpResponse
+            {
+                Content = sanitizedContent,
+                ToolCalls = mcpToolCalls
+            };
+        }
+
+        /// <summary>
+        /// Use text-based tool calling (Ollama-style)
+        /// ARCHITECTURAL FALLBACK: For providers without native function calling
+        /// </summary>
+        private async Task<McpResponse> CompleteWithTextBasedToolsAsync(string userInput, IReadOnlyList<McpTool> availableTools, object? persistentContext, CancellationToken cancellationToken)
+        {
+            // ARCHITECTURAL PRINCIPLE: Minimal context injection - AI has native tool understanding
+            var contextData = persistentContext != null ? JsonSerializer.Serialize(persistentContext, new JsonSerializerOptions { WriteIndented = true }) : "";
+
+            // ARCHITECTURAL PRINCIPLE: Simple tool definitions - AI knows how to use tools
+            var toolsData = availableTools.Any() ? JsonSerializer.Serialize(availableTools, new JsonSerializerOptions { WriteIndented = true }) : "";
+
+            // ARCHITECTURAL FIX: Instruct AI on tool call format for text-based parsing
+            var toolInstructions = availableTools.Any() ?
+                "\n\nTo call tools, use format: TOOL_CALL: tool_name {\"param\": \"value\"}\nExample: TOOL_CALL: add_line_item {\"sku\": \"KOPI001\", \"quantity\": 1}" : "";
+
+            // ARCHITECTURAL PRINCIPLE: Pure user input with minimal infrastructure context
+            var enhancedInput = $"CONTEXT: {contextData}\nTOOLS: {toolsData}{toolInstructions}\nUSER: {userInput}";
+
+            // ARCHITECTURAL FIX: Use shared LLM interface for all providers
+            var textResponse = await _llm.GenerateAsync(enhancedInput, cancellationToken);
+
+            _logger.LogDebug("Text-based response received: {Length} characters from {Provider}", textResponse.Length, _llm.ProviderInfo.Name);
+
+            // ARCHITECTURAL PRINCIPLE: Pure tool extraction - no interpretation logic
+            var toolCalls = ExtractToolCallsFromText(textResponse, availableTools);
+
+            if (toolCalls.Any())
+            {
+                _logger.LogInformation("Text-based parsing: AI requested {ToolCount} tool calls", toolCalls.Count);
+            }
+
+            // Return clean response - tool calls execute separately
+            var sanitizedContent = SanitizeAssistantContent(textResponse);
+
+            return new McpResponse
+            {
+                Content = sanitizedContent,
+                ToolCalls = toolCalls
+            };
+        }
+
+        /// <summary>
+        /// Parse JSON arguments string into dictionary format
+        /// ARCHITECTURAL HELPER: Convert between LLM and MCP formats
+        /// </summary>
+        private Dictionary<string, JsonElement> ParseArgumentsFromJson(string jsonArgs)
+        {
+            var arguments = new Dictionary<string, JsonElement>();
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(jsonArgs))
+                {
+                    using var doc = JsonDocument.Parse(jsonArgs);
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        arguments[prop.Name] = prop.Value.Clone();
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to parse tool call arguments: {JsonArgs}", jsonArgs);
+            }
+
+            return arguments;
         }
 
         /// <summary>

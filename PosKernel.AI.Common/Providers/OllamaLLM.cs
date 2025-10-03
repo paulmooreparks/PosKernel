@@ -58,6 +58,11 @@ public class OllamaLLM : ILargeLanguageModel
         Description = $"Local GPU-accelerated LLM via Ollama at {_baseUrl}"
     };
 
+    /// <summary>
+    /// Ollama uses text-based function calling (no native support)
+    /// </summary>
+    public bool SupportsFunctionCalling => false;
+
     public async Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
         const int maxRetries = 3;
@@ -161,6 +166,125 @@ public class OllamaLLM : ILargeLanguageModel
         }
 
         throw new InvalidOperationException($"DESIGN DEFICIENCY: All {maxRetries} attempts to call Ollama failed.");
+    }
+
+    /// <summary>
+    /// Generate response with text-based function calling for Ollama
+    /// ARCHITECTURAL FALLBACK: Uses text-based tool calls since Ollama doesn't have native function calling
+    /// </summary>
+    public async Task<LLMResponse> GenerateWithToolsAsync(string prompt, IReadOnlyList<LLMTool> tools, CancellationToken cancellationToken = default)
+    {
+        // For Ollama, we fall back to text-based tool calling
+        // Build a prompt that instructs the model to use TOOL_CALL format
+        var toolsDescription = string.Join("\n", tools.Select(t => $"- {t.Name}: {t.Description}"));
+        var enhancedPrompt = $@"You have access to these tools:
+{toolsDescription}
+
+To call a tool, use this exact format:
+TOOL_CALL: tool_name {{""param"": ""value""}}
+
+User request: {prompt}";
+
+        // Get text response from Ollama
+        var textResponse = await GenerateAsync(enhancedPrompt, cancellationToken);
+
+        // Parse tool calls from text response (reuse existing logic)
+        var toolCalls = ExtractToolCallsFromText(textResponse, tools);
+
+        return new LLMResponse
+        {
+            Content = textResponse,
+            ToolCalls = toolCalls
+        };
+    }
+
+    /// <summary>
+    /// Extract tool calls from text response for Ollama
+    /// ARCHITECTURAL PRINCIPLE: Reuse existing text parsing logic for consistency
+    /// </summary>
+    private List<LLMToolCall> ExtractToolCallsFromText(string response, IReadOnlyList<LLMTool> availableTools)
+    {
+        var toolCalls = new List<LLMToolCall>();
+
+        if (string.IsNullOrEmpty(response))
+        {
+            return toolCalls;
+        }
+
+        var lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("TOOL_CALL:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                // Parse: "TOOL_CALL: tool_name {"param": "value"}"
+                var toolCallText = trimmed.Substring("TOOL_CALL:".Length).Trim();
+                var spaceIndex = toolCallText.IndexOf(' ');
+
+                string toolName;
+                string jsonArgs;
+
+                if (spaceIndex == -1)
+                {
+                    // Handle case where there's only a tool name, no arguments
+                    toolName = toolCallText;
+                    jsonArgs = "{}";
+                }
+                else
+                {
+                    toolName = toolCallText.Substring(0, spaceIndex).Trim();
+                    jsonArgs = toolCallText.Substring(spaceIndex + 1).Trim();
+                }
+
+                // Validate tool exists
+                if (!availableTools.Any(t => t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _logger.LogWarning("Unknown tool called: {ToolName}", toolName);
+                    continue;
+                }
+
+                // Parse JSON arguments
+                var parsedArgs = new Dictionary<string, object>();
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(jsonArgs) && jsonArgs != "()" && jsonArgs != "(empty)" && jsonArgs != "none")
+                    {
+                        using var argsDoc = JsonDocument.Parse(jsonArgs);
+                        foreach (var prop in argsDoc.RootElement.EnumerateObject())
+                        {
+                            parsedArgs[prop.Name] = prop.Value.ToString();
+                        }
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError(ex, "Failed to parse tool call arguments: {JsonArgs}", jsonArgs);
+                    continue;
+                }
+
+                toolCalls.Add(new LLMToolCall
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    FunctionName = toolName,
+                    Arguments = jsonArgs,
+                    ParsedArguments = parsedArgs
+                });
+
+                _logger.LogDebug("Successfully parsed tool call: {ToolName} with {ArgCount} arguments", toolName, parsedArgs.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to parse tool call from line: {Line}", trimmed);
+            }
+        }
+
+        return toolCalls;
     }
 
     public async Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)

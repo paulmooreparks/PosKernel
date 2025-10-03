@@ -60,8 +60,13 @@ public class OpenAILLM : ILargeLanguageModel
         Provider = "OpenAI API",
         IsLocal = false,
         HasRateLimits = true,
-        Description = $"OpenAI {_model} via direct API"
+        Description = $"OpenAI {_model} via direct API with native function calling"
     };
+
+    /// <summary>
+    /// OpenAI supports native function calling
+    /// </summary>
+    public bool SupportsFunctionCalling => true;
 
     public async Task<string> GenerateAsync(string prompt, CancellationToken cancellationToken = default)
     {
@@ -92,7 +97,7 @@ public class OpenAILLM : ILargeLanguageModel
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                
+
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     throw new InvalidOperationException(
@@ -100,7 +105,7 @@ public class OpenAILLM : ILargeLanguageModel
                         $"Check OPENAI_API_KEY configuration. " +
                         $"Error: {errorContent}");
                 }
-                
+
                 if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                 {
                     throw new InvalidOperationException(
@@ -108,7 +113,7 @@ public class OpenAILLM : ILargeLanguageModel
                         $"Consider using local LLM or upgrading OpenAI plan. " +
                         $"Error: {errorContent}");
                 }
-                
+
                 throw new InvalidOperationException(
                     $"DESIGN DEFICIENCY: OpenAI API call failed with status {response.StatusCode}. " +
                     $"Response: {errorContent}");
@@ -116,7 +121,7 @@ public class OpenAILLM : ILargeLanguageModel
 
             var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
             using var document = JsonDocument.Parse(responseJson);
-            
+
             var choices = document.RootElement.GetProperty("choices");
             var firstChoice = choices.EnumerateArray().FirstOrDefault();
             var message = firstChoice.GetProperty("message");
@@ -131,6 +136,161 @@ public class OpenAILLM : ILargeLanguageModel
 
             _logger.LogDebug("OpenAI response received: {CharCount} characters", responseContent.Length);
             return responseContent;
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new InvalidOperationException(
+                $"DESIGN DEFICIENCY: Failed to connect to OpenAI API. " +
+                $"Check network connectivity and API endpoint. " +
+                $"Error: {ex.Message}", ex);
+        }
+        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            throw new InvalidOperationException(
+                $"DESIGN DEFICIENCY: OpenAI API request timed out. " +
+                $"Network or service may be slow. " +
+                $"Error: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Generate response with native OpenAI function calling support
+    /// ARCHITECTURAL ENHANCEMENT: Uses OpenAI's native function calling for reliable tool integration
+    /// </summary>
+    public async Task<LLMResponse> GenerateWithToolsAsync(string prompt, IReadOnlyList<LLMTool> tools, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Build the request with function calling support
+            var requestBody = new
+            {
+                model = _model,
+                messages = new[]
+                {
+                    new { role = "user", content = prompt }
+                },
+                temperature = 0.3,
+                max_tokens = 1000,
+                tools = tools.Select(tool => new
+                {
+                    type = "function",
+                    function = new
+                    {
+                        name = tool.Name,
+                        description = tool.Description,
+                        parameters = tool.Parameters
+                    }
+                }).ToArray(),
+                tool_choice = "auto" // Let AI decide when to call functions
+            };
+
+            var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            _logger.LogDebug("Calling OpenAI API with {ToolCount} tools: {Model}", tools.Count, _model);
+
+            var response = await _httpClient.PostAsync($"{_baseUrl}/chat/completions", content, cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    throw new InvalidOperationException(
+                        $"DESIGN DEFICIENCY: OpenAI API authentication failed. " +
+                        $"Check OPENAI_API_KEY configuration. " +
+                        $"Error: {errorContent}");
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    throw new InvalidOperationException(
+                        $"DESIGN DEFICIENCY: OpenAI API rate limit exceeded. " +
+                        $"Consider using local LLM or upgrading OpenAI plan. " +
+                        $"Error: {errorContent}");
+                }
+
+                throw new InvalidOperationException(
+                    $"DESIGN DEFICIENCY: OpenAI API call failed with status {response.StatusCode}. " +
+                    $"Response: {errorContent}");
+            }
+
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var document = JsonDocument.Parse(responseJson);
+
+            var choices = document.RootElement.GetProperty("choices");
+            var firstChoice = choices.EnumerateArray().FirstOrDefault();
+            var message = firstChoice.GetProperty("message");
+
+            // Extract text content
+            var responseContent = "";
+            if (message.TryGetProperty("content", out var contentElement) &&
+                contentElement.ValueKind == JsonValueKind.String)
+            {
+                responseContent = contentElement.GetString() ?? "";
+            }
+
+            // Extract tool calls
+            var toolCalls = new List<LLMToolCall>();
+            if (message.TryGetProperty("tool_calls", out var toolCallsElement) &&
+                toolCallsElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var toolCallElement in toolCallsElement.EnumerateArray())
+                {
+                    var id = toolCallElement.GetProperty("id").GetString() ?? "";
+                    var function = toolCallElement.GetProperty("function");
+                    var functionName = function.GetProperty("name").GetString() ?? "";
+                    var arguments = function.GetProperty("arguments").GetString() ?? "";
+
+                    // Parse arguments into dictionary
+                    var parsedArgs = new Dictionary<string, object>();
+                    try
+                    {
+                        if (!string.IsNullOrWhiteSpace(arguments))
+                        {
+                            using var argsDoc = JsonDocument.Parse(arguments);
+                            foreach (var prop in argsDoc.RootElement.EnumerateObject())
+                            {
+                                parsedArgs[prop.Name] = prop.Value.ToString();
+                            }
+                        }
+                    }
+                    catch (JsonException ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to parse tool call arguments: {Arguments}", arguments);
+                    }
+
+                    toolCalls.Add(new LLMToolCall
+                    {
+                        Id = id,
+                        FunctionName = functionName,
+                        Arguments = arguments,
+                        ParsedArguments = parsedArgs
+                    });
+                }
+            }
+
+            var result = new LLMResponse
+            {
+                Content = responseContent,
+                ToolCalls = toolCalls
+            };
+
+            _logger.LogDebug("OpenAI response: {CharCount} characters, {ToolCallCount} tool calls",
+                responseContent.Length, toolCalls.Count);
+
+            if (toolCalls.Any())
+            {
+                _logger.LogInformation("OpenAI requested {ToolCallCount} native function calls: {Functions}",
+                    toolCalls.Count, string.Join(", ", toolCalls.Select(tc => tc.FunctionName)));
+            }
+
+            return result;
         }
         catch (HttpRequestException ex)
         {

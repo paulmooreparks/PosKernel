@@ -49,7 +49,6 @@ class Program
         try
         {
             var showDebug = args.Contains("--debug") || args.Contains("-d");
-            var useMockKernel = args.Contains("--mock") || args.Contains("-m");
 
             if (args.Contains("--help") || args.Contains("-h"))
             {
@@ -84,15 +83,12 @@ class Program
                 return 1;
             }
 
-            // Determine kernel mode
-            var useRealKernel = !useMockKernel;
-
             // Initialize UI
             var ui = new TerminalUserInterface();
             await ui.InitializeAsync();
 
             // Show store selection dialog
-            var storeSelectionResult = await ShowStoreSelectionDialogAsync(ui, useRealKernel);
+            var storeSelectionResult = await ShowStoreSelectionDialogAsync(ui);
             if (storeSelectionResult == null)
             {
                 ui.Log.AddLog("No store selected - exiting application");
@@ -153,34 +149,32 @@ class Program
             ui.Log.AddLog($"🔍 STORE_DEBUG: Selected store PersonalityType={storeSelectionResult.PersonalityType}, StoreType={storeSelectionResult.StoreType}");
 
             // Add tools providers
-            if (useRealKernel)
+            ui.Log.AddLog("Setting up real kernel integration...");
+
+            try
             {
-                ui.Log.AddLog("Setting up real kernel integration...");
+                // ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks to mock
+                // Create RestaurantExtensionClient first with temporary service provider
+                using var tempServiceProvider = services.BuildServiceProvider();
+                var tempLogger = tempServiceProvider.GetRequiredService<ILogger<RestaurantExtensionClient>>();
+                var restaurantClient = new RestaurantExtensionClient(tempLogger);
 
-                try
-                {
-                    // ARCHITECTURAL PRINCIPLE: FAIL FAST - No silent fallbacks to mock
-                    // Create RestaurantExtensionClient first with temporary service provider
-                    using var tempServiceProvider = services.BuildServiceProvider();
-                    var tempLogger = tempServiceProvider.GetRequiredService<ILogger<RestaurantExtensionClient>>();
-                    var restaurantClient = new RestaurantExtensionClient(tempLogger);
+                ui.Log.AddLog("INFO: Testing Restaurant Extension Service connection...");
 
-                    ui.Log.AddLog("INFO: Testing Restaurant Extension Service connection...");
+                // Test the connection by attempting to search for products
+                var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
+                ui.Log.ShowStatus($"✅ Connected to Restaurant Extension ({testProducts.Count} test products found)");
 
-                    // Test the connection by attempting to search for products
-                    var testProducts = await restaurantClient.SearchProductsAsync("test", 1);
-                    ui.Log.ShowStatus($"✅ Connected to Restaurant Extension ({testProducts.Count} test products found)");
-
-                    // Add real kernel tools to DI with the correct constructor signature
-                    services.AddSingleton<RestaurantExtensionClient>(_ => restaurantClient);
-                    services.AddSingleton<KernelPosToolsProvider>(provider =>
-                        new KernelPosToolsProvider(
-                            restaurantClient,
-                            provider.GetRequiredService<ILogger<KernelPosToolsProvider>>(),
-                            storeSelectionResult,
-                            PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
-                            configuration,
-                            provider.GetRequiredService<ICurrencyFormattingService>()));
+                // Add real kernel tools to DI with the correct constructor signature
+                services.AddSingleton<RestaurantExtensionClient>(_ => restaurantClient);
+                services.AddSingleton<KernelPosToolsProvider>(provider =>
+                    new KernelPosToolsProvider(
+                        restaurantClient,
+                        provider.GetRequiredService<ILogger<KernelPosToolsProvider>>(),
+                        storeSelectionResult,
+                        PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
+                        configuration,
+                        provider.GetRequiredService<ICurrencyFormattingService>()));
 
                     // Register ConfigurableContextBuilder for context-driven AI system
                     services.AddSingleton<ConfigurableContextBuilder>(provider =>
@@ -206,19 +200,18 @@ class Program
                 {
                     // ARCHITECTURAL PRINCIPLE: FAIL FAST - Don't hide service unavailability
                     var errorMessage =
-                        $"DESIGN DEFICIENCY: Real kernel mode requested but Restaurant Extension Service is not available.\n" +
+                        $"DESIGN DEFICIENCY: Restaurant Extension Service is not available.\n" +
                         $"Error: {ex.Message}\n\n" +
-                        $"To use real kernel mode:\n" +
+                        $"To fix this:\n" +
                         $"1. Start the Rust kernel service: cd pos-kernel-rs && cargo run --bin service\n" +
                         $"2. Ensure Restaurant Extension Service is running and accessible\n" +
-                        $"3. Verify SQLite database exists: data/catalog/restaurant_catalog.db\n\n" +
-                        $"To use development mode instead: PosKernel.AI.Demo --mock";
+                        $"3. Verify SQLite database exists: data/catalog/restaurant_catalog.db";
 
                     ui.Log.ShowError(errorMessage);
                     ui.Chat.ShowMessage(new ChatMessage
                     {
                         Sender = "System",
-                        Content = "❌ Real kernel services not available. Cannot start without proper service connections.",
+                        Content = "❌ Restaurant Extension services not available. Cannot start without proper service connections.",
                         IsSystem = true,
                         ShowInCleanMode = true
                     });
@@ -227,22 +220,6 @@ class Program
                     await ui.ShutdownAsync();
                     return 1;
                 }
-            }
-            else
-            {
-                    // FAIL FAST - Exit immediately since mock mode is no longer supported
-                    ui.Log.ShowError("ARCHITECTURAL CHANGE: Mock mode has been removed. Only real kernel mode is supported.");
-                    ui.Chat.ShowMessage(new ChatMessage
-                    {
-                        Sender = "System",
-                        Content = "❌ Mock mode no longer supported. Please start the Rust kernel service and restaurant extension.",
-                        IsSystem = true,
-                        ShowInCleanMode = true
-                    });
-
-                    await ui.ShutdownAsync();
-                    return 1;
-            }
 
             // Add store configuration and orchestrator to services
             services.AddSingleton(storeSelectionResult);
@@ -255,7 +232,7 @@ class Program
             {
                 // ARCHITECTURAL FIX: Get AI agent from DI container to ensure all dependencies are injected
                 var aiAgent = updatedServiceProvider.GetRequiredService<PosAiAgent>();
-                ui.Log.AddLog($"✅ {(useRealKernel ? "Real kernel" : "Mock")} orchestrator created successfully");
+                ui.Log.AddLog($"✅ Real kernel orchestrator created successfully");
 
                 // Set orchestrator - UI now handles the case where it's not available gracefully
                 var terminalGuiUI = (TerminalUserInterface)ui;
@@ -276,7 +253,7 @@ class Program
                     ShowInCleanMode = true
                 });
 
-                ui.Log.AddLog($"Integration: {(useRealKernel ? "Real Kernel + Restaurant Extension" : "Mock Tools")} | Currency: {storeSelectionResult.Currency}");
+                ui.Log.AddLog($"Integration: Real Kernel + Restaurant Extension | Currency: {storeSelectionResult.Currency}");
                 ui.Log.AddLog($"💰 Payment methods: {string.Join(", ", storeSelectionResult.PaymentMethods.AcceptedMethods.Select(m => m.DisplayName))}");
                 ui.Log.AddLog("💡 PAYMENT METHODS ARCHITECTURE: AI validates customer payment methods against store configuration");
 
@@ -326,9 +303,8 @@ class Program
         System.Console.WriteLine("Usage:");
         System.Console.WriteLine("  PosKernel.AI.Demo                    # Real kernel integration");
         System.Console.WriteLine("  PosKernel.AI.Demo --debug            # Real kernel + debug logging");
-        System.Console.WriteLine("  PosKernel.AI.Demo --mock             # Mock integration for development");
         System.Console.WriteLine();
-        System.Console.WriteLine("Prerequisites for Real Mode:");
+        System.Console.WriteLine("Prerequisites:");
         System.Console.WriteLine("  1. Start the Rust kernel service: cd pos-kernel-rs && cargo run --bin service");
         System.Console.WriteLine("  2. Ensure SQLite database exists: data/catalog/restaurant_catalog.db");
         System.Console.WriteLine("  3. Configure AI provider in ~/.poskernel/.env (STORE_AI_PROVIDER=Ollama or OpenAI)");
@@ -336,9 +312,9 @@ class Program
     }
 
     // Store selection and configuration methods remain here for demo UI
-    private static Task<StoreConfig?> ShowStoreSelectionDialogAsync(IUserInterface ui, bool useRealKernel)
+    private static Task<StoreConfig?> ShowStoreSelectionDialogAsync(IUserInterface ui)
     {
-        var availableStores = StoreConfigFactory.GetAvailableStores(useRealKernel: useRealKernel);
+        var availableStores = StoreConfigFactory.GetAvailableStores(useRealKernel: true);
         StoreConfig? selectedStore = null;
         var dialogCancelled = false;
 
@@ -357,7 +333,7 @@ class Program
         // Create dialog window with proper Terminal.Gui v2 API
         var dialog = new Terminal.Gui.Window()
         {
-            Title = $"Store Selection [{(useRealKernel ? "Real Kernel" : "Mock")}]",
+            Title = "Store Selection",
             X = Terminal.Gui.Pos.Center(),
             Y = Terminal.Gui.Pos.Center(),
             Width = 60,

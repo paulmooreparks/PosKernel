@@ -23,111 +23,6 @@ using PosKernel.Configuration.Services;
 namespace PosKernel.AI.Demo.Services;
 
 /// <summary>
-/// Kopitiam-specific product catalog service that properly implements IProductCatalogService
-/// ARCHITECTURAL PRINCIPLE: Mock service for demo purposes - business logic remains in interfaces
-/// </summary>
-public class KopitiamProductCatalogService : IProductCatalogService
-{
-    private readonly List<IProductInfo> _products = new()
-    {
-        new KopitiamProductInfo { Sku = "KOPI001", Name = "Kopi", Category = "Beverages", BasePrice = 1.20m },
-        new KopitiamProductInfo { Sku = "KOPI002", Name = "Kopi C", Category = "Beverages", BasePrice = 1.40m },
-        new KopitiamProductInfo { Sku = "KOPI003", Name = "Kopi O", Category = "Beverages", BasePrice = 1.00m },
-        new KopitiamProductInfo { Sku = "TEH001", Name = "Teh", Category = "Beverages", BasePrice = 1.20m },
-        new KopitiamProductInfo { Sku = "TEH002", Name = "Teh C", Category = "Beverages", BasePrice = 1.40m },
-        new KopitiamProductInfo { Sku = "TEH003", Name = "Teh O", Category = "Beverages", BasePrice = 1.00m },
-        new KopitiamProductInfo { Sku = "FOOD001", Name = "Kaya Toast", Category = "Food", BasePrice = 2.50m },
-        new KopitiamProductInfo { Sku = "FOOD002", Name = "Half Boiled Eggs", Category = "Food", BasePrice = 1.80m },
-        new KopitiamProductInfo { Sku = "FOOD003", Name = "Mee Goreng", Category = "Food", BasePrice = 4.50m }
-    };
-
-    public async Task<ProductValidationResult> ValidateProductAsync(string productId, ProductLookupContext context, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(1, cancellationToken);
-        var product = _products.FirstOrDefault(p =>
-            p.Name.Equals(productId, StringComparison.OrdinalIgnoreCase) ||
-            p.Sku.Equals(productId, StringComparison.OrdinalIgnoreCase));
-
-        if (product != null)
-        {
-            return new ProductValidationResult
-            {
-                IsValid = true,
-                Product = product,
-                EffectivePrice = product.BasePrice
-            };
-        }
-
-        return new ProductValidationResult
-        {
-            IsValid = false,
-            ErrorMessage = $"Product '{productId}' not found"
-        };
-    }
-
-    public async Task<IReadOnlyList<IProductInfo>> SearchProductsAsync(string searchTerm, int maxResults, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(1, cancellationToken);
-        return _products
-            .Where(p => p.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-                       p.Category.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
-            .Take(maxResults)
-            .ToList();
-    }
-
-    public async Task<IReadOnlyList<string>> GetCategoriesAsync(CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(1, cancellationToken);
-        return _products.Select(p => p.Category).Distinct().ToList();
-    }
-
-    public async Task<IReadOnlyList<IProductInfo>> GetPopularItemsAsync(CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(1, cancellationToken);
-        return _products.Take(5).ToList();
-    }
-
-    public async Task<IReadOnlyList<IProductInfo>> GetProductsByCategoryAsync(string category, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(1, cancellationToken);
-        return _products.Where(p => p.Category.Equals(category, StringComparison.OrdinalIgnoreCase)).ToList();
-    }
-
-    public async Task<string> GetLocalizedProductNameAsync(string productId, string localeCode, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(1, cancellationToken);
-        var product = _products.FirstOrDefault(p => p.Sku == productId);
-        return product?.Name ?? productId;
-    }
-
-    public async Task<string> GetLocalizedProductDescriptionAsync(string productId, string localeCode, CancellationToken cancellationToken = default)
-    {
-        await Task.Delay(1, cancellationToken);
-        var product = _products.FirstOrDefault(p => p.Sku == productId);
-        return product?.Description ?? "";
-    }
-}
-
-/// <summary>
-/// Demo product info implementation for Kopitiam products
-/// ARCHITECTURAL PRINCIPLE: Simple data structure - no business logic
-/// </summary>
-public class KopitiamProductInfo : IProductInfo
-{
-    public string Sku { get; set; } = "";
-    public string Name { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string Category { get; set; } = "";
-    public decimal BasePrice { get; set; }
-    public bool IsActive { get; set; } = true;
-    public bool RequiresPreparation { get; set; } = false;
-    public int PreparationTimeMinutes { get; set; } = 2;
-    public string? NameLocalizationKey { get; set; }
-    public string? DescriptionLocalizationKey { get; set; }
-    public IReadOnlyDictionary<string, object> Attributes { get; set; } = new Dictionary<string, object>();
-}
-
-/// <summary>
 /// Custom logger provider that routes log messages to Terminal.Gui debug pane instead of console.
 /// Prevents console output from corrupting the TUI display.
 /// ARCHITECTURAL PRINCIPLE: UI utility class for proper console logging in Terminal.Gui
@@ -221,7 +116,7 @@ internal class SimpleStoreConfigurationService : IStoreConfigurationService
         {
             StoreId = storeId,
             Currency = "USD", // Default - will be overridden by StoreConfig
-            Locale = "en-US"  // Default - will be overridden by StoreConfig  
+            Locale = "en-US"  // Default - will be overridden by StoreConfig
         };
     }
 }
