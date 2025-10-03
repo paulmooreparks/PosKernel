@@ -52,7 +52,7 @@ if (currencyService == null) {
 - **ALWAYS use the `poskernel` script for ALL service operations**
 - The `poskernel` script is installed in the user's `bin` directory and can be called from anywhere
 - Use `poskernel start [service]` to start services
-- Use `poskernel stop [service]` to stop services  
+- Use `poskernel stop [service]` to stop services
 - Use `poskernel logs [service]` to view service logs
 - Use `poskernel status` to check service status
 - **NEVER run services directly** with `dotnet run` or `cargo run` - always use the wrapper

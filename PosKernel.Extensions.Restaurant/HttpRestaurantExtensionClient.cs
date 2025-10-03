@@ -187,10 +187,10 @@ namespace PosKernel.Extensions.Restaurant.Client
         /// Gets or sets the base price (catalog price for POS kernel integration).
         /// Maps to Price for proper terminology alignment.
         /// </summary>
-        public decimal BasePrice 
-        { 
-            get => Price; 
-            set => Price = value; 
+        public decimal BasePrice
+        {
+            get => Price;
+            set => Price = value;
         }
 
         /// <summary>
