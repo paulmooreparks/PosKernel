@@ -29,7 +29,7 @@ namespace PosKernel.AI.Core
         private readonly KernelPosToolsProvider _kernelToolsProvider;
         private readonly ILogger<AiInferenceLoop> _logger;
 
-        private const int MaxInferenceIterations = 1; // TEMP FIX: Reduce to 1 to avoid OpenAI rate limits
+        private const int MaxInferenceIterations = 2; // TEMP: Increase to 2 to see if retries work
         private string? _cachedInventoryContext; // Cache inventory context for efficiency
 
         public AiInferenceLoop(
@@ -60,6 +60,9 @@ namespace PosKernel.AI.Core
             string transactionState,
             IReadOnlyList<McpTool> availableTools)
         {
+            _logger.LogInformation("🚨 INFERENCE_ENTRY: ProcessCustomerInteractionAsync called with input: '{Input}', state: '{State}', tools: {ToolCount}",
+                customerInput, transactionState, availableTools.Count);
+
             _logger.LogInformation("🧠 INFERENCE_LOOP: Starting reasoning for input: '{Input}'", customerInput);
             _logger.LogInformation("🧠 INFERENCE_LOOP_DEBUG: Tools available: {ToolCount}, Transaction state: {State}",
                 availableTools.Count, transactionState);
@@ -71,18 +74,47 @@ namespace PosKernel.AI.Core
                 try
                 {
                     // STEP 1: AI REASONING - Understanding intent and context
+                    _logger.LogInformation("🧠 REASONING_DEBUG: About to start reasoning for input: '{Input}'", customerInput);
                     var reasoning = await ReasonAboutCustomerIntentAsync(customerInput, transactionState, attempt);
                     _logger.LogInformation("🧠 REASONING: {Reasoning}", reasoning.Summary);
+                    _logger.LogInformation("🧠 REASONING_DEBUG: Reasoning completed successfully");
+
+                    if (reasoning == null)
+                    {
+                        _logger.LogError("🧠 REASONING_DEBUG: Reasoning returned null!");
+                        throw new InvalidOperationException("Reasoning phase returned null result");
+                    }
+
+                    if (string.IsNullOrEmpty(reasoning.Summary))
+                    {
+                        _logger.LogWarning("🧠 REASONING_DEBUG: Reasoning summary is null or empty: '{Summary}'", reasoning.Summary);
+                    }
 
                     // STEP 2: TOOL SELECTION - Choose actions based on reasoning
+                    _logger.LogInformation("🔧 TOOL_SELECTION_DEBUG: About to start tool selection");
                     var toolPlan = await SelectToolsWithReasoningAsync(reasoning, availableTools);
+                    _logger.LogInformation("🔧 TOOL_SELECTION_DEBUG: Tool selection completed");
+
+                    // ARCHITECTURAL FIX: Debug tool selection results
+                    _logger.LogInformation("🔧 TOOL_SELECTION_DEBUG: Raw SelectedTools count: {Count}", toolPlan.SelectedTools?.Count ?? 0);
+                    _logger.LogInformation("🔧 TOOL_SELECTION_DEBUG: SelectedTools is null: {IsNull}", toolPlan.SelectedTools == null);
+                    if (toolPlan.SelectedTools != null)
+                    {
+                        foreach (var tool in toolPlan.SelectedTools)
+                        {
+                            _logger.LogInformation("🔧 TOOL_SELECTION_DEBUG: Tool found: {FunctionName} with args: {Arguments}",
+                                tool.FunctionName, tool.Arguments);
+                        }
+                    }
+
                     _logger.LogInformation("🔧 TOOL_SELECTION: Selected {Count} tools: {Tools}",
-                        toolPlan.SelectedTools.Count,
-                        string.Join(", ", toolPlan.SelectedTools.Select(t => t.FunctionName)));
+                        toolPlan.SelectedTools?.Count ?? 0,
+                        string.Join(", ", toolPlan.SelectedTools?.Select(t => t.FunctionName) ?? new List<string>()));
 
                     _logger.LogDebug("🔧 TOOL_SELECTION_DETAIL: Justification: {Justification}", toolPlan.Justification);
 
                     // STEP 3: VALIDATION - Verify tool selection makes sense
+                    _logger.LogInformation("🔍 VALIDATION_DEBUG: About to start validation");
                     var validation = await ValidateToolSelectionAsync(reasoning, toolPlan, transactionState);
                     _logger.LogInformation("✅ VALIDATION: {Status} - {Message}",
                         validation.IsValid ? "PASSED" : "FAILED",
@@ -93,7 +125,7 @@ namespace PosKernel.AI.Core
                         _logger.LogWarning("❌ VALIDATION_FAILED: {Feedback}", validation.Feedback);
                     }
 
-                    if (validation.IsValid)
+                    if (validation.IsValid && toolPlan.SelectedTools != null)
                     {
                         // STEP 4: EXECUTION - Run validated tools
                         var executionResult = await ExecuteValidatedToolsAsync(toolPlan.SelectedTools);
@@ -127,11 +159,15 @@ namespace PosKernel.AI.Core
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "🚨 INFERENCE_ERROR: Attempt {Attempt} failed", attempt);
+                    _logger.LogError(ex, "🚨 INFERENCE_ERROR: Attempt {Attempt} failed with exception: {ExceptionType}: {Message}",
+                        attempt, ex.GetType().Name, ex.Message);
+                    _logger.LogError("🚨 INFERENCE_ERROR: Stack trace: {StackTrace}", ex.StackTrace);
                     if (attempt == MaxInferenceIterations)
                     {
+                        _logger.LogError("🚨 INFERENCE_ERROR: Final attempt failed, returning error result");
                         return CreateErrorResult(customerInput, ex, attempt);
                     }
+                    _logger.LogInformation("🚨 INFERENCE_ERROR: Retrying attempt {NextAttempt}", attempt + 1);
                 }
             }
 
@@ -152,6 +188,8 @@ namespace PosKernel.AI.Core
             string transactionState,
             int attemptNumber)
         {
+            _logger.LogInformation("🧠 REASONING_INTERNAL: Starting reasoning phase for input: '{Input}'", customerInput);
+
             var variables = new Dictionary<string, object>
             {
                 ["StoreName"] = _storeConfig.StoreName,
@@ -164,25 +202,34 @@ namespace PosKernel.AI.Core
                 ["InventoryContext"] = await GetInventoryContextAsync()
             };
 
+            _logger.LogInformation("🧠 REASONING_INTERNAL: Built variables, getting inventory context");
+
             // ARCHITECTURAL FIX: Use configured prompts instead of hardcoded reasoning
             var reasoningContext = _contextBuilder.BuildContext("reasoning", variables);
+
+            _logger.LogInformation("🧠 REASONING_INTERNAL: Built reasoning context, calling MCP client");
 
             var reasoningResponse = await _mcpClient.CompleteWithContextAsync(
                 customerInput, // Let the prompt handle the reasoning structure
                 new List<McpTool>(), // No tools for reasoning phase
                 reasoningContext);
 
+            _logger.LogInformation("🧠 REASONING_INTERNAL: Got response from MCP client");
             _logger.LogDebug("🧠 REASONING_RAW_RESPONSE: {Response}", reasoningResponse.Content);
 
-            return new ReasoningResult
+            var result = new ReasoningResult
             {
                 CustomerInput = customerInput,
                 TransactionState = transactionState,
                 RawReasoning = reasoningResponse.Content ?? "",
                 Summary = ExtractReasoningSummary(reasoningResponse.Content ?? ""),
-                AttemptNumber = attemptNumber
             };
-        }        /// <summary>
+
+            _logger.LogInformation("🧠 REASONING_INTERNAL: Created reasoning result, summary: '{Summary}'", result.Summary);
+            return result;
+        }
+
+        /// <summary>
         /// STEP 2: TOOL SELECTION - Map understood intent to discrete tool calls
         ///
         /// ARCHITECTURAL PRINCIPLE: AI selects tools based on reasoning, not hardcoded mappings
@@ -257,14 +304,39 @@ namespace PosKernel.AI.Core
             };
 
             // ARCHITECTURAL FIX: Use configured prompts for validation
+            // TEMP: Add extensive debugging to understand validation failure
+            _logger.LogInformation("🔍 VALIDATION_DEBUG: Starting validation for reasoning: {Reasoning}", reasoning.Summary);
+
+            _logger.LogInformation("🔍 VALIDATION_DEBUG: Building validation context with variables: {Variables}",
+                string.Join(", ", variables.Select(kvp => $"{kvp.Key}={kvp.Value}")));
+
             var validationContext = _contextBuilder.BuildContext("validation", variables);
+            _logger.LogInformation("🔍 VALIDATION_DEBUG: Validation context built, length: {Length}", validationContext?.Length ?? 0);
+
+            if (string.IsNullOrEmpty(validationContext))
+            {
+                _logger.LogError("🔍 VALIDATION_DEBUG: Validation context is null or empty!");
+                return new ValidationResult
+                {
+                    IsValid = false,
+                    Message = "REJECTED - Validation context failed to build",
+                    Feedback = "Unable to load validation prompt"
+                };
+            }
+
+            _logger.LogInformation("🔍 VALIDATION_DEBUG: Calling validation AI with input: {Input}", reasoning.CustomerInput);
 
             var validationResponse = await _mcpClient.CompleteWithContextAsync(
                 reasoning.CustomerInput, // Original customer input for context
                 new List<McpTool>(), // No tools for validation
                 validationContext);
 
-            var validationContent = validationResponse.Content ?? "";
+            _logger.LogInformation("🔍 VALIDATION_DEBUG: Validation AI response received");
+            _logger.LogInformation("🔍 VALIDATION_DEBUG: Response is null: {IsNull}", validationResponse == null);
+            _logger.LogInformation("🔍 VALIDATION_DEBUG: Response content: '{Content}'", validationResponse?.Content ?? "NULL");
+            _logger.LogInformation("🔍 VALIDATION_DEBUG: Response length: {Length}", validationResponse?.Content?.Length ?? 0);
+
+            var validationContent = validationResponse?.Content ?? "";
             var isApproved = validationContent.Contains("APPROVED", StringComparison.OrdinalIgnoreCase);
 
             // ARCHITECTURAL FIX: Log validation decisions for debugging

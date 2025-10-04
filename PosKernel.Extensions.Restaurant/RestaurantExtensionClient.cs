@@ -444,30 +444,93 @@ namespace PosKernel.Extensions.Restaurant.Client
         }
 
         /// <inheritdoc />
-        public Task<SetDefinition?> GetSetDefinitionAsync(string productSku, CancellationToken cancellationToken = default)
-        {
-            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
-            throw new NotImplementedException(
-                "DESIGN DEFICIENCY: Set definition queries not implemented in RestaurantExtensionClient. " +
-                "Implement IPC protocol for set_definitions table queries to support set functionality.");
+        public async Task<SetDefinition?> GetSetDefinitionAsync(string productSku, CancellationToken cancellationToken = default) {
+            await EnsureConnectedAsync(cancellationToken);
+
+            var requestId = Interlocked.Increment(ref _requestId).ToString();
+            var request = new ExtensionRequest {
+                Id = requestId,
+                Method = "get_set_definition",
+                Params = new Dictionary<string, JsonElement> {
+                    ["product_sku"] = JsonSerializer.SerializeToElement(productSku)
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken);
+
+            if (!response.Success || response.Data?.TryGetValue("set_definition", out var setDefObj) != true) {
+                _logger.LogWarning("Get set definition failed for SKU {ProductSku}: {Error}", productSku, response.Error);
+                return null;
+            }
+
+            try {
+                var setDefJson = JsonSerializer.Serialize(setDefObj);
+                return JsonSerializer.Deserialize<SetDefinition>(setDefJson);
+            }
+            catch (JsonException ex) {
+                _logger.LogError(ex, "Failed to deserialize set definition for SKU {ProductSku}", productSku);
+                return null;
+            }
         }
 
         /// <inheritdoc />
-        public Task<List<SetAvailableDrink>?> GetSetAvailableDrinksAsync(string setSku, CancellationToken cancellationToken = default)
-        {
-            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
-            throw new NotImplementedException(
-                "DESIGN DEFICIENCY: Set available drinks queries not implemented in RestaurantExtensionClient. " +
-                "Implement IPC protocol for set_available_drinks table queries to support set drink customization.");
+        public async Task<List<SetAvailableDrink>?> GetSetAvailableDrinksAsync(string setSku, CancellationToken cancellationToken = default) {
+            await EnsureConnectedAsync(cancellationToken);
+
+            var requestId = Interlocked.Increment(ref _requestId).ToString();
+            var request = new ExtensionRequest {
+                Id = requestId,
+                Method = "get_set_available_drinks",
+                Params = new Dictionary<string, JsonElement> {
+                    ["set_sku"] = JsonSerializer.SerializeToElement(setSku)
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken);
+
+            if (!response.Success || response.Data?.TryGetValue("available_drinks", out var drinksObj) != true) {
+                _logger.LogWarning("Get set available drinks failed for set SKU {SetSku}: {Error}", setSku, response.Error);
+                return null;
+            }
+
+            try {
+                var drinksJson = JsonSerializer.Serialize(drinksObj);
+                return JsonSerializer.Deserialize<List<SetAvailableDrink>>(drinksJson);
+            }
+            catch (JsonException ex) {
+                _logger.LogError(ex, "Failed to deserialize available drinks for set SKU {SetSku}", setSku);
+                return null;
+            }
         }
 
         /// <inheritdoc />
-        public Task<List<SetAvailableSide>?> GetSetAvailableSidesAsync(string setSku, CancellationToken cancellationToken = default)
-        {
-            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
-            throw new NotImplementedException(
-                "DESIGN DEFICIENCY: Set available sides queries not implemented in RestaurantExtensionClient. " +
-                "Implement IPC protocol for set_available_sides table queries to support set side customization.");
+        public async Task<List<SetAvailableSide>?> GetSetAvailableSidesAsync(string setSku, CancellationToken cancellationToken = default) {
+            await EnsureConnectedAsync(cancellationToken);
+
+            var requestId = Interlocked.Increment(ref _requestId).ToString();
+            var request = new ExtensionRequest {
+                Id = requestId,
+                Method = "get_set_available_sides",
+                Params = new Dictionary<string, JsonElement> {
+                    ["set_sku"] = JsonSerializer.SerializeToElement(setSku)
+                }
+            };
+
+            var response = await SendRequestAsync(request, cancellationToken);
+
+            if (!response.Success || response.Data?.TryGetValue("available_sides", out var sidesObj) != true) {
+                _logger.LogWarning("Get set available sides failed for set SKU {SetSku}: {Error}", setSku, response.Error);
+                return null;
+            }
+
+            try {
+                var sidesJson = JsonSerializer.Serialize(sidesObj);
+                return JsonSerializer.Deserialize<List<SetAvailableSide>>(sidesJson);
+            }
+            catch (JsonException ex) {
+                _logger.LogError(ex, "Failed to deserialize available sides for set SKU {SetSku}", setSku);
+                return null;
+            }
         }
 
         /// <summary>

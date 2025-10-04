@@ -163,8 +163,17 @@ namespace PosKernel.AI.Tools
             }
             else if (_restaurantClient != null)
             {
-                // For now, throw exception - would need actual implementation
-                throw new NotImplementedException("Named pipe client search not yet adapted");
+                // ARCHITECTURAL FIX: Use the named pipe client's SearchProductsAsync method
+                var products = await _restaurantClient.SearchProductsAsync(query, maxResults, cancellationToken);
+                return products.Select(p => new
+                {
+                    Sku = p.Sku,
+                    Name = p.Name,
+                    BasePrice = p.BasePrice,  // ARCHITECTURAL FIX: Use BasePrice decimal for proper financial precision
+                    Category = p.CategoryName,
+                    Description = p.Description,
+                    Specifications = p.Specifications
+                });
             }
             else
             {
@@ -516,23 +525,89 @@ namespace PosKernel.AI.Tools
         };
 
         // Execute get_set_configuration - fail fast if not properly implemented
-        private Task<string> ExecuteGetSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
+        private async Task<string> ExecuteGetSetConfigurationAsync(McpToolCall toolCall, CancellationToken cancellationToken)
         {
             if (!toolCall.Arguments.TryGetValue("product_sku", out var skuEl))
             {
-                return Task.FromResult("ERROR: product_sku parameter required for get_set_configuration");
+                return "ERROR: product_sku parameter required for get_set_configuration";
             }
 
             var sku = skuEl.GetString() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(sku))
             {
-                return Task.FromResult("ERROR: product_sku parameter is empty");
+                return "ERROR: product_sku parameter is empty";
             }
 
-            // ARCHITECTURAL FIX: Fail fast rather than providing misleading defaults
-            return Task.FromResult($"DESIGN_DEFICIENCY: Set configuration for {sku} requires database integration. " +
-                                 "The restaurant extension must implement GetSetDefinitionAsync, GetSetAvailableDrinksAsync, and GetSetAvailableSidesAsync methods " +
-                                 "to query the actual set_definitions, set_available_drinks, and set_available_sides tables.");
+            // ARCHITECTURAL FIX: Fail fast if restaurant client not available
+            if (_restaurantClient == null)
+            {
+                return "ERROR: Restaurant extension not available";
+            }
+
+            try
+            {
+                // Get set definition
+                var setDefinition = await _restaurantClient.GetSetDefinitionAsync(sku, cancellationToken);
+                if (setDefinition == null)
+                {
+                    return $"ERROR: Product {sku} is not a set meal or does not exist";
+                }
+
+                if (!setDefinition.IsActive)
+                {
+                    return $"ERROR: Set meal {sku} is currently inactive";
+                }
+
+                // Get available drinks and sides
+                var availableDrinks = await _restaurantClient.GetSetAvailableDrinksAsync(sku, cancellationToken);
+                var availableSides = await _restaurantClient.GetSetAvailableSidesAsync(sku, cancellationToken);
+
+                // Build configuration response
+                var config = new List<string>
+                {
+                    $"SET_CONFIGURATION for {setDefinition.SetSku}:",
+                    $"Set Type: {setDefinition.SetType}",
+                    $"Base Price: {FormatCurrency(setDefinition.BasePriceCents)}"
+                };
+
+                // Add drink options
+                if (availableDrinks?.Any() == true)
+                {
+                    config.Add("DRINK OPTIONS:");
+                    foreach (var drink in availableDrinks)
+                    {
+                        var defaultIndicator = drink.IsDefault ? " (DEFAULT)" : "";
+                        config.Add($"  - {drink.ProductName} ({drink.ProductSku}){defaultIndicator}");
+                    }
+                }
+
+                // Add side options
+                if (availableSides?.Any() == true)
+                {
+                    config.Add("SIDE OPTIONS:");
+                    foreach (var side in availableSides)
+                    {
+                        var defaultIndicator = side.IsDefault ? " (DEFAULT)" : "";
+                        config.Add($"  - {side.ProductName} ({side.ProductSku}){defaultIndicator}");
+                    }
+                }
+
+                if ((availableDrinks?.Any() != true) && (availableSides?.Any() != true))
+                {
+                    config.Add("No customization options available for this set.");
+                }
+                else
+                {
+                    config.Add("Use update_set_configuration to modify drink/side choices.");
+                }
+
+                return string.Join("\n", config);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get set configuration for SKU {Sku}", sku);
+                return $"ERROR: Failed to retrieve set configuration for {sku}: {ex.Message}";
+            }
         }
 
         private async Task<string> ExecuteAddItemAsync(McpToolCall toolCall, CancellationToken cancellationToken)

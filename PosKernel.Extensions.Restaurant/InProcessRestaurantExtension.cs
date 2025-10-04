@@ -414,30 +414,153 @@ namespace PosKernel.Extensions.Restaurant
         }
 
         /// <inheritdoc />
-        public Task<SetDefinition?> GetSetDefinitionAsync(string productSku, CancellationToken cancellationToken = default)
+        public async Task<SetDefinition?> GetSetDefinitionAsync(string productSku, CancellationToken cancellationToken = default)
         {
-            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
-            throw new NotImplementedException(
-                "DESIGN DEFICIENCY: Set definition queries not implemented in InProcessRestaurantExtension. " +
-                "Implement database queries for set_definitions table to support set functionality.");
+            try
+            {
+                using var connection = new SqliteConnection($"Data Source={_databasePath}");
+                await connection.OpenAsync(cancellationToken);
+
+                const string sql = @"
+                    SELECT
+                        p.sku as SetSku,
+                        p.category_name as SetType,
+                        '' as MainProductSku,
+                        p.base_price_cents as BasePriceCents,
+                        p.is_active as IsActive
+                    FROM products p
+                    WHERE p.sku = @productSku
+                    AND EXISTS (
+                        SELECT 1 FROM set_meal_components smc
+                        WHERE smc.set_product_sku = @productSku
+                    )";
+
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                command.Parameters.AddWithValue("@productSku", productSku);
+
+                using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    return new SetDefinition
+                    {
+                        SetSku = reader.GetString(0),
+                        SetType = reader.GetString(1),
+                        MainProductSku = reader.GetString(2),
+                        BasePriceCents = reader.GetInt64(3) / 100.0m, // Convert from cents to decimal
+                        IsActive = reader.GetBoolean(4)
+                    };
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get set definition for product SKU: {ProductSku}", productSku);
+                return null;
+            }
         }
 
         /// <inheritdoc />
-        public Task<List<SetAvailableDrink>?> GetSetAvailableDrinksAsync(string setSku, CancellationToken cancellationToken = default)
+        public async Task<List<SetAvailableDrink>?> GetSetAvailableDrinksAsync(string setSku, CancellationToken cancellationToken = default)
         {
-            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
-            throw new NotImplementedException(
-                "DESIGN DEFICIENCY: Set available drinks queries not implemented in InProcessRestaurantExtension. " +
-                "Implement database queries for set_available_drinks table to support set drink customization.");
+            var drinks = new List<SetAvailableDrink>();
+
+            try
+            {
+                using var connection = new SqliteConnection($"Data Source={_databasePath}");
+                await connection.OpenAsync(cancellationToken);
+
+                const string sql = @"
+                    SELECT DISTINCT
+                        @setSku as SetSku,
+                        ma.option_product_sku as ProductSku,
+                        p.name as ProductName,
+                        '' as DrinkSize,
+                        ma.is_default as IsDefault,
+                        ma.is_available as IsActive
+                    FROM modification_availability ma
+                    INNER JOIN products p ON p.sku = ma.option_product_sku
+                    WHERE ma.set_product_sku = @setSku
+                    AND ma.component_type = 'drink'
+                    AND ma.is_available = 1
+                    ORDER BY p.name";
+
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                command.Parameters.AddWithValue("@setSku", setSku);
+
+                using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    drinks.Add(new SetAvailableDrink
+                    {
+                        SetSku = reader.GetString(0),
+                        ProductSku = reader.GetString(1),
+                        ProductName = reader.GetString(2),
+                        DrinkSize = reader.GetString(3),
+                        IsDefault = reader.GetBoolean(4),
+                        IsActive = reader.GetBoolean(5)
+                    });
+                }
+
+                return drinks;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get available drinks for set SKU: {SetSku}", setSku);
+                return null;
+            }
         }
 
         /// <inheritdoc />
-        public Task<List<SetAvailableSide>?> GetSetAvailableSidesAsync(string setSku, CancellationToken cancellationToken = default)
+        public async Task<List<SetAvailableSide>?> GetSetAvailableSidesAsync(string setSku, CancellationToken cancellationToken = default)
         {
-            // ARCHITECTURAL FIX: Fail fast for unimplemented set functionality
-            throw new NotImplementedException(
-                "DESIGN DEFICIENCY: Set available sides queries not implemented in InProcessRestaurantExtension. " +
-                "Implement database queries for set_available_sides table to support set side customization.");
+            var sides = new List<SetAvailableSide>();
+
+            try
+            {
+                using var connection = new SqliteConnection($"Data Source={_databasePath}");
+                await connection.OpenAsync(cancellationToken);
+
+                const string sql = @"
+                    SELECT DISTINCT
+                        @setSku as SetSku,
+                        ma.option_product_sku as ProductSku,
+                        p.name as ProductName,
+                        ma.is_default as IsDefault,
+                        ma.is_available as IsActive
+                    FROM modification_availability ma
+                    INNER JOIN products p ON p.sku = ma.option_product_sku
+                    WHERE ma.set_product_sku = @setSku
+                    AND ma.component_type = 'side'
+                    AND ma.is_available = 1
+                    ORDER BY p.name";
+
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                command.Parameters.AddWithValue("@setSku", setSku);
+
+                using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    sides.Add(new SetAvailableSide
+                    {
+                        SetSku = reader.GetString(0),
+                        ProductSku = reader.GetString(1),
+                        ProductName = reader.GetString(2),
+                        IsDefault = reader.GetBoolean(3),
+                        IsActive = reader.GetBoolean(4)
+                    });
+                }
+
+                return sides;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get available sides for set SKU: {SetSku}", setSku);
+                return null;
+            }
         }
 
         /// <summary>
