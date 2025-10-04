@@ -25,11 +25,13 @@ namespace PosKernel.HttpService.Controllers;
 public class SessionsController : ControllerBase
 {
     private readonly ISessionStorage _sessionStorage;
+    private readonly ITransactionStorage _transactionStorage;
     private readonly ILogger<SessionsController> _logger;
 
-    public SessionsController(ISessionStorage sessionStorage, ILogger<SessionsController> logger)
+    public SessionsController(ISessionStorage sessionStorage, ITransactionStorage transactionStorage, ILogger<SessionsController> logger)
     {
         _sessionStorage = sessionStorage;
+        _transactionStorage = transactionStorage;
         _logger = logger;
     }
 
@@ -51,6 +53,38 @@ public class SessionsController : ControllerBase
             return NotFound();
         }
         return Ok(session);
+    }
+
+    [HttpGet("{sessionId}/transactions/{transactionId}")]
+    public async Task<ActionResult<TransactionResponse>> GetSessionTransaction(string sessionId, string transactionId)
+    {
+        _logger.LogInformation("HTTP GET /api/sessions/{SessionId}/transactions/{TransactionId}", sessionId, transactionId);
+
+        // First verify the session exists
+        var session = await _sessionStorage.GetSessionAsync(sessionId);
+        if (session == null)
+        {
+            _logger.LogWarning("Session {SessionId} not found", sessionId);
+            return NotFound($"Session {sessionId} not found");
+        }
+
+        // Then get the transaction and verify it belongs to this session
+        var transaction = await _transactionStorage.GetTransactionAsync(transactionId);
+        if (transaction == null)
+        {
+            _logger.LogWarning("Transaction {TransactionId} not found", transactionId);
+            return NotFound($"Transaction {transactionId} not found");
+        }
+
+        // Verify the transaction belongs to the specified session
+        if (transaction.SessionId != sessionId)
+        {
+            _logger.LogWarning("Transaction {TransactionId} does not belong to session {SessionId} (belongs to {ActualSessionId})",
+                transactionId, sessionId, transaction.SessionId);
+            return NotFound($"Transaction {transactionId} does not belong to session {sessionId}");
+        }
+
+        return Ok(transaction);
     }
 
     [HttpDelete("{sessionId}")]

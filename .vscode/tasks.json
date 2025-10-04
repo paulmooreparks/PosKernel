@@ -6,8 +6,41 @@
 			"dependsOn": ["Build Rust Library", "Build .NET Solution"],
 			"group": {
 				"kind": "build",
+				"isDefault": false
+			}
+		},
+		{
+			"label": "Safe Build All",
+			"dependsOn": ["Stop Services", "Build All After Stop"],
+			"dependsOrder": "sequence",
+			"group": {
+				"kind": "build",
 				"isDefault": true
 			}
+		},
+		{
+			"label": "Build All After Stop",
+			"dependsOn": ["Build Rust Library", "Build .NET Solution"],
+			"group": "build"
+		},
+		{
+			"label": "Stop Services",
+			"type": "shell",
+			"command": "poskernel stop",
+			"problemMatcher": []
+		},
+		{
+			"label": "Safe Build and Restart",
+			"dependsOn": ["Stop Services", "Build All", "Start Core Services"],
+			"dependsOrder": "sequence",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Start Core Services",
+			"type": "shell",
+			"command": "poskernel start http-kernel restaurant",
+			"problemMatcher": []
 		},
 		{
 			"label": "Build Rust Library",
