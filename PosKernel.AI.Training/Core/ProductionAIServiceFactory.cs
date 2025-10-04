@@ -197,7 +197,7 @@ public static class ProductionAIServiceFactory
                     restaurantClient,
                     provider.GetRequiredService<ILogger<KernelPosToolsProvider>>(),
                     storeConfig,
-                    PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
+                    PosKernel.Client.PosKernelClientFactory.KernelType.HttpService,
                     configuration,
                     provider.GetRequiredService<ICurrencyFormattingService>()));
 

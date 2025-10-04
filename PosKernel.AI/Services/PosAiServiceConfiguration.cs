@@ -148,7 +148,7 @@ namespace PosKernel.AI.Services
                     httpRestaurantClient,
                     provider.GetRequiredService<ILogger<KernelPosToolsProvider>>(),
                     storeConfig,
-                    PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
+                    PosKernel.Client.PosKernelClientFactory.KernelType.HttpService,
                     configuration,
                     provider.GetRequiredService<ICurrencyFormattingService>()));
 

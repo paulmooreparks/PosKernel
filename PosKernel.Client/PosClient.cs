@@ -112,9 +112,9 @@ namespace PosKernel.Client.Rust
                 return Task.CompletedTask;
             }
 
-            _logger.LogInformation("Disconnecting from Rust POS Kernel Service");
+            _logger.LogInformation("Disconnecting from POS Kernel Service");
             _connected = false;
-            _logger.LogInformation("Disconnected from Rust POS Kernel Service");
+            _logger.LogInformation("Disconnected from POS Kernel Service");
             return Task.CompletedTask;
         }
 

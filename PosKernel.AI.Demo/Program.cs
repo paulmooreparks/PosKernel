@@ -172,7 +172,7 @@ class Program
                         restaurantClient,
                         provider.GetRequiredService<ILogger<KernelPosToolsProvider>>(),
                         storeSelectionResult,
-                        PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
+                        PosKernel.Client.PosKernelClientFactory.KernelType.HttpService,
                         configuration,
                         provider.GetRequiredService<ICurrencyFormattingService>()));
 
@@ -203,7 +203,7 @@ class Program
                         $"DESIGN DEFICIENCY: Restaurant Extension Service is not available.\n" +
                         $"Error: {ex.Message}\n\n" +
                         $"To fix this:\n" +
-                        $"1. Start the Rust kernel service: cd pos-kernel-rs && cargo run --bin service\n" +
+                        $"1. Start the .NET kernel service: dotnet run --project PosKernel.HttpService\n" +
                         $"2. Ensure Restaurant Extension Service is running and accessible\n" +
                         $"3. Verify SQLite database exists: data/catalog/restaurant_catalog.db";
 
@@ -305,7 +305,7 @@ class Program
         System.Console.WriteLine("  PosKernel.AI.Demo --debug            # Real kernel + debug logging");
         System.Console.WriteLine();
         System.Console.WriteLine("Prerequisites:");
-        System.Console.WriteLine("  1. Start the Rust kernel service: cd pos-kernel-rs && cargo run --bin service");
+        System.Console.WriteLine("  1. Start the .NET kernel service: dotnet run --project PosKernel.HttpService");
         System.Console.WriteLine("  2. Ensure SQLite database exists: data/catalog/restaurant_catalog.db");
         System.Console.WriteLine("  3. Configure AI provider in ~/.poskernel/.env (STORE_AI_PROVIDER=Ollama or OpenAI)");
         System.Console.WriteLine("  4. If using OpenAI: Set OPENAI_API_KEY in ~/.poskernel/.env");

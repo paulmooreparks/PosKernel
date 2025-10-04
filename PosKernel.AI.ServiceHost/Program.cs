@@ -332,7 +332,7 @@ public class ChatResponse
                             restaurantClient,
                             provider.GetRequiredService<ILogger<KernelPosToolsProvider>>(),
                             storeSelectionResult,
-                            PosKernel.Client.PosKernelClientFactory.KernelType.RustService,
+                            PosKernel.Client.PosKernelClientFactory.KernelType.LegacyService,
                             configuration,
                             provider.GetRequiredService<ICurrencyFormattingService>()));
 

@@ -32,17 +32,17 @@ namespace PosKernel.Client
         public enum KernelType
         {
             /// <summary>
-            /// C# service implementation (legacy).
+            /// HTTP service implementation (current).
             /// </summary>
-            CSharpService,
+            HttpService,
 
             /// <summary>
-            /// Rust service implementation via gRPC (recommended).
+            /// Legacy service implementation (deprecated).
             /// </summary>
-            RustService,
+            LegacyService,
 
             /// <summary>
-            /// Automatic detection - tries Rust first, falls back to C#.
+            /// Automatic detection - tries current implementation first, then fallback.
             /// </summary>
             Auto
         }
@@ -79,47 +79,47 @@ namespace PosKernel.Client
 
             return kernelType switch
             {
-                KernelType.CSharpService => CreateCSharpServiceClient(logger, configuration),
-                KernelType.RustService => CreateRustServiceClient(logger, configuration),
+                KernelType.HttpService => CreateHttpServiceClient(logger, configuration),
+                KernelType.LegacyService => CreateLegacyServiceClient(logger, configuration),
                 KernelType.Auto => CreateAutoClient(logger, configuration),
                 _ => throw new ArgumentException($"Unknown kernel type: {kernelType}", nameof(kernelType))
             };
         }
 
         /// <summary>
-        /// Creates a C# service client.
+        /// Creates an HTTP service client.
         /// </summary>
-        internal static IPosKernelClient CreateCSharpServiceClient(ILogger logger, IConfiguration? configuration)
+        internal static IPosKernelClient CreateHttpServiceClient(ILogger logger, IConfiguration? configuration)
         {
-            logger.LogInformation("Creating C# service client");
+            logger.LogInformation("Creating HTTP service client");
 
-            var options = new PosKernelClientOptions();
+            var options = new RustKernelClientOptions();
             if (configuration != null)
             {
-                var section = configuration.GetSection("PosKernel:CSharpService");
+                var section = configuration.GetSection("PosKernel:HttpService");
                 if (section.Exists())
                 {
                     section.Bind(options);
                 }
             }
 
-            var typedLogger = logger as ILogger<PosKernelClient> ??
-                new LoggerWrapper<PosKernelClient>(logger);
+            var typedLogger = logger as ILogger<PosClient> ??
+                new LoggerWrapper<PosClient>(logger);
 
-            return new PosKernelClient(typedLogger, options);
+            return new PosClient(typedLogger, options);
         }
 
         /// <summary>
-        /// Creates a Rust service client.
+        /// Creates a legacy service client.
         /// </summary>
-        internal static IPosKernelClient CreateRustServiceClient(ILogger logger, IConfiguration? configuration)
+        internal static IPosKernelClient CreateLegacyServiceClient(ILogger logger, IConfiguration? configuration)
         {
-            logger.LogInformation("Creating Rust service gRPC client");
+            logger.LogInformation("Creating legacy service gRPC client");
 
             var options = new RustKernelClientOptions();
             if (configuration != null)
             {
-                var section = configuration.GetSection("PosKernel:RustService");
+                var section = configuration.GetSection("PosKernel:LegacyService");
                 if (section.Exists())
                 {
                     section.Bind(options);
@@ -137,14 +137,14 @@ namespace PosKernel.Client
         /// </summary>
         private static IPosKernelClient CreateAutoClient(ILogger logger, IConfiguration? configuration)
         {
-            logger.LogInformation("Creating auto-detecting kernel client (Rust → C# fallback)");
+            logger.LogInformation("Creating auto-detecting kernel client (legacy → HTTP fallback)");
 
             return new AutoKernelClient(logger, configuration);
         }
     }
 
     /// <summary>
-    /// Auto-detecting kernel client that tries Rust first, falls back to C#.
+    /// Auto-detecting kernel client that tries legacy first, falls back to HTTP.
     /// </summary>
     internal class AutoKernelClient : IPosKernelClient
     {
@@ -168,38 +168,38 @@ namespace PosKernel.Client
                 throw new ObjectDisposedException(nameof(AutoKernelClient));
             }
 
-            // Try Rust service first
+            // Try legacy service first
             try
             {
-                _logger.LogInformation("Attempting to connect to Rust kernel service...");
-                _activeClient = PosKernelClientFactory.CreateRustServiceClient(_logger, _configuration);
+                _logger.LogInformation("Attempting to connect to legacy kernel service...");
+                _activeClient = PosKernelClientFactory.CreateLegacyServiceClient(_logger, _configuration);
                 await _activeClient.ConnectAsync(cancellationToken);
 
-                _logger.LogInformation("✅ Connected to Rust kernel service successfully");
+                _logger.LogInformation("✅ Connected to legacy kernel service successfully");
                 return;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to connect to Rust kernel service, trying C# service fallback...");
+                _logger.LogWarning(ex, "Failed to connect to legacy kernel service, trying HTTP service fallback...");
                 _activeClient?.Dispose();
                 _activeClient = null;
             }
 
-            // Fallback to C# service
+            // Fallback to HTTP service
             try
             {
-                _logger.LogInformation("Attempting to connect to C# kernel service...");
-                _activeClient = PosKernelClientFactory.CreateCSharpServiceClient(_logger, _configuration);
+                _logger.LogInformation("Attempting to connect to HTTP kernel service...");
+                _activeClient = PosKernelClientFactory.CreateHttpServiceClient(_logger, _configuration);
                 await _activeClient.ConnectAsync(cancellationToken);
 
-                _logger.LogInformation("✅ Connected to C# kernel service as fallback");
+                _logger.LogInformation("✅ Connected to HTTP kernel service as fallback");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Failed to connect to any kernel service");
                 _activeClient?.Dispose();
                 _activeClient = null;
-                throw new InvalidOperationException("Unable to connect to any kernel service (tried Rust and C#)", ex);
+                throw new InvalidOperationException("Unable to connect to any kernel service (tried legacy and HTTP)", ex);
             }
         }
 
